@@ -1,15 +1,3 @@
-(ql:quickload :magicl)
-(ql:quickload :py4cl)
-
-(py4cl:import-module "numpy" :as "np")
-(py4cl:import-module "matplotlib.pyplot" :as "plt")
-(py4cl:import-function "slice")
-
-
-
-
-
-
 (defun plot-array (matrix &key
                             (title nil)
                             (xlabel nil)
@@ -25,3 +13,11 @@
         :when title :do (plt:title title)
           :when xlabel :do (plt:xlabel xlabel)
             :when ylabel :do (plt:ylabel ylabel)))
+
+(defun approx-gbm-option (sims steps)
+  (mc-pricer
+   (make-instance 'european-option :K 110 :tte 0.1 :callput 'call )
+   100
+   sims
+   steps
+   (make-instance 'GBM :sigma 0.2 :drift 0.00)))

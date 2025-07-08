@@ -15,24 +15,23 @@
     in
     {
       devShells = forEachSupportedSystem ({ pkgs }: {
-        default = pkgs.mkShell {
+        default = pkgs.mkShell  rec {
            buildInputs = [
               pkgs.sbcl
-
-              # for koans
-              pkgs.inotify-tools
-
-              # for CLOG
               pkgs.openssl
               pkgs.sqlite
+              # For magicl
               pkgs.libffi
               pkgs.blas
               pkgs.lapack
+
+              pkgs.python312Packages.numpy
+              pkgs.python312Packages.matplotlib
             ];
-            shellHook = ''
-              export LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath([pkgs.openssl])}:${pkgs.lib.makeLibraryPath([pkgs.libffi])}:${pkgs.lib.makeLibraryPath([pkgs.sqlite])}:${pkgs.lib.makeLibraryPath([pkgs.lapack])}:${pkgs.lib.makeLibraryPath([pkgs.blas])}
-            '';
-          # packages = with pkgs; [  ];
+                 shellHook = ''
+                        export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath buildInputs}:$LD_LIBRARY_PATH"
+                        export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib.outPath}/lib:$LD_LIBRARY_PATH"
+                        '';
         };
       });
     };
