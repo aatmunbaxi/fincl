@@ -22,16 +22,16 @@
                       time-length
                       num-paths num-steps)
   (let* ((noise (magicl:map! #'quantile
-                              (magicl:from-list
-                               (loop :with v := (random-state:make-generator :quasi)
-                                     :repeat (* num-paths num-steps)
-                                     :collect (coerce (random-state:next-byte v) 'double-float))
-                               `(,num-paths ,num-steps)
-                               :type 'double-float)))
+                             (magicl:from-list
+                              (loop :repeat (* num-paths num-steps)
+                                    :with v := (random-state:make-generator 'quasi)
+                                    :collect (coerce  (random-state:next-byte v) 'double-float))
+                              `(,num-paths ,num-steps)
+                              :type 'double-float)))
          (dt (/ time-length num-steps))
          (incrs (magicl:.+
                  (* dt
-                    (+ (drift process) 0.039 (* 0.5 (expt (sigma process) 2))))
+                    (+ (drift process) 0.039 (- 0 (* 0.5 (expt (sigma process) 2)))))
                  (magicl:.* (sigma process) (magicl:.* (sqrt dt) noise))))
          (log-returns (cumsum incrs))
          (S (magicl:const init-value `(,num-paths ,num-steps) :type 'double-float)))

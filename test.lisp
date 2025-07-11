@@ -15,7 +15,7 @@
             :when ylabel :do (plt:ylabel ylabel)))
 
 (defun approx-gbm-option (sims steps)
-  (mc-pricer
+  (mc-option-pricer
    (make-instance 'european-option :K 110 :tte 0.1 :callput 'call )
    100
    sims

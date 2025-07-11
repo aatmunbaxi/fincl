@@ -1,13 +1,24 @@
 (ql:quickload :magicl)
 (ql:quickload :py4cl)
+(ql:quickload :alexandria)
+(ql:quickload :special-functions )
+(ql:quickload :random-state)
 
 (py4cl:import-module "numpy" :as "np")
 (py4cl:import-module "matplotlib.pyplot" :as "plt")
 (py4cl:import-function "slice")
 
 
-
-
+;; (setf op (make-instance 'european-option :K 110 :tte 1))
+;; (setf gbm (make-instance 'GBM :sigma 0.2))
+(defun gen-dists (dists per-dist)
+  (magicl:map! #'quantile
+               (magicl:from-list
+                (loop :with v := (random-state:make-generator :quasi nil )
+                      :repeat (* dists per-dist)
+                      :collect (coerce   (random-state:next-byte v) 'double-float))
+                `(,dists ,per-dist)
+                :type 'double-float)))
 
 
 (defun plot-array (matrix &key
