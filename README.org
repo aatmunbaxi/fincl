@@ -1,0 +1,36 @@
+* Fincl ("Finkle")
+Work-in-progress quantitative finance library in common lisp, with arrays backed by [[https://github.com/quil-lang/magicl][magicl]].
+
+
+
+
+* Todos
+** Stochastic Proccesses
+All processes are currently discretized with a naive Euler-Maruyama scheme, as this is the most generally applicable strategy.
+All process support a drift term.
+
+*** Asset price models
+- [X] Geometric Brownian motion
+- [X] SABR
+- [ ] Ornstein-Uhlenbeck process
+- [ ] Hull-White stochastic volatility
+- [ ] Heston model
+- [ ] GARCH(p,q)
+- [ ] Constant elasticity of variance
+
+*** Interest rate models
+- [ ] Cox-Ingersol-Ross model
+- [ ] Hull-White short term model
+- [ ] Vasicek model
+** Options
+- [X] European (Monte Carlo and analytic pricing under GBM risk-neutral dynamics)
+- [ ] American
+- [ ] Basket
+- [ ] Rainbow
+- [ ] Asian
+- [ ] Bermudan
+*** Option pricers
+- [ ] Monte Carlo
+  - [ ] European
+  - [ ] American (with Longstaff-Schwarz)
+  - [ ] Bermudan
