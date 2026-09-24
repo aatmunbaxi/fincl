@@ -2,7 +2,7 @@
   description = "fincl — Common Lisp quantitative finance library";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   };
 
   outputs = { self, nixpkgs }:
@@ -63,6 +63,14 @@
           ];
 
           nativeLibPath = lib.makeLibraryPath runtimeLibs;
+
+          # Python side of the fincl-viz developer aid. py4cl runs this
+          # interpreter as a subprocess; numpy receives Lisp arrays and
+          # matplotlib renders them. Not needed by fincl itself.
+          pythonEnv = pkgs.python3.withPackages (ps: [
+            ps.numpy
+            ps.matplotlib
+          ]);
         in
         {
           default = pkgs.mkShell {
@@ -77,6 +85,9 @@
               gfortran
               gnumake
               pkg-config
+
+              # Plotting for fincl-viz (py4cl -> matplotlib).
+              pythonEnv
 
               # Convenience.
               rlwrap
