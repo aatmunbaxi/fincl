@@ -229,7 +229,7 @@ sweep reads. Works for any process: the engine only calls MAKE-STEPPER."
 
 (defmethod price-mc ((x european-exercise) (p vanilla-payoff)
                      (f path-independent) (e monte-carlo-engine) market)
-  (let* ((tau (expiry x))
+  (let* ((tau (time-to-expiry x market))
          (kernel (payoff-kernel p))
          (sampler (terminal-sampler (process e) market tau)))
     (if sampler
@@ -298,7 +298,7 @@ conditioned than normal equations at higher basis degrees."
 
 (defmethod price-mc ((x american-exercise) (p vanilla-payoff)
                      (f path-independent) (e monte-carlo-engine) market)
-  (let* ((tau (expiry x))
+  (let* ((tau (time-to-expiry x market))
          (n-steps (n-steps e))
          (paths (simulate-paths e market tau))
          (n-paths (magicl:nrows paths))
