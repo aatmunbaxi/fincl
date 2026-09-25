@@ -1,0 +1,9 @@
+* fincl: Quantitative Finance in Common Lisp
+
+* Option Pricing
+
+As of now, a few option pricers are available, classed broadly under numerical and analytic/analytic approximation.
+
+Vanilla European options have analytic prices under the assumption that the spot price follows a geometric Brownian motion. A Monte Carlo pricer is also available. Vanilla American option values are approximated analytically using the method of Barone-Adesi and Whaley under the same assumptions.
+
+Because many stochastic processes have no closed-form solutions
