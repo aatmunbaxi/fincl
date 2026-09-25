@@ -15,19 +15,76 @@ Instruments are immutable and reusable across scenarios."))
 ;;; --------------------------------------------------------------------
 
 (defclass exercise ()
-  ((expiry :initarg :expiry :reader expiry :type double-float
+  ((expiry :initarg :expiry :reader expiry :type date
            :initform (a:required-argument :expiry)
-           :documentation "Year fraction from the valuation date.")))
+           :documentation "Last date on which the option can be exercised.")))
 
-(defclass european-exercise (exercise) ())
-(defclass american-exercise (exercise) ())
+(defun check-expiry (expiry)
+  (typecase expiry
+    (date expiry)
+    (tenor
+     (error "Expiry ~S is a tenor and needs a start date to resolve it: pass ~
+:FROM, e.g. :from #D\"2026-09-24\" or :from (valuation-date market)."
+            expiry))
+    (t
+     (error "Expiry ~S is not a date. Expiries are dates, e.g. #D\"2027-09-24\" ~
+or (make-date 2027 9 24), or tenors such as #T\"1Y\" with :FROM; the market ~
+converts dates to year fractions with its day counter."
+            expiry))))
 
-(defgeneric exercise-allowed-p (exercise time)
-  (:documentation "Can the holder exercise at TIME? One generic function is
+(defun resolve-expiry (expiry &key from calendar (convention :following)
+                                   end-of-month)
+  "Return EXPIRY as a date. A date is returned as is. A tenor is added to the
+date FROM (with END-OF-MONTH as in ADD-TENOR) and, if CALENDAR is given,
+moved onto a business day with CONVENTION (see ADJUST).
+
+  (resolve-expiry #T\"1Y\" :from #D\"2026-09-26\"
+                  :calendar (make-instance 'weekends-only))
+  => #D\"2027-09-27\""
+  (if (and (typep expiry 'tenor) from)
+      (let ((date (add-tenor (check-expiry from) expiry :end-of-month end-of-month)))
+        (if calendar (adjust calendar date convention) date))
+      (check-expiry expiry)))
+
+(defmethod initialize-instance :after ((x exercise) &key)
+  (check-expiry (expiry x)))
+
+(defclass european-exercise (exercise) ()
+  (:documentation "Exercise on the expiry date only."))
+
+(defclass american-exercise (exercise) ()
+  (:documentation "Exercise on any date up to and including the expiry."))
+
+(defclass bermudan-exercise (exercise)
+  ((expiry :initform nil)
+   (dates :initarg :dates :reader exercise-dates
+          :initform (a:required-argument :dates)))
+  (:documentation "Exercise on any of DATES. EXPIRY is the last of them.
+
+  (make-instance 'bermudan-exercise
+                 :dates (list #D\"2027-03-24\" #D\"2027-09-24\"))"))
+
+(defmethod initialize-instance :around ((x bermudan-exercise) &rest initargs
+                                        &key dates &allow-other-keys)
+  (unless (and dates (listp dates))
+    (error "A Bermudan exercise needs a non-empty list of dates, not ~S." dates))
+  (mapc #'check-expiry dates)
+  (let ((sorted (sort (copy-list dates) #'date<)))
+    (apply #'call-next-method x :dates sorted :expiry (a:lastcar sorted) initargs)))
+
+(defgeneric exercise-allowed-p (exercise date)
+  (:documentation "Can the holder exercise on DATE? One generic function is
 the entire difference between European, American and Bermudan in a lattice
 or LSM engine.")
-  (:method ((x european-exercise) time) (declare (ignore time)) nil)
-  (:method ((x american-exercise) time) (declare (ignore time)) t))
+  (:method ((x european-exercise) date) (date= date (expiry x)))
+  (:method ((x american-exercise) date) (date<= date (expiry x)))
+  (:method ((x bermudan-exercise) date)
+    (and (member date (exercise-dates x) :test #'date=) t)))
+
+(defun time-to-expiry (exercise market)
+  "Year fraction from MARKET's valuation date to EXERCISE's expiry under the
+market's day counter."
+  (market-time market (expiry exercise)))
 
 ;;; --------------------------------------------------------------------
 ;;; Path dependence

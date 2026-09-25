@@ -16,6 +16,15 @@
                (name (error-payoff c)) (name (error-path c))
                (name (error-market c)))))))
 
+(define-condition option-expired (pricing-error)
+  ((option :initarg :option :reader error-option)
+   (valuation-date :initarg :valuation-date :reader error-valuation-date))
+  (:report
+   (lambda (c s)
+     (format s "Option expired on ~A, before the valuation date ~A."
+             (expiry (option-exercise (error-option c)))
+             (error-valuation-date c)))))
+
 ;;; --------------------------------------------------------------------
 ;;; Engines
 ;;; --------------------------------------------------------------------
@@ -63,11 +72,17 @@ NIL for deterministic engines."))
 
 (defmethod price :around ((o option) engine market)
   ;; Cross-cutting validation, once, instead of in every engine method.
-  (assert (plusp (expiry (option-exercise o))) () "Option has expired.")
-  (assert (plusp (black-vol market (strike (option-payoff o))
-                            (expiry (option-exercise o))))
-          () "Volatility must be positive.")
-  (call-next-method))
+  (let ((today (valuation-date market))
+        (expiry (expiry (option-exercise o))))
+    (cond ((date< expiry today)
+           (error 'option-expired :option o :valuation-date today))
+          ((date= expiry today)
+           ;; Nothing left to model: the option is worth its payoff.
+           (values (payoff-value (option-payoff o) (spot market)) nil))
+          (t
+           (assert (plusp (black-vol market (strike (option-payoff o)) expiry))
+                   () "Volatility must be positive.")
+           (call-next-method)))))
 
 ;; Each engine family re-dispatches on the components it actually cares
 ;; about. The market is a specializer too, so a term-structure or stochastic
