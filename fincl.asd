@@ -10,11 +10,21 @@
                "magicl"
                "random-state"
                "lparallel"
-               "trivia")
+               "trivia"
+               "named-readtables")
   :pathname "src/"
   :serial t
   :components ((:file "package")
                (:file "math")
+               (:module "time"
+                :serial t
+                :components ((:file "date")
+                             (:file "tenor")
+                             (:file "calendar")
+                             (:file "day-counter")))
+               ;; Defines the #D / #T readtable; every file after this one
+               ;; may use it via NAMED-READTABLES:IN-READTABLE.
+               (:file "syntax")
                (:file "market")
                (:module "instruments"
                 :serial t
@@ -38,6 +48,9 @@
   :description "Tests for fincl"
   :depends-on ("fincl" "lparallel")
   :pathname "tests/"
-  :components ((:file "tests"))
+  :serial t
+  :components ((:file "tests")
+               (:file "time")
+               (:file "syntax"))
   :perform (test-op (o c)
              (symbol-call '#:fincl/tests '#:run-tests)))
