@@ -11,18 +11,23 @@
                     (#:sf #:special-functions)
                     (#:sts #:nu.statistics)
                     (#:rs #:random-state)
-                    (#:lp #:lparallel))
+                    (#:lp #:lparallel)
+                    (#:c2mop #:closer-mop))
   (:import-from #:trivia #:match #:ematch #:guard)
   (:export
    ;; math
-   #:norm-cdf #:norm-pdf #:norm-quantile #:solve-root
+   #:norm-cdf #:norm-pdf #:norm-quantile
+   #:solve-bisection #:solve-brent #:solve-newton
+   #:richardson-extrapolate #:richardson-weights
+   #:finite-difference-weights #:apply-stencil #:difference-quotient #:derivative
+   #:default-step
    ;; dates and tenors
-   #:date #:make-date #:parse-date #:invalid-date #:date-serial
+   #:date #:datep #:make-date #:parse-date #:invalid-date #:date-serial
    #:date-year #:date-month #:date-day #:day-of-week
    #:date+ #:date- #:date< #:date<= #:date=
    #:leap-year-p #:days-in-month
    #:tenor #:make-tenor #:parse-tenor #:invalid-tenor
-   #:tenor-n #:tenor-unit #:add-tenor
+   #:tenorp #:tenor-n #:tenor-unit #:add-tenor
    ;; #D / #T literal syntax (a named readtable)
    #:syntax
    ;; calendars
@@ -40,27 +45,35 @@
    #:discount-factor #:forward-factor #:forward #:black-variance
    #:valuation-date #:market-day-counter #:market-time #:derive-market
    ;; instruments
-   #:instrument #:payoff #:vanilla-payoff #:kind #:strike
+   #:instrument #:payoff #:call-put-payoff #:strike-payoff #:vanilla-payoff #:kind #:strike
+   #:validate-payoff #:describe-payoff #:validate-pricing-inputs
    #:exercise #:european-exercise #:american-exercise #:bermudan-exercise
-   #:expiry #:exercise-dates #:exercise-allowed-p #:time-to-expiry
+   #:expiry #:exercise-dates #:exercise-allowed-p #:exercise-mask #:time-to-expiry
    #:resolve-expiry
    #:path-feature #:path-independent
    #:option #:option-payoff #:option-exercise #:option-path
-   #:make-option #:make-vanilla-option
-   #:payoff-value #:payoff-kernel
+   #:make-option #:make-vanilla-option #:parse-option-spec #:invalid-option-spec
+   #:payoff-value #:payoff-kernel #:define-payoff #:declare-payoff-variables
+   #:formula-payoff-superclass
    ;; processes
    #:stochastic-process #:process-factors #:process-state-size
    #:initial-state #:make-stepper #:terminal-sampler #:process-vol
+   #:characteristic-function #:log-cumulants
+   #:define-process #:parameterized-class #:parameterized #:invalid-parameter
+   #:process-parameters #:process-parameter #:parameter-bounds #:parameter-vector #:with-parameter-vector
    #:gbm #:cev #:heston #:garch
    ;; engines
    #:engine #:analytic-engine #:black-scholes-engine
    #:barone-adesi-whaley-engine #:monte-carlo-engine
+   #:cos-engine #:n-terms #:truncation #:richardson-dates
+   #:binomial-engine #:smooth #:extrapolate
    #:process #:n-paths #:n-steps #:seed #:antithetic #:n-chunks
    #:basis-degree #:rng #:sampler
-   #:price #:price-analytic #:price-mc
+   #:price #:price-analytic #:price-mc #:price-cos #:price-binomial
    ;; conditions and restarts
    #:pricing-error #:unsupported-combination #:convergence-failure
    #:regression-failure #:incompatible-time-step #:option-expired
+   #:invalid-tree
    #:retry-with-bracket #:skip-exercise-date
    ;; parallelism
    #:with-pricing-kernel))

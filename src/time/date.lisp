@@ -11,15 +11,19 @@
   ((description :initarg :description :reader invalid-date-description))
   (:report (lambda (c s) (write-string (invalid-date-description c) s))))
 
-(defclass date ()
-  ((serial :initarg :serial :reader date-serial :type fixnum))
-  (:documentation "A calendar date. Immutable.
-
-  (make-date 2027 6 15) => #D\"2027-06-15\""))
-
+;;; A structure rather than a class: construction is an allocation with no
+;;; generic dispatch, the slot type is enforced, and dates are EQUALP by
+;;; value, so they can key EQUALP hash tables. DATE is still a class name for
+;;; method specializers.
 (declaim (inline %date))
-(defun %date (serial)
-  (make-instance 'date :serial serial))
+(defstruct (date (:constructor %date (serial))
+                 (:copier nil)
+                 (:predicate datep))
+  "A calendar date. Immutable. Two dates are EQUALP when they are the same
+day, so they can key an EQUALP hash table.
+
+  (make-date 2027 6 15) => #D\"2027-06-15\""
+  (serial 0 :type fixnum :read-only t))
 
 (defmethod make-load-form ((d date) &optional environment)
   (declare (ignore environment))

@@ -48,6 +48,16 @@
                    (date<= (d "2027-06-16") (d "2027-06-16"))
                    (date= (d "2027-06-16") (make-date 2027 6 16))))
   (check-that "2000-02-29 exists" (make-date 2000 2 29))
+  (check-that "dates are EQUALP by value"
+              (and (equalp (d "2027-01-01") (make-date 2027 1 1))
+                   (not (equalp (d "2027-01-01") (d "2027-01-02")))))
+  (check-equal "an EQUALP hash table finds a date by value" :found
+               (let ((table (make-hash-table :test 'equalp)))
+                 (setf (gethash (make-date 2027 1 1) table) :found)
+                 (gethash (d "2027-01-01") table)))
+  (check-that "a date is still a class for method dispatch"
+              (and (datep (d "2027-01-01")) (typep (d "2027-01-01") 'date)
+                   (find-class 'date)))
   (dolist (ymd '((2027 2 30) (2023 2 29) (1900 2 29) (2100 2 29) (2027 4 31)
                  (2027 13 1) (2027 0 10) (2027 6 0) (2027 6 32)))
     (check-error (format nil "make-date ~{~D~^-~}" ymd) (apply #'make-date ymd)
@@ -68,6 +78,11 @@
         do (check-equal (format nil "parse-tenor ~S" string)
                         (list n unit) (list (tenor-n p) (tenor-unit p))))
   (check-equal "print form" "#T\"3M\"" (prin1-to-string (parse-tenor "3M")))
+  (check-that "tenors are EQUALP by value"
+              (and (equalp (parse-tenor "3M") (make-tenor 3 :months))
+                   (not (equalp (parse-tenor "3M") (parse-tenor "90D")))
+                   (tenorp (parse-tenor "3M"))))
+  (check-error "make-tenor checks its unit" (make-tenor 3 :fortnights) type-error)
   (dolist (s '("3X" "M" "" "3" "3MM" " 3M" "3 M" "+3M"))
     (check-error (format nil "parse-tenor ~S" s) (parse-tenor s) invalid-tenor))
   (loop for (start tenor eom expected)

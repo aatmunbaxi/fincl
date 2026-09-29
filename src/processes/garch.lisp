@@ -16,42 +16,48 @@
 
 (in-package #:fincl)
 
-(defclass garch (stochastic-process)
-  ((period :initarg :period :initform (/ 1d0 252d0) :reader period :type double-float
-           :documentation "Length of one model period in years.")
-   (alpha :initarg :alpha :initform 0.1d0 :reader alpha :type double-float)
-   (beta :initarg :beta :initform 0.8d0 :reader garch-beta :type double-float)
-   (gamma :initarg :gamma :initform 0.5d0 :reader gamma :type double-float)
-   (omega :initarg :omega :initform nil :reader omega
-          :documentation "NIL calibrates omega so the stationary variance
-equals the market's Black variance per period.")
-   (h0 :initarg :h0 :initform nil :reader h0
-       :documentation "Initial conditional variance; NIL uses the stationary
-level.")))
-
-(defmethod process-state-size ((p garch)) 2)
-
 (defun garch-target-variance (process market)
   "Variance per model period implied by the market vol."
   (* (expt (black-vol market (spot market) (period process)) 2)
      (period process)))
 
+(defun garch-persistence (process)
+  (+ (garch-beta process) (* (alpha process) (+ 1d0 (expt (gamma process) 2)))))
+
+(defun garch-default-omega (process market horizon)
+  "The omega whose stationary variance is the market's Black variance per
+period. HORIZON is ignored: the target is read at one period."
+  (declare (ignore horizon))
+  (let ((persistence (garch-persistence process)))
+    (assert (< persistence 1d0) ()
+            "Non-stationary GARCH: beta + alpha(1 + gamma^2) = ~,4F >= 1."
+            persistence)
+    (* (garch-target-variance process market) (- 1d0 persistence))))
+
 (defun garch-omega (process market)
-  (or (omega process)
-      (let ((persistence (+ (garch-beta process)
-                            (* (alpha process)
-                               (+ 1d0 (expt (gamma process) 2))))))
-        (assert (< persistence 1d0) ()
-                "Non-stationary GARCH: beta + alpha(1 + gamma^2) = ~,4F >= 1."
-                persistence)
-        (* (garch-target-variance process market) (- 1d0 persistence)))))
+  (or (omega process) (garch-default-omega process market nil)))
+
+(defun garch-default-h0 (process market horizon)
+  "The stationary variance omega / (1 - persistence)."
+  (declare (ignore horizon))
+  (/ (garch-omega process market) (- 1d0 (garch-persistence process))))
+
+(define-process garch (stochastic-process) (:state-size 2)
+  ((period (/ 1d0 252d0) :parameter nil :bounds ((0) nil)
+                         :doc "Length of one model period in years. Part of the
+model, not a numerical setting, but not calibrated either.")
+   (alpha 0.1d0 :bounds (0 nil) :doc "ARCH coefficient.")
+   (beta 0.8d0 :reader garch-beta :bounds (0 nil) :doc "GARCH coefficient.")
+   (gamma 0.5d0 :doc "Leverage: negative shocks raise variance more.")
+   (omega nil :bounds ((0) nil) :market-default garch-default-omega
+              :doc "Variance intercept. NIL calibrates the stationary variance to
+the market's Black variance per period.")
+   (h0 nil :bounds ((0) nil) :market-default garch-default-h0
+           :doc "Initial conditional variance. NIL uses the stationary level."))
+  (:documentation "Duan's NGARCH(1,1)."))
 
 (defun garch-h0 (process market)
-  (or (h0 process)
-      (let ((persistence (+ (garch-beta process)
-                            (* (alpha process)
-                               (+ 1d0 (expt (gamma process) 2))))))
-        (/ (garch-omega process market) (- 1d0 persistence)))))
+  (or (h0 process) (garch-default-h0 process market nil)))
 
 (defmethod initial-state ((p garch) market)
   (let ((state (make-array 2 :element-type 'double-float)))

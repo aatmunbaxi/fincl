@@ -8,13 +8,15 @@
 
 (deftype tenor-unit () '(member :days :weeks :months :years))
 
-(defclass tenor ()
-  ((n :initarg :n :reader tenor-n :type integer)
-   (unit :initarg :unit :reader tenor-unit :type tenor-unit))
-  (:documentation "A length of time in whole days, weeks, months or years.
-Immutable.
+(defstruct (tenor (:constructor %tenor (n unit))
+                  (:copier nil)
+                  (:predicate tenorp))
+  "A length of time in whole days, weeks, months or years. Immutable; two
+tenors are EQUALP when they have the same N and UNIT.
 
-  (make-tenor 3 :months) => #T\"3M\""))
+  (make-tenor 3 :months) => #T\"3M\""
+  (n 0 :type integer :read-only t)
+  (unit :days :type tenor-unit :read-only t))
 
 (defun make-tenor (n unit)
   "Return a tenor of N UNITs. UNIT is :DAYS, :WEEKS, :MONTHS or :YEARS.
@@ -22,7 +24,7 @@ Immutable.
   (make-tenor 10 :days) => #T\"10D\""
   (check-type n integer)
   (check-type unit tenor-unit)
-  (make-instance 'tenor :n n :unit unit))
+  (%tenor n unit))
 
 (defmethod make-load-form ((p tenor) &optional environment)
   (declare (ignore environment))

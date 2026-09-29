@@ -126,6 +126,15 @@
               nodejs_22   # agent-shell launches its agent over stdio
             ];
           };
+
+          # QuantLib (C++; nixpkgs has no Python bindings), only for
+          # regenerating test fixtures:
+          #
+          #   nix develop .#fixtures -c sh tests/fixtures/generate.sh
+          fixtures = pkgs.mkShell {
+            name = "fincl-fixtures";
+            packages = [ pkgs.quantlib pkgs.boost pkgs.gcc ];
+          };
         });
 
       formatter = forAllSystems (pkgs: pkgs.nixpkgs-fmt);

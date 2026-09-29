@@ -15,18 +15,21 @@
 
 (in-package #:fincl)
 
-(defclass cev (stochastic-process)
-  ((beta :initarg :beta :initform 1d0 :reader beta :type double-float)
-   (sigma :initarg :sigma :initform nil :reader sigma
-          :documentation "CEV scale parameter. NIL calibrates it so the
-instantaneous vol at the current spot matches the market's Black vol:
-sigma = vol * S0^(1-beta). Note the units of sigma change with beta."))
+(defun cev-default-sigma (process market horizon)
+  "The sigma whose instantaneous vol at the spot is the market's Black vol:
+vol * S0^(1 - beta)."
+  (* (black-vol market (spot market) horizon)
+     (expt (spot market) (- 1d0 (beta process)))))
+
+(define-process cev (stochastic-process) ()
+  ((beta 1d0 :bounds (0 nil) :doc "Elasticity: 1 is GBM, 0 is Bachelier.")
+   (sigma nil :bounds ((0) nil) :market-default cev-default-sigma
+              :doc "Scale parameter. NIL calibrates it to the market's Black
+vol at the spot. Its units change with beta."))
   (:documentation "Constant-elasticity-of-variance dynamics."))
 
 (defun cev-sigma (process market time)
-  (or (sigma process)
-      (* (black-vol market (spot market) time)
-         (expt (spot market) (- 1d0 (beta process))))))
+  (or (sigma process) (cev-default-sigma process market time)))
 
 (defmethod make-stepper ((p cev) market dt)
   (let* ((beta (beta p))

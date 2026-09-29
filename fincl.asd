@@ -11,11 +11,20 @@
                "random-state"
                "lparallel"
                "trivia"
-               "named-readtables")
+               "named-readtables"
+               "closer-mop")
   :pathname "src/"
   :serial t
   :components ((:file "package")
-               (:file "math")
+               (:file "conditions")
+               (:module "math"
+                :serial t
+                :components ((:file "special-functions")
+                             (:file "fourier")
+                             (:file "extrapolation")
+                             (:file "differentiation")
+                             (:file "solvers")
+                             (:file "linear-algebra")))
                (:module "time"
                 :serial t
                 :components ((:file "date")
@@ -32,7 +41,8 @@
                              (:file "options")))
                (:module "processes"
                 :serial t
-                :components ((:file "process")
+                :components ((:file "parameters")
+                             (:file "process")
                              (:file "gbm")
                              (:file "cev")
                              (:file "heston")
@@ -41,16 +51,31 @@
                 :serial t
                 :components ((:file "engine")
                              (:file "analytic")
-                             (:file "monte-carlo"))))
+                             (:file "monte-carlo")
+                             (:file "binomial")
+                             (:file "cos"))))
   :in-order-to ((test-op (test-op "fincl/tests"))))
 
 (defsystem "fincl/tests"
   :description "Tests for fincl"
-  :depends-on ("fincl" "lparallel")
+  :depends-on ("fincl" "lparallel" "closer-mop")
   :pathname "tests/"
   :serial t
-  :components ((:file "tests")
+  :components ((:file "package")
+               (:file "math")
                (:file "time")
-               (:file "syntax"))
+               (:file "syntax")
+               (:file "market")
+               (:file "instruments")
+               (:file "analytic")
+               (:file "cos")
+               (:file "binomial")
+               (:file "mc")
+               (:file "processes")
+               (:file "errors")
+               (:file "invariants")
+               (:file "golden")
+               ;; The runners call the checks above; keep them last.
+               (:file "tests"))
   :perform (test-op (o c)
              (symbol-call '#:fincl/tests '#:run-tests)))
