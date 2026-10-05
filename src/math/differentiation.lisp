@@ -31,10 +31,13 @@ rational weights.
          (c (make-array (list n (1+ order)) :initial-element 0))
          (c1 1)
          (c4 (svref nodes 0)))
-    (check-type order (integer 0))
-    (assert (< order n) () "A derivative of order ~D needs more than ~D offsets." order n)
-    (assert (= n (length (remove-duplicates nodes :test #'=))) ()
-            "Finite-difference offsets must be distinct, not ~S." offsets)
+    (check-input order (integer 0) "a non-negative derivative order")
+    (unless (< order n)
+      (signal-invalid-argument 'offsets offsets 'sequence
+                               (format nil "more than ~D offsets for a derivative of order ~D"
+                                       order order)))
+    (unless (= n (length (remove-duplicates nodes :test #'=)))
+      (signal-invalid-argument 'offsets offsets 'sequence "distinct offsets"))
     (setf (aref c 0 0) 1)
     (loop for i from 1 below n
           do (let ((mn (min i order)) (c2 1) (c5 c4))
@@ -146,3 +149,39 @@ removed.
                    (when (or (null best-error) (< error best-error))
                      (setf best estimate best-error error))))))
     (values best best-error)))
+
+(defun jacobian! (f x out &key (scheme :forward) steps f0)
+  "The Jacobian of the vector function F (a DOUBLE-VECTOR of m residuals of a
+DOUBLE-VECTOR) at X (length n), by finite differences, written column-major
+into OUT (length m n): OUT[i + m j] = d r_i / d x_j. SCHEME is :FORWARD
+(n extra evaluations) or :CENTRAL (2n); STEPS, a sequence of n steps,
+defaults to DEFAULT-STEP for each x_j; F0, F at X, saves one evaluation.
+The stencils come from FINITE-DIFFERENCE-WEIGHTS. X is perturbed and
+restored. Returns OUT.
+
+  (jacobian! residuals x (make-array (* m n) :element-type 'double-float))"
+  (declare (type double-vector x out))
+  (let* ((n (length x))
+         (offsets (scheme-offsets scheme 1))
+         (weights (finite-difference-weights offsets 1))
+         (r0 (and (member 0 offsets) (or f0 (funcall f x))))
+         (m (if r0 (length r0) nil)))
+    (dotimes (j n out)
+      (let* ((xj (aref x j))
+             ;; The step actually taken, exactly representable: (x + h) - x.
+             (h (let ((h (if steps (float (elt steps j) 1d0) (default-step xj scheme 1))))
+                  (- (+ xj h) xj)))
+             (values (mapcar (lambda (k)
+                               (if (zerop k)
+                                   r0
+                                   (progn (setf (aref x j) (+ xj (* k h)))
+                                          (prog1 (copy-seq (funcall f x))
+                                            (setf (aref x j) xj)))))
+                             offsets)))
+        (unless m (setf m (length (first values))))
+        (unless (= (length out) (* m n))
+          (signal-invalid-argument '(length out) (length out) `(integer ,(* m n))
+                                   (format nil "~D x ~D = ~D elements" m n (* m n))))
+        (dotimes (i m)
+          (setf (aref out (+ i (* m j)))
+                (float (apply-stencil weights (mapcar (lambda (r) (aref r i)) values) h 1) 1d0)))))))

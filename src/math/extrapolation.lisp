@@ -25,13 +25,15 @@
   (loop for p from 1 below n collect p))
 
 (defun check-richardson-arguments (n ratio exponents)
-  (check-type n (integer 1))
-  (check-type ratio (real (1)))
-  (assert (and (= (length exponents) (1- n))
+  (check-input n (integer 1) "a positive number of values")
+  (check-input ratio (real (1)) "a step ratio above 1")
+  (unless (and (listp exponents)
+               (= (length exponents) (1- n))
                (every (lambda (p) (and (realp p) (plusp p))) exponents)
                (every #'< exponents (rest exponents)))
-          () "Richardson extrapolation of ~D value~:P needs ~D increasing positive ~
-exponent~:P, not ~S." n (1- n) exponents))
+    (signal-invalid-argument 'exponents exponents 'list
+                             (format nil "~D increasing positive exponent~:P, one per value ~
+after the first" (1- n)))))
 
 (defun richardson-weights (n &key (ratio 2) (exponents (default-exponents n)))
   "Weights w_0 ... w_{N-1} such that sum w_i A(h / RATIO^i) cancels the
