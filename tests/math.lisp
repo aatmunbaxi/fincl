@@ -16,12 +16,96 @@
         (list "e^x - 10" (lambda (x) (- (exp x) 10)) 0d0 5d0 (log 10d0))
         (list "(x - 1)^3, a triple root" (lambda (x) (expt (- x 1) 3)) 0d0 3d0 1d0)))
 
+(defun reference-expm1 (x)
+  "e^X - 1 for rational X, as a rational accurate to 1e-50 relative."
+  (loop with sum = 0 and term = 1
+        for n from 1
+        do (setf term (/ (* term x) n))
+           (incf sum term)
+        until (and (> n (abs x)) (< (abs term) (* (expt 10 -55) (abs sum))))
+        finally (return sum)))
+
+(defun reference-log1p (x)
+  "log(1 + X) for rational X > -1, as 2 atanh(X / (2 + X)), a rational
+accurate to 1e-50 relative."
+  (let ((z (/ x (+ 2 x))))
+    (loop with sum = 0
+          for k from 0
+          for term = (/ (expt z (1+ (* 2 k))) (1+ (* 2 k)))
+          do (incf sum term)
+          until (< (abs term) (* (expt 10 -55) (abs sum)))
+          finally (return (* 2 sum)))))
+
+(defun relative-error (computed reference)
+  "|COMPUTED - REFERENCE| / |REFERENCE|, in exact arithmetic."
+  (float (abs (/ (- (rational computed) reference) reference)) 1d0))
+
+(defparameter *expm1-log1p-points*
+  (let ((magnitudes '(1d-300 1d-20 1d-10 1d-7 1d-5 1d-3 0.1d0 0.3d0 0.4999d0 0.5d0 0.7d0 0.9d0)))
+    `(,@magnitudes ,@(mapcar #'- magnitudes) 1d0 5d0 20d0 -5d0 -20d0)))
+
+(defun quantile-checks ()
+  "norm-quantile on 10 000 log-spaced u in [1e-300, 1/2] and their
+complements. Rounding x = q(u) to a double moves norm-cdf(x) by up to
+1/2 ulp(x) |x| phi(x) / Phi(x), about x^2 1e-16 in the tail, so the error is
+measured against max(1, x^2)."
+  (let ((us (loop for i below 10000
+                  collect (min 0.5d0 (expt 10d0 (- (* 300 (/ i 9999d0))))))))
+    (flet ((worst (pairs)
+             ;; PAIRS: (x . tail-probability) with x <= 0.
+             (loop for (x . p) in pairs
+                   maximize (/ (abs (- (/ (norm-cdf x) p) 1d0)) (max 1d0 (* x x))))))
+      (let ((lower (worst (loop for u in us collect (cons (norm-quantile u) u))))
+            (upper (worst (loop for u in us
+                                for v = (- 1d0 u)
+                                ;; The smaller tail of v is 1 - v, exact for v >= 1/2;
+                                ;; for u < 1.1e-16, v rounds to 1.
+                                when (< v 1d0)
+                                  collect (cons (- (norm-quantile v)) (- 1d0 v))))))
+        (check-that (format nil "|Phi(q(u))/u - 1| / max(1, q^2) < 1e-15 for u in [1e-300, 1/2] ~
+                                 (worst ~,2E)" lower)
+                    (< lower 1d-15))
+        (check-that (format nil "the same on the complements 1 - u (worst ~,2E)" upper)
+                    (< upper 1d-15))))
+    (check-that "q(v) = -q(1 - v) exactly for v in [1/2, 1)"
+                (loop for u in us
+                      for v = (- 1d0 u)
+                      always (or (= v 1d0)
+                                 (= (norm-quantile v) (- (norm-quantile (- 1d0 v)))))))
+    (check "q(0.975)" 1.959963984540054d0 (norm-quantile 0.975d0) 1d-15)
+    (check-that "q(least positive normalized double) is finite"
+                (< -38d0 (norm-quantile least-positive-normalized-double-float) -37d0))))
+
 (defun math-checks ()
   (format t "~&Math: special functions~%")
+  (let ((worst (loop for x in *expm1-log1p-points*
+                     maximize (relative-error (expm1 x) (reference-expm1 (rational x))))))
+    (check-that (format nil "expm1 within 2 ulps of 50-digit references (worst ~,2E)" worst)
+                (< worst 4.4d-16)))
+  (let ((worst (loop for x in *expm1-log1p-points*
+                     when (> x -1d0)
+                       maximize (relative-error (log1p x) (reference-log1p (rational x))))))
+    (check-that (format nil "log1p within 2 ulps of 50-digit references (worst ~,2E)" worst)
+                (< worst 4.4d-16)))
   (check "norm-cdf 0" 0.5d0 (norm-cdf 0d0) 1d-16)
   (check "norm-cdf 1.96" 0.9750021048517795d0 (norm-cdf 1.96d0) 1d-15)
   (check "norm-pdf 0 = 1/sqrt(2 pi)" (/ (sqrt (* 2 pi))) (norm-pdf 0d0) 1d-16)
-  (check "norm-quantile inverts norm-cdf" 0.3d0 (norm-cdf (norm-quantile 0.3d0)) 1d-14)
+  (quantile-checks)
+  ;; Known-answer vectors from Random123 (kat_vectors, philox4x32 10 rounds).
+  (check-equal "Philox4x32-10 known answers"
+               '((#x6627e8d5 #xe169c58d #xbc57ac4c #x9b00dbd8)
+                 (#x408f276d #x41c83b0e #xa20bc7c6 #x6d5451fd)
+                 (#xd16cfe09 #x94fdcceb #x5001e420 #x24126ea1))
+               (list (multiple-value-list (fincl::philox4x32-10 0 0 0 0 0 0))
+                     (multiple-value-list (fincl::philox4x32-10 #xffffffff #xffffffff #xffffffff
+                                                                #xffffffff #xffffffff #xffffffff))
+                     (multiple-value-list (fincl::philox4x32-10 #x243f6a88 #x85a308d3 #x13198a2e
+                                                                #x03707344 #xa4093822 #x299f31d0)))
+               :test #'equal)
+  (check-that "counter uniforms lie in the open interval (0, 1)"
+              (loop for path below 1000
+                    always (multiple-value-bind (u v) (fincl::counter-uniforms 42 path 0)
+                             (and (< 0d0 u 1d0) (< 0d0 v 1d0)))))
 
   (format t "~&Math: root finders~%")
   (loop for (name f lo hi root) in *root-problems*
@@ -266,8 +350,11 @@ independent uniforms plus a dominant diagonal band. Returns (values rows y)."
                fincl::rank-deficient))
 
 (defun run-math-tests ()
-  "Run only the math checks. Returns T when all pass."
+  "Run only the math checks, numerics.lisp's included. Returns T when all pass."
   (let ((*failures* 0))
     (math-checks)
+    (interpolation-checks)
+    (tridiagonal-checks)
+    (optimizer-checks)
     (format t "~&~[All math checks passed~:;~:*~D failure(s)~]~%" *failures*)
     (zerop *failures*)))

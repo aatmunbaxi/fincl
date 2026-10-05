@@ -50,10 +50,16 @@
   (check-equal "printed tenor reads back" #T"-1M"
                (read-with-syntax (prin1-to-string #T"-1M")) :test #'tenor-equal-p)
   (check-error "invalid #D literal at read time"
-               (read-with-syntax "#D\"2027-02-30\"") invalid-date)
+               (read-with-syntax "#D\"2027-02-30\"") invalid-literal)
   (check-error "invalid #T literal at read time"
-               (read-with-syntax "#T\"3X\"") invalid-tenor)
-  (check-error "#D without a string" (read-with-syntax "#D 20270615"))
+               (read-with-syntax "#T\"3X\"") invalid-literal)
+  (check-that "an invalid literal is a reader error that keeps the parser's report"
+              (let ((c (handler-case (read-with-syntax "#D\"2027-02-30\"") (error (c) c))))
+                (and (typep c 'reader-error) (typep c 'invalid-input)
+                     (search "2027-02-30 is not a valid date" (princ-to-string c)))))
+  (check-error "#D without a string" (read-with-syntax "#D 20270615") invalid-literal)
+  (check-error "#D with a numeric argument" (read-with-syntax "#3D\"2027-06-15\"")
+               invalid-literal)
   (check-that "#+nil skips an invalid literal"
               (equal '(:after) (read-with-syntax "(#+nil #D\"2027-02-30\" :after)")))
   (check-that "global readtable has no #D or #T"

@@ -25,10 +25,10 @@
          (ls (make-bs-market :valuation-date *today* :spot 36 :rate 0.06d0 :vol 0.2d0))
          (heston (make-instance 'heston :xi 0.5d0 :rho -0.7d0))
          (cev (make-instance 'cev :beta 0.7d0))
-         (call (make-option '(:call 100 #D"2027-09-24")))
-         (aput (make-option '(:american :put 40 #D"2027-09-24")))
-         (aput-110 (make-option '(:american :put 110 #D"2027-09-24")))
-         (acall-90 (make-option '(:american :call 90 #D"2027-09-24")))
+         (call (option (call 100) (expires #D"2027-09-24")))
+         (aput (option (put 40) (american) (expires #D"2027-09-24")))
+         (aput-110 (option (put 110) (american) (expires #D"2027-09-24")))
+         (acall-90 (option (call 90) (american) (expires #D"2027-09-24")))
          (quarterly (make-instance 'option
                                    :payoff (make-instance 'vanilla-payoff :kind :put
                                                                           :strike 100d0)

@@ -38,14 +38,14 @@
     (format t "~&Processes: qualitative behaviour~%")
     ;; beta < 1 raises local vol as spot falls: fatter left tail, so an
     ;; out-of-the-money put is worth more than under GBM.
-    (let ((otm-put (make-option '(:put 80 #D"2027-09-24"))))
+    (let ((otm-put (option (put 80) (expires #D"2027-09-24"))))
       (check-that "CEV beta=0.5 dearer OTM put than GBM"
                   (> (price otm-put (mc :n-paths 200000 :n-steps 50
                                         :process (make-instance 'cev :beta 0.5d0))
                             mkt)
                      (price otm-put (mc :n-paths 200000 :n-steps 50) mkt))))
     ;; Negative correlation in Heston does the same thing.
-    (let ((otm-put (make-option '(:put 80 #D"2027-09-24"))))
+    (let ((otm-put (option (put 80) (expires #D"2027-09-24"))))
       (check-that "Heston rho<0 dearer OTM put than xi=0"
                   (> (price otm-put (mc :n-paths 200000 :n-steps 50
                                         :process (make-instance 'heston
@@ -89,14 +89,14 @@
   ((pull 1d0 :bounds (0 nil) :doc "Rate at which log-spot reverts to its start.")
    (vol 0.2d0 :bounds ((0) nil))))
 
-(defmethod make-stepper ((p log-ou) market dt)
-  (let* ((pull (pull p)) (vol (vol p)) (x0 (log (spot market)))
-         (drift (* (- (zero-rate market dt) (dividend-yield market dt) (* 0.5d0 vol vol)) dt))
-         (diffusion (* vol (sqrt dt))))
-    (lambda (state normals)
-      (let ((x (log (aref state 0))))
-        (setf (aref state 0) (exp (+ x drift (- (* pull (- x x0) dt))
-                                     (* diffusion (aref normals 0)))))))))
+(defmethod make-stepper ((p log-ou) market times)
+  (let ((pull (pull p)) (vol (vol p)) (x0 (log (spot market))))
+    (lambda (state normals j)
+      (let* ((t0 (aref times j)) (dt (- (aref times (1+ j)) t0))
+             (x (log (aref state 0))))
+        (setf (aref state 0)
+              (exp (+ x (fincl::log-growth market t0 (+ t0 dt)) (* -0.5d0 vol vol dt)
+                      (- (* pull (- x x0) dt)) (* vol (sqrt dt) (aref normals 0)))))))))
 
 (defun parameter-checks ()
   (format t "~&Process parameters~%")
@@ -161,12 +161,110 @@
                  (aref (parameter-vector (make-instance 'toy-base) m 1.5d0) 2))
     (format t "~&A process defined in a test file~%")
     (multiple-value-bind (v se)
-        (price (make-option '(:call 100 #D"2027-09-24"))
+        (price (option (call 100) (expires #D"2027-09-24"))
                (mc :n-paths 50000 :n-steps 20 :process (make-instance 'log-ou :pull 0))
                m)
       (check "log-ou with pull = 0 is GBM" 10.4506 v (* 4 se)))
     (check-that "log-ou with pull > 0 prices lower: mean reversion cuts variance"
-                (< (price (make-option '(:call 100 #D"2027-09-24"))
+                (< (price (option (call 100) (expires #D"2027-09-24"))
                           (mc :n-paths 50000 :n-steps 20 :process (make-instance 'log-ou :pull 2))
                           m)
                    10))))
+
+;;; --------------------------------------------------------------------
+;;; Term structure (task 08)
+;;; --------------------------------------------------------------------
+
+;;; GBM without its exact terminal sampler, so European prices go through
+;;; the stepper.
+(define-process stepped-gbm (gbm) () ())
+(defmethod terminal-sampler ((p stepped-gbm) market time)
+  (declare (ignore market time))
+  nil)
+
+(defun martingale-violations (process market &key (n-paths 200000) (n-steps 8) (horizon 1d0))
+  "Grid times where the simulated mean of S differs from the forward by more
+than 4 standard errors. Antithetic pairs are averaged first, so the standard
+error is that of the pair means."
+  (let* ((paths (fincl::simulate-paths (mc :n-paths n-paths :n-steps n-steps :process process)
+                                       market horizon))
+         (n (fincl::path-matrix-n-paths paths))
+         (half (/ n 2))
+         (data (fincl::path-matrix-data paths)))
+    (loop for j from 0 to n-steps
+          for time = (* j (/ horizon n-steps))
+          for pairs = (loop for i below half
+                            collect (* 0.5d0 (+ (aref data (+ i (* j n)))
+                                                (aref data (+ i half (* j n))))))
+          for mean = (/ (reduce #'+ pairs) half)
+          for se = (sqrt (/ (/ (reduce #'+ pairs :key (lambda (x) (expt (- x mean) 2)))
+                               (1- half))
+                            half))
+          unless (<= (abs (- mean (forward market time))) (+ (* 4 se) 1d-12))
+            collect (list time mean (forward market time) se))))
+
+(defun term-structure-checks ()
+  (format t "~&Term structure: processes on a piecewise market~%")
+  (let ((pm (make-piecewise-market))
+        (flat (make-bs-market :valuation-date *today* :spot 100 :rate 0.05d0 :vol 0.2d0)))
+    (dolist (case (list (list "GBM" (make-instance 'gbm))
+                        (list "Heston, xi = 0" (make-instance 'heston :xi 0d0))
+                        (list "CEV, beta = 1" (make-instance 'cev :beta 1d0))))
+      (destructuring-bind (name process) case
+        (let ((violations (martingale-violations process pm)))
+          (check-that (format nil "~A: mean S(t) = F(t) at every grid time, 200k paths" name)
+                      (null violations))
+          (when violations (format t "~&       ~S~%" violations)))))
+    ;; Black's formula with the market's integrated D, F and w to expiry.
+    (let* ((call (option (call 100) (expires #D"2027-09-24")))
+           (exact (fincl::black-formula 1d0 (forward pm 1d0) 100d0 (discount-factor pm 1d0)
+                                        (black-variance pm 100d0 1d0))))
+      (multiple-value-bind (v se)
+          (price call (mc :n-paths 200000 :n-steps 8 :process (make-instance 'stepped-gbm)) pm)
+        (check "stepped GBM European = Black with integrated rates and variance"
+               exact v (* 3 se)))
+      (multiple-value-bind (v se) (price call (mc :n-paths 200000) pm)
+        (check "terminal-sampled GBM European = Black on the same market" exact v (* 3 se))))
+    (format t "~&Term structure: resolved processes~%")
+    (let ((gbm (make-instance 'gbm)) (heston (make-instance 'heston)))
+      (check-that "GBM with NIL vol resolves to itself: NIL is the term-structure model"
+                  (eq gbm (resolve-process gbm pm 1d0)))
+      (let ((resolved (resolve-process heston pm 2d0)))
+        (check "Heston v0 resolves to w(2)/2 at the ATM forward"
+               (/ (black-variance pm (forward pm 2d0) 2d0) 2d0)
+               (process-parameter resolved :v0) 1d-15)
+        (check "Heston theta resolves to v0" (process-parameter resolved :v0)
+               (process-parameter resolved :theta) 0)
+        (check-that "a two-year Heston has a different v0 from a one-year one"
+                    (/= (process-parameter resolved :v0)
+                        (process-parameter (resolve-process heston pm 1d0) :v0)))
+        (check-that "resolving is idempotent" (eq resolved (resolve-process resolved pm 2d0)))
+        (check-that "the original process is unchanged" (null (process-parameter heston :v0))))
+      (check-that "on a flat market the Heston default does not depend on the expiry"
+                  (= (process-parameter (resolve-process heston flat 1d0) :v0)
+                     (process-parameter (resolve-process heston flat 2d0) :v0))))
+    (check-error "falling total variance is calendar arbitrage"
+                 (make-stepper (make-instance 'gbm)
+                               (make-instance 'inverted-variance-market
+                                              :valuation-date *today* :spot 100d0
+                                              :knots '(0.25d0 0.5d0 1d0)
+                                              :rates '(0.02d0 0.02d0 0.02d0 0.02d0)
+                                              :dividends '(0d0 0d0 0d0 0d0)
+                                              :vols '(0.2d0 0.2d0 0.2d0 0.2d0))
+                               (fincl::uniform-time-grid 1d0 4))
+                 calendar-arbitrage)))
+
+(defun antithetic-se-checks ()
+  (format t "~&Antithetic standard errors~%")
+  ;; The stepped path and the terminal sampler both average antithetic
+  ;; pairs before the statistics, so they report the same estimator's SE.
+  (let ((m (make-bs-market :valuation-date *today* :spot 100 :rate 0.05d0 :vol 0.2d0))
+        (call (option (call 100) (expires #D"2027-09-24"))))
+    (multiple-value-bind (v-terminal se-terminal) (price call (mc :n-paths 200000) m)
+      (declare (ignore v-terminal))
+      (multiple-value-bind (v-stepped se-stepped)
+          (price call (mc :n-paths 200000 :process (make-instance 'stepped-gbm)) m)
+        (declare (ignore v-stepped))
+        (check-that (format nil "stepped SE ~,5F within 5% of terminal-sampler SE ~,5F"
+                            se-stepped se-terminal)
+                    (< (abs (- (/ se-stepped se-terminal) 1d0)) 0.05d0))))))
