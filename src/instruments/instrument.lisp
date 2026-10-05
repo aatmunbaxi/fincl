@@ -6,9 +6,21 @@
 (in-package #:fincl)
 
 (defclass instrument ()
-  ()
+  ((underlying :initarg :underlying :initform nil :reader instrument-underlying
+               :type (or null keyword) :fact :underlying
+               :documentation "The market underlying the instrument refers to. NIL
+means the market's only underlying.")
+   (currency :initarg :currency :initform nil :reader instrument-currency
+             :type (or null keyword) :fact :currency
+             :documentation "The currency the instrument pays in, which selects
+the discount curve. NIL means the underlying's currency."))
+  (:metaclass component-class)
   (:documentation "A contract. Carries terms only: no market data, no model.
 Instruments are immutable and reusable across scenarios."))
+
+(defmethod initialize-instance :after ((i instrument) &key)
+  (check-input (slot-value i 'underlying) (or null keyword) "a keyword naming an underlying")
+  (check-input (slot-value i 'currency) (or null keyword) "a currency keyword"))
 
 ;;; --------------------------------------------------------------------
 ;;; Exercise (shared: callable bonds and Bermudan swaptions need this too)
@@ -16,21 +28,35 @@ Instruments are immutable and reusable across scenarios."))
 
 (defclass exercise ()
   ((expiry :initarg :expiry :reader expiry :type date
-           :initform (a:required-argument :expiry)
-           :documentation "Last date on which the option can be exercised.")))
+           :initform (a:required-argument :expiry) :fact :expiry
+           :documentation "Last date on which the option can be exercised."))
+  (:metaclass component-class))
+
+(define-condition invalid-exercise (invalid-input)
+  ((datum :initarg :datum :reader invalid-exercise-datum)
+   (reason :initarg :reason :reader invalid-exercise-reason
+           :type (member :tenor-without-start :not-a-date :no-dates)))
+  (:report
+   (lambda (c s)
+     (let ((datum (invalid-exercise-datum c)))
+       (ecase (invalid-exercise-reason c)
+         (:tenor-without-start
+          (format s "Expiry ~S is a tenor and needs a start date to resolve it: pass ~
+:FROM, e.g. :from #D\"2026-09-24\" or :from (valuation-date market)." datum))
+         (:not-a-date
+          (format s "Expiry ~S is not a date. Expiries are dates, e.g. #D\"2027-09-24\" ~
+or (make-date 2027 9 24), or tenors such as #T\"1Y\" with :FROM; the market ~
+converts dates to year fractions with its day counter." datum))
+         (:no-dates
+          (format s "A Bermudan exercise needs a non-empty list of dates, not ~S." datum))))))
+  (:documentation "An expiry or exercise schedule that is not a date or a
+list of dates."))
 
 (defun check-expiry (expiry)
   (typecase expiry
     (date expiry)
-    (tenor
-     (error "Expiry ~S is a tenor and needs a start date to resolve it: pass ~
-:FROM, e.g. :from #D\"2026-09-24\" or :from (valuation-date market)."
-            expiry))
-    (t
-     (error "Expiry ~S is not a date. Expiries are dates, e.g. #D\"2027-09-24\" ~
-or (make-date 2027 9 24), or tenors such as #T\"1Y\" with :FROM; the market ~
-converts dates to year fractions with its day counter."
-            expiry))))
+    (tenor (error 'invalid-exercise :datum expiry :reason :tenor-without-start))
+    (t (error 'invalid-exercise :datum expiry :reason :not-a-date))))
 
 (defun resolve-expiry (expiry &key from calendar (convention :following)
                                    end-of-month)
@@ -50,15 +76,18 @@ moved onto a business day with CONVENTION (see ADJUST).
   (check-expiry (expiry x)))
 
 (defclass european-exercise (exercise) ()
+  (:metaclass component-class)
   (:documentation "Exercise on the expiry date only."))
 
 (defclass american-exercise (exercise) ()
+  (:metaclass component-class)
   (:documentation "Exercise on any date up to and including the expiry."))
 
 (defclass bermudan-exercise (exercise)
   ((expiry :initform nil)
    (dates :initarg :dates :reader exercise-dates
-          :initform (a:required-argument :dates)))
+          :initform (a:required-argument :dates) :fact :exercise-dates))
+  (:metaclass component-class)
   (:documentation "Exercise on any of DATES. EXPIRY is the last of them.
 
   (make-instance 'bermudan-exercise
@@ -67,7 +96,7 @@ moved onto a business day with CONVENTION (see ADJUST).
 (defmethod initialize-instance :around ((x bermudan-exercise) &rest initargs
                                         &key dates &allow-other-keys)
   (unless (and dates (listp dates))
-    (error "A Bermudan exercise needs a non-empty list of dates, not ~S." dates))
+    (error 'invalid-exercise :datum dates :reason :no-dates))
   (mapc #'check-expiry dates)
   (let ((sorted (sort (copy-list dates) #'date<)))
     (apply #'call-next-method x :dates sorted :expiry (a:lastcar sorted) initargs)))
@@ -142,9 +171,12 @@ market's day counter."
 ;;; --------------------------------------------------------------------
 
 (defclass payoff () ()
+  (:metaclass component-class)
   (:documentation "What a contract pays as a function of the observable.
 Carries no slots: call/put and the option's K belong to the option payoffs
-in options.lisp, since a coupon or a swap leg has neither."))
+in options.lisp, since a coupon or a swap leg has neither. Subclasses use
+COMPONENT-CLASS too, so construction languages can fill their slots from
+facts (:FACT slot option)."))
 
 (defgeneric payoff-value (payoff x)
   (:documentation "Dispatching payoff. Convenient; too slow to call per path."))
@@ -197,8 +229,9 @@ formulas for subclasses of CLASS, for a payoff class written by hand.
 
 (defmacro define-payoff (name superclasses slots (observable) &body body)
   "Define the payoff class NAME and derive PAYOFF-VALUE and PAYOFF-KERNEL
-from one formula. Each of SLOTS is (slot-name type &key initform reader doc);
-without INITFORM the initarg is required. BODY, optionally preceded by a
+from one formula. Each of SLOTS is (slot-name type &key initform reader doc
+fact); without INITFORM the initarg is required, and FACT names the
+construction fact that fills the slot (see MAKE-FROM-FACTS). BODY, optionally preceded by a
 docstring, computes the payoff from OBSERVABLE (a double-float) and may use
 every slot of NAME, and the variables its superclasses declare, as typed
 local variables. PAYOFF-KERNEL reads them once and closes over them, so the
@@ -245,8 +278,11 @@ such as STRIKE-PAYOFF instead."
                                   :initform ,(if (member :initform options)
                                                  (getf options :initform)
                                                  `(a:required-argument ,(a:make-keyword slot)))
+                                  ,@(when (getf options :fact)
+                                      `(:fact ,(getf options :fact)))
                                   ,@(when (getf options :doc)
                                       `(:documentation ,(getf options :doc)))))
+           (:metaclass component-class)
            ,@(when documentation `((:documentation ,documentation))))
          ,@(let ((floats (loop for (slot type) in slots
                                when (eq type 'double-float) collect slot)))
@@ -255,7 +291,7 @@ such as STRIKE-PAYOFF instead."
                `((defmethod initialize-instance :after ((,payoff ,name) &key)
                    ,@(loop for slot in floats
                            collect `(let ((value (slot-value ,payoff ',slot)))
-                                      (check-type value real)
+                                      (check-input value real ,(format nil "a real ~(~A~)" slot))
                                       (setf (slot-value ,payoff ',slot)
                                             (float value 1d0))))))))
          (defmethod payoff-value ((,payoff ,name) ,observable)
@@ -277,12 +313,3 @@ accepts everything.")
   (:method ((p payoff) market expiry)
     (declare (ignore market expiry))
     nil))
-
-(defgeneric describe-payoff (payoff stream)
-  (:documentation "Write a short description of PAYOFF to STREAM, for the
-printed form of the instrument that holds it; the default writes the class
-name.
-
-  (describe-payoff put-payoff *standard-output*)  ; writes \"put K=40.00\"")
-  (:method ((p payoff) stream)
-    (format stream "~(~A~)" (class-name (class-of p)))))
