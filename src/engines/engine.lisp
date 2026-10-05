@@ -12,11 +12,22 @@
   (:report
    (lambda (c s)
      (flet ((name (x) (class-name (class-of x))))
-       (format s "~A has no method for ~A / ~A / ~A~@[ under ~A~] in a ~A."
+       (format s "~A has no method for ~A / ~A / ~A~@[ under ~A~] in a ~A. ~
+Use an engine that has one, e.g. through USE-ENGINE."
                (name (error-engine c)) (name (error-exercise c))
                (name (error-payoff c)) (name (error-path c))
                (and (error-process c) (name (error-process c)))
                (name (error-market c)))))))
+
+(define-condition model-domain-error (pricing-error)
+  ((engine :initarg :engine :reader error-engine)
+   (reason :initarg :reason :reader error-reason))
+  (:report
+   (lambda (c s)
+     (format s "~A does not apply here: ~A"
+             (class-name (class-of (error-engine c))) (error-reason c))))
+  (:documentation "The engine has a method for the instrument, but its
+approximation does not hold in this market regime."))
 
 (define-condition option-expired (pricing-error)
   ((option :initarg :option :reader error-option)
@@ -52,17 +63,33 @@ agnostic: everything model-specific comes from the process.")
    (n-steps :initarg :n-steps :initform 50 :reader n-steps
             :documentation "Time steps; also the exercise dates for LSM.")
    (seed :initarg :seed :initform 42 :reader seed)
-   (rng :initarg :rng :initform :mersenne-twister-64 :reader rng
-        :documentation "A random-state generator designator: a keyword,
-(keyword seed-offset), or :native for the host RNG.")
+   (rng :initarg :rng :initform :counter :reader rng
+        :documentation ":COUNTER (the default): normal k of path i is a pure
+function of (seed, i, k), from the Philox4x32-10 counter-based generator, so
+prices do not depend on N-CHUNKS or the worker count, and path i is the same
+whatever N-PATHS is. Otherwise one stream per chunk: a random-state generator
+designator (a keyword such as :MERSENNE-TWISTER-64, or (keyword
+seed-offset)), or :NATIVE for the host RNG; prices then depend on N-CHUNKS.")
    (sampler :initarg :sampler :initform :box-muller :reader sampler
             :documentation ":box-muller or :inverse-transform.")
    (antithetic :initarg :antithetic :initform t :reader antithetic)
    (n-chunks :initarg :n-chunks :initform 64 :reader n-chunks
              :documentation "Work units, fixed independently of the thread
-count so results do not depend on how many workers are running.")
+count so results do not depend on how many workers are running. Under the
+:COUNTER rng they do not depend on N-CHUNKS either.")
    (basis-degree :initarg :basis-degree :initform 3 :reader basis-degree
-                 :documentation "Polynomial degree of the LSM regression.")))
+                 :documentation "Total degree of the LSM regression basis.")
+   (basis :initarg :basis :initform :monomial :reader basis
+          :type (member :monomial :laguerre)
+          :documentation "LSM basis functions of the regressors x_i: :MONOMIAL,
+all monomials of total degree <= BASIS-DEGREE; or :LAGUERRE, the weighted
+Laguerre functions exp(-x/2) L_a(x) of the scaled spot times monomials in the
+other regressors, a + b <= BASIS-DEGREE. The spot is scaled by the payoff's
+REGRESSION-SCALE (the strike), other components by their value at t = 0.")
+   (regressors :initarg :regressors :initform nil :reader regressors
+               :documentation "State components the LSM regression uses, as
+indices into the state vector, starting with 0. NIL uses the process's
+PROCESS-REGRESSORS: spot and variance for Heston and GARCH, spot otherwise.")))
 
 (defclass binomial-engine (engine)
   ((process :initarg :process :initform (make-instance 'gbm) :reader process
@@ -97,7 +124,8 @@ Bermudan in the American extrapolation, which uses M, 2M, 4M and 8M."))
   (:documentation "Fang and Oosterlee's Fourier-cosine (COS) method.
 Europeans need only a characteristic function; Bermudans and Americans use
 the backward recursion of their 2009 paper, which needs a process whose
-log-increments are independent of the state (a Levy process).
+log-increments are independent of the state (the INDEPENDENT-INCREMENTS
+mixin; GBM).
 
   (make-instance 'cos-engine :process (make-instance 'heston) :n-terms 160)"))
 
@@ -106,6 +134,8 @@ log-increments are independent of the state (a Levy process).
 ;;; --------------------------------------------------------------------
 
 (defgeneric price (instrument engine market)
+  ;; The market first: see src/pricing.lisp.
+  (:argument-precedence-order market instrument engine)
   (:documentation "Returns (values npv standard-error). The second value is
 NIL for deterministic engines."))
 
@@ -120,20 +150,40 @@ default accepts everything.")
 (defmethod validate-pricing-inputs ((o option) engine market)
   (validate-payoff (option-payoff o) market (expiry (option-exercise o))))
 
+(defun restart-applies-p (condition type)
+  "For a restart :TEST: offer the restart for conditions of TYPE, and when no
+condition is given."
+  (or (null condition) (typep condition type)))
+
 (defmethod price :around ((o option) engine market)
   ;; Cross-cutting checks, once, instead of in every engine method. The
   ;; expiry cases stay here rather than in VALIDATE-PRICING-INPUTS because
   ;; the at-expiry case returns a price.
-  (let ((today (valuation-date market))
-        (expiry (expiry (option-exercise o))))
-    (cond ((date< expiry today)
-           (error 'option-expired :option o :valuation-date today))
-          ((date= expiry today)
-           ;; Nothing left to model: the option is worth its payoff.
-           (values (payoff-value (option-payoff o) (spot market)) nil))
-          (t
-           (validate-pricing-inputs o engine market)
-           (call-next-method)))))
+  (restart-case
+      (let ((today (valuation-date market))
+            (expiry (expiry (option-exercise o))))
+        (cond ((date< expiry today)
+               (error 'option-expired :option o :valuation-date today))
+              ((date= expiry today)
+               ;; Nothing left to model: the option is worth its payoff.
+               (values (payoff-value (option-payoff o) (spot market)) nil))
+              (t
+               (validate-pricing-inputs o engine market)
+               (call-next-method))))
+    (use-value (value)
+      :test (lambda (c) (restart-applies-p c '(or option-expired non-positive-volatility)))
+      :report "Return a value as the price."
+      :interactive (lambda ()
+                     (format *query-io* "~&Price: ")
+                     (list (eval (read *query-io*))))
+      (values value nil))
+    (use-engine (new-engine)
+      :test (lambda (c) (restart-applies-p c 'unsupported-combination))
+      :report "Price with another engine."
+      :interactive (lambda ()
+                     (format *query-io* "~&Engine (evaluated): ")
+                     (list (eval (read *query-io*))))
+      (price o new-engine market))))
 
 ;; Each engine family re-dispatches on the components it actually cares
 ;; about. The market is a specializer too, so a term-structure or stochastic
@@ -141,8 +191,27 @@ default accepts everything.")
 (defmethod price ((o option) (e analytic-engine) market)
   (price-analytic (option-exercise o) (option-payoff o) (option-path o) e market))
 
+(defun whole-periods (tau period)
+  "TAU / PERIOD rounded, if it is within 1e-6 of an integer; else NIL."
+  (let* ((ratio (/ tau period))
+         (n (round ratio)))
+    (and (plusp n) (< (abs (- ratio n)) 1d-6) n)))
+
 (defmethod price ((o option) (e monte-carlo-engine) market)
-  (price-mc (option-exercise o) (option-payoff o) (option-path o) e market))
+  ;; USE-PROCESS-PERIOD is offered only when the expiry is a whole number
+  ;; of model periods; the handler records the condition for the restart.
+  (let ((tau (time-to-expiry (option-exercise o) market))
+        (step-condition nil))
+    (handler-bind ((incompatible-time-step (lambda (c) (setf step-condition c))))
+      (restart-case
+          (price-mc (option-exercise o) (option-payoff o) (option-path o) e market)
+        (use-process-period ()
+          :test (lambda (c)
+                  (and (typep c 'incompatible-time-step)
+                       (whole-periods tau (required-dt c))))
+          :report "Re-price with one time step per model period."
+          (price o (derive-engine e :n-steps (whole-periods tau (required-dt step-condition)))
+                 market))))))
 
 ;; The COS engine also dispatches on the process: which contracts it can
 ;; price depends on what the process can tell it.
@@ -151,8 +220,16 @@ default accepts everything.")
              (process e) e market))
 
 (defmethod price ((o option) (e binomial-engine) market)
-  (price-binomial (option-exercise o) (option-payoff o) (option-path o)
-                  (process e) e market))
+  (restart-case
+      (price-binomial (option-exercise o) (option-payoff o) (option-path o)
+                      (process e) e market)
+    (increase-steps (n-steps)
+      :test (lambda (c) (restart-applies-p c 'invalid-tree))
+      :report "Re-price with more tree steps."
+      :interactive (lambda ()
+                     (format *query-io* "~&Steps: ")
+                     (list (parse-integer (read-line *query-io*))))
+      (price o (derive-engine e :n-steps n-steps) market))))
 
 (defgeneric price-analytic (exercise payoff path engine market))
 (defgeneric price-mc (exercise payoff path engine market))
@@ -176,3 +253,61 @@ default accepts everything.")
                        :engine engine :market market))))
   (fallback price-analytic)
   (fallback price-mc))
+
+;;; --------------------------------------------------------------------
+;;; Engine variants and recovery
+;;; --------------------------------------------------------------------
+
+(defun derive-engine (engine &rest initargs)
+  "A new engine of ENGINE's class with INITARGS replacing the matching
+settings and every other setting copied. ENGINE is unchanged: engines are
+immutable, like markets.
+
+  (derive-engine (make-instance 'binomial-engine :n-steps 500) :n-steps 4000)"
+  (apply #'make-instance (class-of engine)
+         `(,@initargs
+           ,@(loop for slot in (c2mop:class-slots (class-of engine))
+                   for name = (c2mop:slot-definition-name slot)
+                   for initarg = (first (c2mop:slot-definition-initargs slot))
+                   when (and initarg (slot-boundp engine name))
+                     append `(,initarg ,(slot-value engine name))))))
+
+(defun use-engine (engine &optional condition)
+  "Invoke the USE-ENGINE restart for CONDITION, if there is one, so the
+instrument is priced with ENGINE; otherwise return NIL. PRICE offers it for
+UNSUPPORTED-COMBINATION."
+  (let ((restart (find-restart 'use-engine condition)))
+    (when restart (invoke-restart restart engine))))
+
+(defun increase-steps (n-steps &optional condition)
+  "Invoke the INCREASE-STEPS restart for CONDITION, if there is one, so the
+instrument is re-priced with N-STEPS steps; otherwise return NIL. The
+binomial engine offers it for INVALID-TREE."
+  (let ((restart (find-restart 'increase-steps condition)))
+    (when restart (invoke-restart restart n-steps))))
+
+(defun use-process-period (&optional condition)
+  "Invoke the USE-PROCESS-PERIOD restart for CONDITION, if there is one, so
+the instrument is re-priced with one step per model period; otherwise return
+NIL. The Monte Carlo engine offers it for INCOMPATIBLE-TIME-STEP when the
+expiry is a whole number of periods."
+  (let ((restart (find-restart 'use-process-period condition)))
+    (when restart (invoke-restart restart))))
+
+(defmacro with-pricing-policy (clauses &body body)
+  "Run BODY with a recovery policy. Each clause is (condition-type
+(restart-function argument...)): when a condition of that type is signalled,
+(restart-function argument... condition) is called, with the arguments
+evaluated then. Restart functions follow CL:USE-VALUE's protocol: they invoke
+their restart if it is available for the condition and otherwise return NIL,
+so the condition propagates.
+
+  (with-pricing-policy ((unsupported-combination (use-engine *mc*))
+                        (invalid-tree (increase-steps 4000))
+                        (option-expired (use-value 0d0)))
+    (mapcar (lambda (o) (price o *cos* market)) options))"
+  `(handler-bind
+       ,(loop for (type (function . arguments)) in clauses
+              collect (let ((c (gensym "CONDITION")))
+                        `(,type (lambda (,c) (,function ,@arguments ,c)))))
+     ,@body))

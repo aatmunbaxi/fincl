@@ -24,7 +24,8 @@
    (n-steps :initarg :n-steps :reader tree-n-steps))
   (:report (lambda (c s)
              (format s "Binomial up probability ~,6F is outside (0, 1) with ~D ~
-steps: the drift per step exceeds the volatility move. Increase :n-steps."
+steps: the drift per step exceeds the volatility move. Increase :n-steps, or ~
+invoke INCREASE-STEPS."
                      (tree-probability c) (tree-n-steps c)))))
 
 (defun crr-value (phi strike market vol tau n-steps mask smooth)
@@ -32,7 +33,12 @@ steps: the drift per step exceeds the volatility move. Increase :n-steps."
 for payoff max(PHI (S - STRIKE), 0). MASK is a bit vector of length
 N-STEPS + 1 flagging the exercise steps (see EXERCISE-MASK); the last step
 always pays the payoff. With SMOOTH, the nodes one step before expiry hold
-the Black-Scholes value over that step instead of the binomial one."
+the Black-Scholes value over that step instead of the binomial one.
+
+Further values, for node Greeks: the values at step 1 (spots S u, S d) and
+at step 2 (S u^2, S, S d^2), as (values root v-u v-d v-uu v-ud v-dd), with
+NIL for steps the backward sweep does not compute (N-STEPS < 4 with SMOOTH,
+< 3 without)."
   (declare (double-float phi strike vol tau) (fixnum n-steps)
            (type simple-bit-vector mask))
   (let* ((spot (spot market))
@@ -80,17 +86,21 @@ the Black-Scholes value over that step instead of the binomial one."
                       (if early (max hold (intrinsic penultimate i)) hold)))))
           (dotimes (i (1+ n-steps))
             (setf (aref values i) (intrinsic n-steps i))))
-      (loop for step fixnum from (if smooth (- n-steps 2) (1- n-steps)) downto 0
-            for p double-float = (aref probabilities step)
-            for disc double-float = (aref discounts step)
-            for early = (exercise-p step)
-            do (locally (declare (optimize (speed 3) (safety 0)))
-                 (dotimes (i (1+ step))
-                   (let ((hold (* disc (+ (* p (aref values i))
-                                          (* (- 1d0 p) (aref values (1+ i)))))))
-                     (setf (aref values i)
-                           (if early (max hold (intrinsic step i)) hold))))))
-      (aref values 0))))
+      (let ((v-u nil) (v-d nil) (v-uu nil) (v-ud nil) (v-dd nil))
+        (loop for step fixnum from (if smooth (- n-steps 2) (1- n-steps)) downto 0
+              for p double-float = (aref probabilities step)
+              for disc double-float = (aref discounts step)
+              for early = (exercise-p step)
+              do (locally (declare (optimize (speed 3) (safety 0)))
+                   (dotimes (i (1+ step))
+                     (let ((hold (* disc (+ (* p (aref values i))
+                                            (* (- 1d0 p) (aref values (1+ i)))))))
+                       (setf (aref values i)
+                             (if early (max hold (intrinsic step i)) hold)))))
+                 (case step
+                   (2 (setf v-uu (aref values 0) v-ud (aref values 1) v-dd (aref values 2)))
+                   (1 (setf v-u (aref values 0) v-d (aref values 1)))))
+        (values (aref values 0) v-u v-d v-uu v-ud v-dd)))))
 
 ;;; A lattice needs only a mask per tree: EXERCISE-MASK is the entire
 ;;; difference between American and Bermudan here.
