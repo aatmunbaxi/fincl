@@ -1,7 +1,83 @@
 * fincl: Quantitative Finance in Common Lisp
+Currently, this library implements pricing of a handful of path-independent options, but is written in such a way that addition of arbitrary stochastic processes and new option payoff/exercise types is scalable.
 
-* Option Pricing
+Addition of other instruments such as bonds, swaps, CDs, etc. is planned.
+* Examples
+** Pricing Options
+Like QuantLib, pricing options in =fincl= requires 3 components: an option, a market (an observation of spot price and date), and a choice of pricing engine.
+Depending on the type of option, the pricing engines can be analytic or approximations thereof. Any and all analytic pricing engines assume the stochastic dynamics of the underlying asset under which they were derived (e.g. geometric Brownian motion for Black-Scholes, ayn process with characteristic function for Fourier cosine).
 
-As of now, a few option pricers are available, classed broadly under numerical and analytic/analytic approximation.
+#+begin_src lisp
+(defparameter *today* #D"2026-10-01")
 
-Vanilla European options have analytic prices under the assumption that the spot price follows a geometric Brownian motion. A Monte Carlo pricer is also available. Vanilla American option values are approximated analytically using the method of Barone-Adesi and Whaley under the same assumptions.
+(defparameter *euro-call* (option (call 110) (expires #T"1Y" :from *today)))
+(defparameter *amer-put* (option (put 80) (expires #T"1Y" :from *today)))
+
+(defparameter *spot* (make-bs-market :spot 100
+                                     :valuation-date *today*
+                                     :dividend 0.012d0
+                                     :rate 0.0425d0
+                                     :day-counter +actual-actual-isda+))
+
+(defparameter *black-scholes-formula* (make-instance 'black-scholes-engine)))
+(defparameter *BAW-engine* (make-instance 'barone-adesi-whaley-engine)))
+
+;;; Generic pricer with assumed Heston dynamics
+(defparameter *monte-carlo*
+  (make-instance 'monte-carlo-engine :engine (make-instance 'heston)))
+
+;;; Classical Black-Scholes formula
+(price *euro-call* *black-scholes-formula* *spot*)
+
+;;; Barone-Adesi & Whaley approximation of Americans
+(price *amer-put* *BAW-engine* *spot*)
+
+;;; Generic Monte Carlo pricing with Heston dynamics
+(price *euro-call* *monte-carlo* *spot*)
+(price *euro-call* *amer-put* *spot*)
+#+end_src
+** Lispy-ness and Extensibility
+=fincl= offers high level DSLs for creation of certain objects. One such example is options.
+To create an option, you can call =option= and pass various clauses specifying different properties of the option.
+#+begin_src lisp
+(defparameter *today* (make-date 2026 10 01))
+
+;;; Vanilla European call K = 110. Explicit expiry
+(option (call 110) (expires #D"2027-10-01"))
+
+;;; Vanilla American put K = 110. Tenor expiry
+(option (american) (put 95) (expires #T"1Y" :from *today*))
+
+;;; Bermudan (planned implementation). Expiry automatically added as exercise date
+(option (bermudan :dates (*today* #D"2027-01-01") (expires #T"6M" :from *today*)))
+#+end_src
+
+=fincl= attempts to offer the extensibility of common lisp to the user with macros.
+Currently, a user can define arbitrary path-independent payoff schemes for an instrument, which will automatically register a method for pricing with the Monte Carlo engine. 
+
+For example, suppose we wanted to make a toy option payoff scheme that pays 1 unit of currency if the price of the underlying is above the price 80 at time of exercise (conversely for a put).
+The function =define-payoff= can be used to define such a payoff scheme:
+#+begin_src lisp
+(define-payoff plus80-payoff (strike-payoff)
+    nil
+    ;;; data needed for payoff kernel
+    (spot)
+  ;;; logic in payoff: pays max(spot - 80, 0)
+  (if (plusp (* phi (- spot 80))) 1d0 0d0))
+
+(defparameter *plus80-payoff* (make-instance 'plus80-payoff :kind :call :strike 110))
+#+end_src
+
+Pricing Europeans and Americans with Monte Carlo (respectively, Longstaff-Schwarz) with arbitrary underlying stochastic dynamics is now automatic:
+#+begin_src lisp
+(dolist (ex '(european-exercise american-exercise))
+  (price (make-instance 'option
+                        :payoff (option-payoff op)
+                        :exercise (make-instance ex
+                                                 :expiry (make-date 2027 10 01)))
+         ,*mc* *underlying*)
+#+end_src
+Of course, no analytic methods can be made available given the information =fincl= knows.
+
+Addition of path-dependent payoffs (such as those that resemble Asian options) is planned.
+
