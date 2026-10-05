@@ -11,6 +11,7 @@
                "random-state"
                "lparallel"
                "trivia"
+               "arrow-macros"
                "named-readtables"
                "closer-mop")
   :pathname "src/"
@@ -20,11 +21,16 @@
                (:module "math"
                 :serial t
                 :components ((:file "special-functions")
+                             (:file "random")
+                             (:file "lets-be-rational")
+                             (:file "implied-normal")
                              (:file "fourier")
                              (:file "extrapolation")
                              (:file "differentiation")
                              (:file "solvers")
-                             (:file "linear-algebra")))
+                             (:file "linear-algebra")
+                             (:file "interpolation")
+                             (:file "optimize")))
                (:module "time"
                 :serial t
                 :components ((:file "date")
@@ -34,11 +40,28 @@
                ;; Defines the #D / #T readtable; every file after this one
                ;; may use it via NAMED-READTABLES:IN-READTABLE.
                (:file "syntax")
+               ;; The construction kernel: general, knows no instrument.
+               (:module "construction"
+                :serial t
+                :components ((:file "slot-options")
+                             (:file "facts")
+                             (:file "fact-tables")
+                             (:file "components")
+                             (:file "clauses")
+                             (:file "conventions")
+                             (:file "rules")
+                             (:file "languages")
+                             (:file "printing")))
+               (:module "term-structures"
+                :serial t
+                :components ((:file "protocol")
+                             (:file "flat")))
                (:file "market")
                (:module "instruments"
                 :serial t
                 :components ((:file "instrument")
-                             (:file "options")))
+                             (:file "options")
+                             (:file "option-language")))
                (:module "processes"
                 :serial t
                 :components ((:file "parameters")
@@ -53,16 +76,23 @@
                              (:file "analytic")
                              (:file "monte-carlo")
                              (:file "binomial")
-                             (:file "cos"))))
+                             (:file "cos")))
+               ;; Composite markets are priced through views; needs PRICE.
+               (:file "pricing")
+               (:file "implied-volatility")
+               (:file "greeks"))
   :in-order-to ((test-op (test-op "fincl/tests"))))
 
 (defsystem "fincl/tests"
   :description "Tests for fincl"
-  :depends-on ("fincl" "lparallel" "closer-mop")
+  :depends-on ("fincl" "lparallel" "closer-mop" "magicl")
   :pathname "tests/"
   :serial t
   :components ((:file "package")
+               (:file "markets")
+               (:file "construction")
                (:file "math")
+               (:file "numerics")
                (:file "time")
                (:file "syntax")
                (:file "market")
@@ -73,7 +103,10 @@
                (:file "mc")
                (:file "processes")
                (:file "errors")
+               (:file "implied-volatility")
+               (:file "greeks")
                (:file "invariants")
+               (:file "option-language")
                (:file "golden")
                ;; The runners call the checks above; keep them last.
                (:file "tests"))
