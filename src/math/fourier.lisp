@@ -12,8 +12,8 @@ or with INVERSE by the unnormalized inverse (sign +). Returns V.
   => #(#C(1d0 0d0) #C(1d0 0d0) #C(1d0 0d0) #C(1d0 0d0))"
   (declare (type (simple-array (complex double-float) (*)) v))
   (let ((n (length v)))
-    (assert (and (plusp n) (zerop (logand n (1- n)))) ()
-            "FFT length ~D is not a power of 2." n)
+    (unless (and (plusp n) (zerop (logand n (1- n))))
+      (signal-invalid-argument '(length v) n '(integer 1) "a power of 2"))
     ;; Bit-reversal permutation.
     (let ((j 0))
       (declare (fixnum j))
