@@ -15,11 +15,13 @@
 ;;;; many dates.
 ;;;;
 ;;;; Europeans only need CHARACTERISTIC-FUNCTION and LOG-CUMULANTS from the
-;;;; process. The backward recursion also assumes the log-increment between
-;;;; dates is independent of the current state, which holds for Levy
-;;;; processes (GBM here) but not for Heston, whose variance is a second
-;;;; state variable; so early exercise is specialized on GBM. Calls are
-;;;; priced as puts throughout (parity for Europeans, McDonald-Schroder
+;;;; process. The backward recursion also needs the log-increment between
+;;;; consecutive dates to be independent of the state, so early exercise is
+;;;; specialized on the INDEPENDENT-INCREMENTS mixin (GBM here; not Heston,
+;;;; whose variance is a second state variable). Each step uses
+;;;; INCREMENT-CHARACTERISTIC-FUNCTION over [now, next], so forward rates and
+;;;; forward variances between dates are exact under term structure. Calls
+;;;; are priced as puts throughout (parity for Europeans, McDonald-Schroder
 ;;;; symmetry for early exercise), because a put's payoff is bounded.
 
 (in-package #:fincl)
@@ -41,7 +43,8 @@ same two samples of Re K."
     (let* ((h0 1d-3)
            (c2-guess (/ (* -2d0 (realpart (k h0))) (* h0 h0))))
       (unless (plusp c2-guess)
-        (error "Characteristic function has no positive variance near u = 0."))
+        (error 'non-positive-volatility
+               :where "implied by the process's characteristic function near u = 0"))
       (let* ((h (/ 0.3d0 (sqrt c2-guess)))
              (r1 (realpart (k h)))
              (r2 (realpart (k (* 2d0 h))))
@@ -190,9 +193,9 @@ calls above; the boundary is A (put) or B (call) if exercise never pays."
 (defun cos-bermudan-value (phi strike x0 times discount-fn cf-fn n a b)
   "Value at time 0 of a vanilla exercisable at TIMES (increasing, positive,
 in market time; the last is expiry) and not at time 0. DISCOUNT-FN maps a
-horizon to a discount factor; CF-FN maps a step length to the
+horizon to a discount factor; CF-FN maps an interval (t0 t1) to the
 characteristic function of the log-increment over it. With one time this
-is the European price."
+is the European price, and CF-FN is only called with t0 = 0."
   (let* ((theta (/ pi (- b a)))
          (times (coerce times 'simple-vector))
          (coeffs (if (plusp phi)
@@ -201,7 +204,7 @@ is the European price."
     (loop for i from (- (length times) 2) downto 0
           do (let* ((now (svref times i))
                     (next (svref times (1+ i)))
-                    (cf (cos-cf-samples (funcall cf-fn (- next now)) n theta))
+                    (cf (cos-cf-samples (funcall cf-fn now next) n theta))
                     (discount (/ (funcall discount-fn next) (funcall discount-fn now)))
                     (x* (cos-exercise-boundary phi strike cf coeffs a b discount)))
                (setf coeffs
@@ -213,23 +216,31 @@ is the European price."
                               (cos-payoff-coefficients phi strike n a b x* b)
                               (cos-payoff-coefficients phi strike n a b a x*))))))
     (let ((first (svref times 0)))
-      (cos-value-at x0 (cos-cf-samples (funcall cf-fn first) n theta) coeffs a theta
+      (cos-value-at x0 (cos-cf-samples (funcall cf-fn 0d0 first) n theta) coeffs a theta
                     (funcall discount-fn first)))))
 
 (defun cos-setup (process engine market horizon strike exercise payoff path)
   "Return (values x0 a b cf-fn discount-fn), or signal
 UNSUPPORTED-COMBINATION if PROCESS has no characteristic function or
-cumulants."
+cumulants. PROCESS must be resolved at HORIZON. CF-FN takes an interval
+(t0 t1): the terminal characteristic function from t0 = 0, the increment
+one otherwise."
   (let ((x0 (log (/ (spot market) strike))))
     (multiple-value-bind (a b)
         (cos-range process market horizon x0 (float (truncation engine) 1d0))
-      (unless (and a (characteristic-function process market horizon))
-        (error 'unsupported-combination
-               :exercise exercise :payoff payoff :path path
-               :process process :engine engine :market market))
-      (values x0 a b
-              (lambda (dt) (characteristic-function process market dt))
-              (lambda (horizon) (discount-factor market horizon))))))
+      (flet ((unsupported ()
+               (error 'unsupported-combination
+                      :exercise exercise :payoff payoff :path path
+                      :process process :engine engine :market market)))
+        (unless (and a (characteristic-function process market horizon))
+          (unsupported))
+        (values x0 a b
+                (lambda (t0 t1)
+                  (if (zerop t0)
+                      (characteristic-function process market t1)
+                      (or (increment-characteristic-function process market t0 t1)
+                          (unsupported))))
+                (lambda (horizon) (discount-factor market horizon)))))))
 
 ;;; --------------------------------------------------------------------
 ;;; European: any process with a characteristic function
@@ -240,8 +251,9 @@ cumulants."
 ;;; truncation bound, as Fang and Oosterlee recommend.
 (defmethod price-cos ((x european-exercise) (p vanilla-payoff) (f path-independent)
                       (process stochastic-process) (e cos-engine) market)
-  (let ((tau (time-to-expiry x market))
-        (k (strike p)))
+  (let* ((tau (time-to-expiry x market))
+         (k (strike p))
+         (process (resolve-process process market tau)))
     (multiple-value-bind (x0 a b cf-fn discount-fn)
         (cos-setup process e market tau k x p f)
       (let ((put (cos-bermudan-value -1d0 k x0 (list tau) discount-fn cf-fn
@@ -253,7 +265,7 @@ cumulants."
                 nil)))))
 
 ;;; --------------------------------------------------------------------
-;;; Early exercise: Levy processes
+;;; Early exercise: processes with independent increments
 ;;; --------------------------------------------------------------------
 
 ;;; The backward recursion is accurate for puts, whose payoff is bounded,
@@ -263,43 +275,47 @@ cumulants."
 ;;;
 ;;;   C(S, K, r, q, sigma) = P(K, S, q, r, sigma)
 ;;;
-;;; for European, Bermudan and American exercise alike.
-(defun gbm-put-inputs (process engine market horizon phi strike exercise payoff path)
+;;; for European, Bermudan and American exercise alike, and for
+;;; deterministic term structures: swapping r and q inverts the forward
+;;; growth and discounts at the dividend yield, exp(-int q) = D(t) F(t)/S.
+;;; Calls under other processes with independent increments are refused.
+(defun early-exercise-put-inputs (process engine market horizon phi strike exercise payoff path)
   "Inputs to COS-BERMUDAN-VALUE for the put that prices this option:
 (values x0 strike a b cf-fn discount-fn). A put (PHI = -1) is itself; a
-call is its symmetric put."
-  (if (minusp phi)
-      (multiple-value-bind (x0 a b cf-fn discount-fn)
-          (cos-setup process engine market horizon strike exercise payoff path)
-        (values x0 strike a b cf-fn discount-fn))
-      (let* ((spot (spot market))
-             (vol (gbm-vol process market horizon))
-             ;; Rate and dividend yield swap roles.
-             (rate (lambda (h) (dividend-yield market h)))
-             (yield (lambda (h) (zero-rate market h)))
-             (x0 (log (/ strike spot)))
-             (c1 (- (* (- (funcall rate horizon) (funcall yield horizon)) horizon)
-                    (* 0.5d0 vol vol horizon)))
-             (half (* (float (truncation engine) 1d0) vol (sqrt horizon))))
-        (values x0 spot (- (+ x0 c1) half) (+ x0 c1 half)
-                (lambda (dt)
-                  (let* ((variance (* vol vol dt))
-                         (mean (- (* (- (funcall rate dt) (funcall yield dt)) dt)
-                                  (* 0.5d0 variance))))
-                    (lambda (u)
-                      (declare (double-float u))
-                      (exp (complex (* -0.5d0 variance u u) (* mean u))))))
-                (lambda (h) (exp (- (* (funcall rate h) h))))))))
+GBM call is its symmetric put."
+  (cond ((minusp phi)
+         (multiple-value-bind (x0 a b cf-fn discount-fn)
+             (cos-setup process engine market horizon strike exercise payoff path)
+           (values x0 strike a b cf-fn discount-fn)))
+        ((not (typep process 'gbm))
+         (error 'unsupported-combination
+                :exercise exercise :payoff payoff :path path
+                :process process :engine engine :market market))
+        (t
+         (let* ((spot (spot market))
+                (x0 (log (/ strike spot)))
+                (variance (gbm-variance process market horizon))
+                (c1 (- (- (log-growth market 0d0 horizon)) (* 0.5d0 variance)))
+                (half (* (float (truncation engine) 1d0) (sqrt variance))))
+           (values x0 spot (- (+ x0 c1) half) (+ x0 c1 half)
+                   (lambda (t0 t1)
+                     (let* ((v (gbm-forward-variance process market t0 t1))
+                            (mean (- (- (log-growth market t0 t1)) (* 0.5d0 v))))
+                       (lambda (u)
+                         (declare (double-float u))
+                         (exp (complex (* -0.5d0 v u u) (* mean u))))))
+                   (lambda (h) (* (discount-factor market h) (forward-factor market h))))))))
 
 (defmethod price-cos ((x bermudan-exercise) (p vanilla-payoff) (f path-independent)
-                      (process gbm) (e cos-engine) market)
+                      (process independent-increments) (e cos-engine) market)
   (let* ((today (valuation-date market))
          (times (loop for date in (exercise-dates x)
                       when (date< today date)
                         collect (market-time market date)))
-         (tau (a:lastcar times)))
+         (tau (a:lastcar times))
+         (process (resolve-process process market tau)))
     (multiple-value-bind (x0 k a b cf-fn discount-fn)
-        (gbm-put-inputs process e market tau (phi p) (strike p) x p f)
+        (early-exercise-put-inputs process e market tau (phi p) (strike p) x p f)
       (let ((value (cos-bermudan-value -1d0 k x0 times discount-fn cf-fn
                                        (n-terms e) a b)))
         (values (if (exercise-allowed-p x today)
@@ -308,11 +324,12 @@ call is its symmetric put."
                 nil)))))
 
 (defmethod price-cos ((x american-exercise) (p vanilla-payoff) (f path-independent)
-                      (process gbm) (e cos-engine) market)
-  (let ((tau (time-to-expiry x market))
-        (m (richardson-dates e)))
+                      (process independent-increments) (e cos-engine) market)
+  (let* ((tau (time-to-expiry x market))
+         (m (richardson-dates e))
+         (process (resolve-process process market tau)))
     (multiple-value-bind (x0 k a b cf-fn discount-fn)
-        (gbm-put-inputs process e market tau (phi p) (strike p) x p f)
+        (early-exercise-put-inputs process e market tau (phi p) (strike p) x p f)
       (flet ((bermudan (dates)
                (cos-bermudan-value -1d0 k x0
                                    (loop for i from 1 to dates collect (* i (/ tau dates)))

@@ -8,57 +8,89 @@
 (in-package #:fincl)
 
 (defun gbm-default-vol (process market horizon)
-  "The market's Black vol at the spot, to HORIZON."
+  "sqrt(w(T)/T), w the market's ATM-forward Black variance to HORIZON = T:
+the constant vol with the market's total variance to T. Used where one
+number is needed (PARAMETER-VECTOR, a CRR tree's step size); a GBM whose vol
+is NIL follows the full term structure w(t)."
   (declare (ignore process))
-  (black-vol market (spot market) horizon))
+  (sqrt (/ (atm-forward-variance market horizon) horizon)))
 
-(define-process gbm (stochastic-process) ()
+(define-process gbm (stochastic-process independent-increments) ()
   ((vol nil :reader process-vol :bounds ((0) nil) :market-default gbm-default-vol
-            :doc "Volatility. NIL takes the market's Black vol."))
-  (:documentation "Black-Scholes dynamics."))
+            :doc "Constant volatility. NIL follows the market's ATM-forward Black
+variance w(t): the variance of ln S over [t0, t1] is w(t1) - w(t0), so every
+ATM European is repriced, whatever the vol term structure. RESOLVE-PROCESS
+keeps it NIL."))
+  (:documentation "Black-Scholes dynamics, with the market's rate, dividend
+and (by default) vol term structures."))
+
+;;; NIL vol is not "unresolved": it names the term-structure model, which
+;;; one constant cannot represent.
+(defmethod resolve-process ((p gbm) market horizon)
+  (declare (ignore market horizon))
+  p)
+
+(defun gbm-variance (process market horizon)
+  "Total variance of ln S over [0, HORIZON]."
+  (let ((vol (process-vol process)))
+    (if vol (* vol vol horizon) (atm-forward-variance market horizon))))
+
+(defun gbm-forward-variance (process market t0 t1)
+  "Variance of ln S over [T0, T1]. Signals CALENDAR-ARBITRAGE if the
+market's total variance falls."
+  (let ((vol (process-vol process)))
+    (if vol
+        (* vol vol (- t1 t0))
+        (let ((v (- (atm-forward-variance market t1) (atm-forward-variance market t0))))
+          (when (minusp v)
+            (error 'calendar-arbitrage :t0 t0 :t1 t1 :variance v))
+          v))))
 
 (defun gbm-vol (process market time)
-  (or (process-vol process) (gbm-default-vol process market time)))
+  "The constant vol with GBM's total variance to TIME."
+  (or (process-vol process) (sqrt (/ (gbm-variance process market time) time))))
 
-(defmethod make-stepper ((p gbm) market dt)
-  (let* ((vol (gbm-vol p market dt))
-         (drift (* (- (zero-rate market dt) (dividend-yield market dt)
-                      (* 0.5d0 vol vol))
-                   dt))
-         (diffusion (* vol (sqrt dt))))
-    (declare (double-float drift diffusion))
-    (lambda (state normals)
+(defmethod make-stepper ((p gbm) market times)
+  (declare (type (simple-array double-float (*)) times))
+  (let* ((n (1- (length times)))
+         (drift (make-array n :element-type 'double-float))
+         (diffusion (make-array n :element-type 'double-float)))
+    (dotimes (j n)
+      (let* ((t0 (aref times j))
+             (t1 (aref times (1+ j)))
+             (variance (gbm-forward-variance p market t0 t1)))
+        (setf (aref drift j) (- (log-growth market t0 t1) (* 0.5d0 variance))
+              (aref diffusion j) (sqrt variance))))
+    (lambda (state normals j)
       (declare (type (simple-array double-float (*)) state normals)
+               (fixnum j)
                (optimize (speed 3) (safety 0)))
       (setf (aref state 0)
-            (* (aref state 0) (exp (+ drift (* diffusion (aref normals 0)))))))))
+            (* (aref state 0) (exp (+ (aref drift j)
+                                      (* (aref diffusion j) (aref normals 0)))))))))
 
-(defmethod characteristic-function ((p gbm) market horizon)
-  (let* ((vol (gbm-vol p market horizon))
-         (variance (* vol vol horizon))
-         (mean (- (* (- (zero-rate market horizon) (dividend-yield market horizon))
-                     horizon)
-                  (* 0.5d0 variance))))
+(defmethod increment-characteristic-function ((p gbm) market t0 t1)
+  (let* ((variance (gbm-forward-variance p market t0 t1))
+         (mean (- (log-growth market t0 t1) (* 0.5d0 variance))))
     (declare (double-float variance mean))
     (lambda (u)
       (declare (double-float u))
       (exp (complex (* -0.5d0 variance u u) (* mean u))))))
 
+(defmethod characteristic-function ((p gbm) market horizon)
+  (increment-characteristic-function p market 0d0 horizon))
+
 (defmethod log-cumulants ((p gbm) market horizon)
-  (let ((vol (gbm-vol p market horizon)))
-    (values (* (- (zero-rate market horizon) (dividend-yield market horizon)
-                  (* 0.5d0 vol vol))
-               horizon)
-            (* vol vol horizon)
+  (let ((variance (gbm-variance p market horizon)))
+    (values (- (log-growth market 0d0 horizon) (* 0.5d0 variance))
+            variance
             0d0)))
 
 (defmethod terminal-sampler ((p gbm) market time)
-  (let* ((vol (gbm-vol p market time))
+  (let* ((variance (gbm-variance p market time))
          (s0 (spot market))
-         (drift (* (- (zero-rate market time) (dividend-yield market time)
-                      (* 0.5d0 vol vol))
-                   time))
-         (diffusion (* vol (sqrt time))))
+         (drift (- (log-growth market 0d0 time) (* 0.5d0 variance)))
+         (diffusion (sqrt variance)))
     (declare (double-float s0 drift diffusion))
     (lambda (normals)
       (declare (type (simple-array double-float (*)) normals)

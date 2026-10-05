@@ -13,10 +13,10 @@
 (in-package #:fincl)
 
 (defun heston-default-v0 (process market horizon)
-  "The market's one-year Black variance at the spot. HORIZON is ignored:
-the one-year read predates horizon-aware defaults (task 08 fixes it)."
-  (declare (ignore process horizon))
-  (expt (black-vol market (spot market) 1d0) 2))
+  "sigma_ATM(T)^2 = w(T)/T, from the market's ATM-forward Black variance to
+HORIZON = T."
+  (declare (ignore process))
+  (/ (atm-forward-variance market horizon) horizon))
 
 (defun heston-default-theta (process market horizon)
   "V0, so that variance starts at its long-run level."
@@ -24,16 +24,21 @@ the one-year read predates horizon-aware defaults (task 08 fixes it)."
 
 (define-process heston (stochastic-process) (:state-size 2 :factors 2)
   ((v0 nil :bounds (0 nil) :market-default heston-default-v0
-           :doc "Initial variance. NIL uses the market vol squared.")
+           :doc "Initial variance. NIL resolves to sigma_ATM(T)^2 = w(T)/T, T the
+expiry, w the market's ATM-forward Black variance.")
    (kappa 2d0 :bounds ((0) nil) :doc "Mean-reversion speed of the variance.")
    (theta nil :bounds (0 nil) :market-default heston-default-theta
-              :doc "Long-run variance. NIL uses V0.")
+              :doc "Long-run variance. NIL resolves to V0.")
    (xi 0.3d0 :bounds (0 nil) :doc "Vol of vol.")
    (rho -0.7d0 :bounds (-1 1) :doc "Correlation of the spot and variance shocks."))
   (:documentation "Heston stochastic volatility."))
 
-(defun heston-v0 (process market)
-  (or (v0 process) (heston-default-v0 process market 1d0)))
+(defun heston-v0 (process market &optional (horizon 1d0))
+  "V0, or its market default at HORIZON. Engines resolve the process at the
+expiry first; the one-year fallback serves direct callers such as plots."
+  (or (v0 process) (heston-default-v0 process market horizon)))
+
+(defmethod process-regressors ((p heston)) '(0 1))   ; spot and variance
 
 (defmethod initial-state ((p heston) market)
   (let ((state (make-array 2 :element-type 'double-float)))
@@ -41,28 +46,38 @@ the one-year read predates horizon-aware defaults (task 08 fixes it)."
           (aref state 1) (heston-v0 p market))  ; latent variance
     state))
 
-(defmethod make-stepper ((p heston) market dt)
-  (let* ((kappa (kappa p))
-         (theta (or (theta p) (heston-v0 p market)))
+(defmethod make-stepper ((p heston) market times)
+  (declare (type (simple-array double-float (*)) times))
+  (let* ((p (resolve-process p market (aref times (1- (length times)))))
+         (kappa (kappa p))
+         (theta (theta p))
          (xi (xi p))
          (rho (rho p))
          (rho-bar (sqrt (- 1d0 (* rho rho))))
-         (mu (* (- (zero-rate market dt) (dividend-yield market dt)) dt))
-         (sqrt-dt (sqrt dt)))
-    (declare (double-float kappa theta xi rho rho-bar mu sqrt-dt))
-    (lambda (state normals)
+         (n (1- (length times)))
+         (dt (interval-lengths times))
+         (sqrt-dt (map '(simple-array double-float (*)) #'sqrt dt))
+         (mu (make-array n :element-type 'double-float)))
+    (declare (double-float kappa theta xi rho rho-bar)
+             (type (simple-array double-float (*)) dt sqrt-dt mu))
+    (dotimes (j n)
+      (setf (aref mu j) (log-growth market (aref times j) (aref times (1+ j)))))
+    (lambda (state normals j)
       (declare (type (simple-array double-float (*)) state normals)
+               (fixnum j)
                (optimize (speed 3) (safety 0)))
       (let* ((s (aref state 0))
              (v (aref state 1))
              (v+ (max 0d0 v))                    ; full truncation
              (sqrt-v (sqrt v+))
+             (dt (aref dt j))
+             (sqrt-dt (aref sqrt-dt j))
              (z1 (aref normals 0))
              ;; Correlate the variance factor with the spot factor.
              (z2 (+ (* rho z1) (* rho-bar (aref normals 1)))))
-        (declare (double-float s v v+ sqrt-v z1 z2))
+        (declare (double-float s v v+ sqrt-v dt sqrt-dt z1 z2))
         (setf (aref state 0)
-              (* s (exp (+ (- mu (* 0.5d0 v+ dt))
+              (* s (exp (+ (- (aref mu j) (* 0.5d0 v+ dt))
                            (* sqrt-v sqrt-dt z1))))
               (aref state 1)
               (+ v
@@ -74,10 +89,11 @@ the one-year read predates horizon-aware defaults (task 08 fixes it)."
 ;;; --------------------------------------------------------------------
 
 (defun heston-parameters (p market horizon)
-  "Return (values kappa theta xi rho v0 mu) with defaults resolved."
-  (let ((v0 (heston-v0 p market)))
-    (values (kappa p) (or (theta p) v0) (xi p) (rho p) v0
-            (- (zero-rate market horizon) (dividend-yield market horizon)))))
+  "Return (values kappa theta xi rho v0 growth), resolved at HORIZON, with
+GROWTH = log(F(HORIZON)/S0)."
+  (let ((p (resolve-process p market horizon)))
+    (values (kappa p) (theta p) (xi p) (rho p) (v0 p)
+            (log-growth market 0d0 horizon))))
 
 (defun heston-integrated-variance (kappa theta v0 horizon)
   "Expected integrated variance over HORIZON: the whole variance when xi = 0."
@@ -85,11 +101,11 @@ the one-year read predates horizon-aware defaults (task 08 fixes it)."
      (/ (* (- v0 theta) (- 1d0 (exp (- (* kappa horizon))))) kappa)))
 
 (defmethod characteristic-function ((p heston) market horizon)
-  (multiple-value-bind (kappa theta xi rho v0 mu) (heston-parameters p market horizon)
+  (multiple-value-bind (kappa theta xi rho v0 growth) (heston-parameters p market horizon)
     (if (zerop xi)
         ;; Deterministic variance: a Gaussian log-return.
         (let* ((w (heston-integrated-variance kappa theta v0 horizon))
-               (mean (- (* mu horizon) (* 0.5d0 w))))
+               (mean (- growth (* 0.5d0 w))))
           (lambda (u)
             (declare (double-float u))
             (exp (complex (* -0.5d0 w u u) (* mean u)))))
@@ -103,7 +119,7 @@ the one-year read predates horizon-aware defaults (task 08 fixes it)."
                    (d (sqrt (+ (* beta beta) (* xi2 (+ iu (* u u))))))
                    (g (/ (- beta d) (+ beta d)))
                    (e (exp (- (* d horizon))))
-                   (c (+ (* mu iu horizon)
+                   (c (+ (* growth iu)
                          (* (/ (* kappa theta) xi2)
                             (- (* (- beta d) horizon)
                                (* 2d0 (log (/ (- 1d0 (* g e)) (- 1d0 g))))))))

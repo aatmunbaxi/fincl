@@ -16,31 +16,31 @@
 
 (in-package #:fincl)
 
-(defun garch-target-variance (process market)
-  "Variance per model period implied by the market vol."
-  (* (expt (black-vol market (spot market) (period process)) 2)
-     (period process)))
+(defun garch-target-variance (process market horizon)
+  "Variance per model period implied by the market: sigma_ATM(T)^2 * period,
+with sigma_ATM(T)^2 = w(T)/T from the ATM-forward Black variance to HORIZON
+= T. A NIL HORIZON (an unresolved process used directly) reads one period."
+  (let ((horizon (or horizon (period process))))
+    (* (/ (atm-forward-variance market horizon) horizon)
+       (period process))))
 
 (defun garch-persistence (process)
   (+ (garch-beta process) (* (alpha process) (+ 1d0 (expt (gamma process) 2)))))
 
 (defun garch-default-omega (process market horizon)
-  "The omega whose stationary variance is the market's Black variance per
-period. HORIZON is ignored: the target is read at one period."
-  (declare (ignore horizon))
+  "The omega whose stationary variance is GARCH-TARGET-VARIANCE at HORIZON."
   (let ((persistence (garch-persistence process)))
-    (assert (< persistence 1d0) ()
-            "Non-stationary GARCH: beta + alpha(1 + gamma^2) = ~,4F >= 1."
-            persistence)
-    (* (garch-target-variance process market) (- 1d0 persistence))))
+    ;; beta + alpha (1 + gamma^2)
+    (unless (< persistence 1d0)
+      (error 'non-stationary-process :process process :persistence persistence))
+    (* (garch-target-variance process market horizon) (- 1d0 persistence))))
 
-(defun garch-omega (process market)
-  (or (omega process) (garch-default-omega process market nil)))
+(defun garch-omega (process market &optional horizon)
+  (or (omega process) (garch-default-omega process market horizon)))
 
 (defun garch-default-h0 (process market horizon)
   "The stationary variance omega / (1 - persistence)."
-  (declare (ignore horizon))
-  (/ (garch-omega process market) (- 1d0 (garch-persistence process))))
+  (/ (garch-omega process market horizon) (- 1d0 (garch-persistence process))))
 
 (define-process garch (stochastic-process) (:state-size 2)
   ((period (/ 1d0 252d0) :parameter nil :bounds ((0) nil)
@@ -50,14 +50,17 @@ model, not a numerical setting, but not calibrated either.")
    (beta 0.8d0 :reader garch-beta :bounds (0 nil) :doc "GARCH coefficient.")
    (gamma 0.5d0 :doc "Leverage: negative shocks raise variance more.")
    (omega nil :bounds ((0) nil) :market-default garch-default-omega
-              :doc "Variance intercept. NIL calibrates the stationary variance to
-the market's Black variance per period.")
+              :doc "Variance intercept. NIL resolves to the omega whose stationary
+variance is sigma_ATM(T)^2 * period, T the expiry, sigma_ATM(T) the market's
+ATM-forward Black vol to T.")
    (h0 nil :bounds ((0) nil) :market-default garch-default-h0
-           :doc "Initial conditional variance. NIL uses the stationary level."))
+           :doc "Initial conditional variance. NIL resolves to the stationary level."))
   (:documentation "Duan's NGARCH(1,1)."))
 
 (defun garch-h0 (process market)
   (or (h0 process) (garch-default-h0 process market nil)))
+
+(defmethod process-regressors ((p garch)) '(0 1))    ; spot and conditional variance
 
 (defmethod initial-state ((p garch) market)
   (let ((state (make-array 2 :element-type 'double-float)))
@@ -65,23 +68,34 @@ the market's Black variance per period.")
           (aref state 1) (garch-h0 p market))
     state))
 
-(defmethod make-stepper ((p garch) market dt)
-  (unless (< (abs (- dt (period p))) (* 1d-9 (max 1d0 (period p))))
-    (error 'incompatible-time-step :process p :requested dt :required (period p)))
-  (let* ((alpha (alpha p))
+(defmethod make-stepper ((p garch) market times)
+  (declare (type (simple-array double-float (*)) times))
+  (let ((dt (interval-lengths times)))
+    ;; A discrete-time model: every interval must be one model period.
+    (loop for step across dt
+          unless (< (abs (- step (period p))) (* 1d-9 (max 1d0 (period p))))
+            do (error 'incompatible-time-step :process p :requested step
+                                              :required (period p))))
+  (let* ((p (resolve-process p market (aref times (1- (length times)))))
+         (alpha (alpha p))
          (beta (garch-beta p))
          (gamma (gamma p))
-         (omega (garch-omega p market))
-         (mu (* (- (zero-rate market dt) (dividend-yield market dt)) dt)))
-    (declare (double-float alpha beta gamma omega mu))
-    (lambda (state normals)
+         (omega (omega p))
+         (n (1- (length times)))
+         (mu (make-array n :element-type 'double-float)))
+    (declare (double-float alpha beta gamma omega)
+             (type (simple-array double-float (*)) mu))
+    (dotimes (j n)
+      (setf (aref mu j) (log-growth market (aref times j) (aref times (1+ j)))))
+    (lambda (state normals j)
       (declare (type (simple-array double-float (*)) state normals)
+               (fixnum j)
                (optimize (speed 3) (safety 0)))
       (let* ((s (aref state 0))
              (h (aref state 1))
              (z (aref normals 0)))
         (declare (double-float s h z))
         (setf (aref state 0)
-              (* s (exp (+ mu (* -0.5d0 h) (* (sqrt h) z))))
+              (* s (exp (+ (aref mu j) (* -0.5d0 h) (* (sqrt h) z))))
               (aref state 1)
               (+ omega (* beta h) (* alpha h (expt (- z gamma) 2))))))))

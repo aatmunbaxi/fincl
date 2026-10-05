@@ -16,35 +16,43 @@
 (in-package #:fincl)
 
 (defun cev-default-sigma (process market horizon)
-  "The sigma whose instantaneous vol at the spot is the market's Black vol:
-vol * S0^(1 - beta)."
-  (* (black-vol market (spot market) horizon)
+  "sigma_ATM(T) S0^(1 - beta), with sigma_ATM(T) = sqrt(w(T)/T) from the
+market's ATM-forward Black variance to HORIZON = T: the sigma whose
+instantaneous vol at the spot matches the market's vol to expiry."
+  (* (sqrt (/ (atm-forward-variance market horizon) horizon))
      (expt (spot market) (- 1d0 (beta process)))))
 
 (define-process cev (stochastic-process) ()
   ((beta 1d0 :bounds (0 nil) :doc "Elasticity: 1 is GBM, 0 is Bachelier.")
    (sigma nil :bounds ((0) nil) :market-default cev-default-sigma
-              :doc "Scale parameter. NIL calibrates it to the market's Black
-vol at the spot. Its units change with beta."))
+              :doc "Scale parameter; its units change with beta. NIL resolves to
+sigma_ATM(T) S0^(1 - beta), T the expiry, sigma_ATM(T) the market's
+ATM-forward Black vol to T."))
   (:documentation "Constant-elasticity-of-variance dynamics."))
 
-(defun cev-sigma (process market time)
-  (or (sigma process) (cev-default-sigma process market time)))
-
-(defmethod make-stepper ((p cev) market dt)
-  (let* ((beta (beta p))
-         (sigma (cev-sigma p market dt))
-         (mu (* (- (zero-rate market dt) (dividend-yield market dt)) dt))
-         (sqrt-dt (sqrt dt))
-         (exponent (- beta 1d0)))
-    (declare (double-float beta sigma mu sqrt-dt exponent))
-    (lambda (state normals)
+(defmethod make-stepper ((p cev) market times)
+  (declare (type (simple-array double-float (*)) times))
+  (let* ((p (resolve-process p market (aref times (1- (length times)))))
+         (beta (beta p))
+         (sigma (sigma p))
+         (exponent (- beta 1d0))
+         (n (1- (length times)))
+         (dt (interval-lengths times))
+         (sqrt-dt (map '(simple-array double-float (*)) #'sqrt dt))
+         (mu (make-array n :element-type 'double-float)))
+    (declare (double-float beta sigma exponent)
+             (type (simple-array double-float (*)) dt sqrt-dt mu))
+    (dotimes (j n)
+      (setf (aref mu j) (log-growth market (aref times j) (aref times (1+ j)))))
+    (lambda (state normals j)
       (declare (type (simple-array double-float (*)) state normals)
+               (fixnum j)
                (optimize (speed 3) (safety 0)))
       (let* ((s (aref state 0))
              ;; Local volatility sigma * S^(beta-1).
-             (local-vol (* sigma (expt s exponent))))
-        (declare (double-float s local-vol))
+             (local-vol (* sigma (expt s exponent)))
+             (dt (aref dt j)))
+        (declare (double-float s local-vol dt))
         (setf (aref state 0)
-              (* s (exp (+ (- mu (* 0.5d0 local-vol local-vol dt))
-                           (* local-vol sqrt-dt (aref normals 0))))))))))
+              (* s (exp (+ (- (aref mu j) (* 0.5d0 local-vol local-vol dt))
+                           (* local-vol (aref sqrt-dt j) (aref normals 0))))))))))

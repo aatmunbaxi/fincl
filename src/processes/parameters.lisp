@@ -16,7 +16,7 @@
 
 (in-package #:fincl)
 
-(define-condition invalid-parameter (pricing-error)
+(define-condition invalid-parameter (invalid-input)
   ((object :initarg :object :reader invalid-parameter-object)
    (name :initarg :name :reader invalid-parameter-name)
    (value :initarg :value :reader invalid-parameter-value)
@@ -29,6 +29,16 @@
                (invalid-parameter-name c) (invalid-parameter-value c)
                (and bounds (realp (invalid-parameter-value c)))
                (and bounds (format-bounds bounds)))))))
+
+(define-condition unknown-parameter (invalid-input)
+  ((class :initarg :class :reader unknown-parameter-class)
+   (name :initarg :name :reader unknown-parameter-name)
+   (known :initarg :known :reader unknown-parameter-known))
+  (:report (lambda (c s)
+             (format s "~A has no parameter ~S. Its parameters and settings are ~
+~{~(:~A~)~^, ~}."
+                     (class-name (unknown-parameter-class c)) (unknown-parameter-name c)
+                     (unknown-parameter-known c)))))
 
 (defun format-bounds (bounds)
   "Interval notation for (LO HI) designators: ((0) NIL) => \"(0, inf)\"."
@@ -45,61 +55,27 @@
 ;;; Metaobjects
 ;;; --------------------------------------------------------------------
 
-(defclass parameterized-class (standard-class) ()
+;;; Parameter metadata is three slot options on the general annotated-slot
+;;; machinery (construction/slot-options.lisp), which also handles their
+;;; inheritance: the most specific class that gave an option wins.
+(define-slot-option :parameter "T for a model parameter, NIL for a setting.")
+(define-slot-option :bounds "Interval designators (lo hi).")
+(define-slot-option :market-default "Function (process market horizon) for NIL.")
+
+(defclass parameterized-class (annotated-class) ()
   (:documentation "Metaclass whose slots accept the options :PARAMETER,
 :BOUNDS and :MARKET-DEFAULT. Use DEFINE-PROCESS rather than writing the
 DEFCLASS by hand."))
 
-(defmethod c2mop:validate-superclass ((class parameterized-class) (super standard-class)) t)
-;; A plain DEFCLASS subclass of a process is allowed but keeps no parameter
-;; metadata of its own; define subclasses with DEFINE-PROCESS instead.
-(defmethod c2mop:validate-superclass ((class standard-class) (super parameterized-class)) t)
-
-(defclass parameter-slot-definition ()
-  ;; :UNSPECIFIED on a direct slot means "inherit"; on an effective slot,
-  ;; that no class in the chain said. A slot is managed (validated at
-  ;; construction) when :PARAMETER was given, T or NIL.
-  ((parameter :initarg :parameter :initform :unspecified :accessor slot-parameter)
-   (bounds :initarg :bounds :initform :unspecified :accessor slot-bounds)
-   (market-default :initarg :market-default :initform :unspecified
-                   :accessor slot-market-default)))
-
-(defclass parameter-direct-slot-definition
-    (parameter-slot-definition c2mop:standard-direct-slot-definition) ())
-
-(defclass parameter-effective-slot-definition
-    (parameter-slot-definition c2mop:standard-effective-slot-definition) ())
-
-(defmethod c2mop:direct-slot-definition-class ((class parameterized-class) &rest initargs)
-  (declare (ignore initargs))
-  (find-class 'parameter-direct-slot-definition))
-
-(defmethod c2mop:effective-slot-definition-class ((class parameterized-class) &rest initargs)
-  (declare (ignore initargs))
-  (find-class 'parameter-effective-slot-definition))
-
-(defmethod c2mop:compute-effective-slot-definition ((class parameterized-class) name
-                                                    direct-slots)
-  (declare (ignore name))
-  (let ((effective (call-next-method)))
-    ;; DIRECT-SLOTS is most specific first: the first class that specified
-    ;; an option wins, so a subclass can override its parent's bounds.
-    (flet ((inherit (accessor)
-             (dolist (d direct-slots :unspecified)
-               (when (typep d 'parameter-direct-slot-definition)
-                 (let ((v (funcall accessor d)))
-                   (unless (eq v :unspecified) (return v)))))))
-      (setf (slot-parameter effective) (inherit #'slot-parameter)
-            (slot-bounds effective) (inherit #'slot-bounds)
-            (slot-market-default effective) (inherit #'slot-market-default)))
-    effective))
+;;; :UNSPECIFIED means that no class in the chain gave the option. A slot is
+;;; managed (validated at construction) when :PARAMETER was given, T or NIL.
+(defun slot-parameter (slot) (slot-annotation slot :parameter :unspecified))
+(defun slot-bounds (slot) (slot-annotation slot :bounds :unspecified))
+(defun slot-market-default (slot) (slot-annotation slot :market-default :unspecified))
 
 (defun managed-slots (class)
   "Effective slot definitions of CLASS declared through DEFINE-PROCESS."
-  (c2mop:ensure-finalized class)
-  (remove-if-not (lambda (s) (and (typep s 'parameter-effective-slot-definition)
-                                  (not (eq (slot-parameter s) :unspecified))))
-                 (c2mop:class-slots class)))
+  (annotated-slots class :parameter))
 
 (defun parameter-slots (class)
   (remove-if-not (lambda (s) (eq (slot-parameter s) t)) (managed-slots class)))
@@ -175,9 +151,9 @@ FINCL::RHO all find the same slot."
     (or (find (string name) slots
               :key (lambda (s) (symbol-name (c2mop:slot-definition-name s)))
               :test #'string=)
-        (error "~A has no parameter ~S. Its parameters and settings are ~{~(:~A~)~^, ~}."
-               (class-name (class-designator object-or-class)) name
-               (mapcar #'c2mop:slot-definition-name slots)))))
+        (error 'unknown-parameter
+               :class (class-designator object-or-class) :name name
+               :known (mapcar #'c2mop:slot-definition-name slots)))))
 
 (defun process-parameter (process name &optional market (horizon 1d0))
   "The value of parameter or setting NAME of PROCESS. NAME is matched by
@@ -229,9 +205,10 @@ PROCESS is not modified. The new process is validated like any other.
   (let* ((class (class-of process))
          (parameters (process-parameters class))
          (initargs '()))
-    (assert (= (length vector) (length parameters)) ()
-            "~S has ~D parameters, but the vector has ~D elements."
-            process (length parameters) (length vector))
+    (unless (= (length vector) (length parameters))
+      (signal-invalid-argument 'vector vector 'sequence
+                               (format nil "one value per parameter of ~A, ~{~(~A~)~^, ~}"
+                                       (class-name class) parameters)))
     (dolist (slot (c2mop:class-slots class))
       (let ((name (c2mop:slot-definition-name slot))
             (initarg (first (c2mop:slot-definition-initargs slot))))
