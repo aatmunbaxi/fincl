@@ -1,4 +1,4 @@
-;;;; math/linear-algebra.lisp --- small dense least squares on typed arrays
+;;;; math/linear-algebra.lisp --- least squares and banded solves on typed arrays
 ;;;;
 ;;;; Typed (SIMPLE-ARRAY DOUBLE-FLOAT (*)) throughout. Per the array-backend
 ;;;; decision (task 03, phase 4), this is also the only file that may use
@@ -14,6 +14,8 @@
 ;;;; fixed order (a tall-skinny QR).
 
 (in-package #:fincl)
+
+(deftype double-vector () '(simple-array double-float (*)))
 
 (define-condition rank-deficient (pricing-error)
   ((index :initarg :index :reader rank-deficient-index)
@@ -89,6 +91,8 @@ accumulator of both row sets. OTHER is unchanged. Returns ACC."
   (declare (type qr-accumulator acc other))
   (let* ((n (qr-accumulator-n acc))
          (row (make-array n :element-type 'double-float)))
+    ;; Internal invariant: engines build every accumulator of one
+    ;; regression with the same basis size; no caller input reaches here.
     (assert (= n (qr-accumulator-n other)))
     (dotimes (k n)
       (fill row 0d0)
@@ -119,3 +123,123 @@ is below TOLERANCE times |R[0,0]|."
                      do (decf sum (* (aref r (+ (* i n) j)) (aref b j))))
                (setf (aref b i) (/ sum pivot))))
     b))
+
+;;; --------------------------------------------------------------------
+;;; Tridiagonal systems
+;;; --------------------------------------------------------------------
+;;;
+;;; Row i of a tridiagonal system reads a[i] x[i-1] + b[i] x[i] + c[i] x[i+1]
+;;; = d[i]: A, B, C and D all have length n, A[0] and C[n-1] are unused, or,
+;;; for a cyclic system, are the corner elements (row 0's coefficient of
+;;; x[n-1] and row n-1's of x[0]). Typed Lisp rather than LAPACK's dgtsv:
+;;; the same speed at n = 200 and 2000 (task 03), and magicl's generated
+;;; %dgtsv drops LAPACK's INFO, so a singular system would go unnoticed.
+
+(declaim (inline %thomas!))
+(defun %thomas! (n a b b0 c c0 d d0)
+  "The Thomas algorithm on N unknowns, with the diagonal at B[B0 ...], the
+super-diagonal at C[C0 ...] (overwritten) and the right-hand side at D[D0
+...] (overwritten with the solution). Offsets let the cyclic solver keep its
+scratch in one vector. Returns T, or NIL at a zero pivot."
+  (declare (fixnum n b0 c0 d0) (type double-vector a b c d)
+           (optimize (speed 3) (safety 0)))
+  (let ((pivot (aref b b0)))
+    (when (zerop pivot) (return-from %thomas! nil))
+    (when (> n 1) (setf (aref c c0) (/ (aref c c0) pivot)))
+    (setf (aref d d0) (/ (aref d d0) pivot)))
+  (loop for i fixnum from 1 below n
+        do (let ((pivot (- (aref b (+ b0 i)) (* (aref a i) (aref c (+ c0 i -1))))))
+             (declare (double-float pivot))
+             (when (zerop pivot) (return-from %thomas! nil))
+             (when (< i (1- n))
+               (setf (aref c (+ c0 i)) (/ (aref c (+ c0 i)) pivot)))
+             (setf (aref d (+ d0 i))
+                   (/ (- (aref d (+ d0 i)) (* (aref a i) (aref d (+ d0 i -1)))) pivot))))
+  (loop for i fixnum from (- n 2) downto 0
+        do (decf (aref d (+ d0 i)) (* (aref c (+ c0 i)) (aref d (+ d0 i 1)))))
+  t)
+
+(defun signal-zero-pivot (n)
+  (signal-convergence-failure "zero pivot in a tridiagonal solve of size ~D; the matrix ~
+is singular or not diagonally dominant" n))
+
+(defun solve-tridiagonal! (a b c d)
+  "Solve the tridiagonal system with sub-diagonal A, diagonal B and
+super-diagonal C (A[0] and C[n-1] unused) for the right-hand side D by the
+Thomas algorithm, in O(n) and without allocating: C is overwritten with
+scratch values and D with the solution, which is returned. Stable without
+pivoting when the matrix is diagonally dominant (|b_i| >= |a_i| + |c_i|,
+strictly in at least one row), as finite-difference and spline systems are.
+A zero pivot signals CONVERGENCE-FAILURE, whose USE-VALUE restart returns a
+value in place of the solution.
+
+  (solve-tridiagonal! a b (copy-seq c) (copy-seq d))"
+  (declare (type double-vector a b c d))
+  (if (%thomas! (length d) a b 0 c 0 d 0)
+      d
+      (signal-zero-pivot (length d))))
+
+(defun solve-tridiagonal-cyclic! (a b c d &key (work (make-array (* 3 (length d))
+                                                                 :element-type 'double-float)))
+  "Solve the cyclic tridiagonal system whose row i is a[i] x[i-1] + b[i] x[i]
++ c[i] x[i+1] = d[i], indices modulo n (A[0] multiplies x[n-1], C[n-1]
+multiplies x[0]), by Sherman-Morrison: two Thomas solves on the matrix with
+the corners removed and its first and last diagonal entries modified. D is
+overwritten with the solution and returned; A, B and C are unchanged. WORK, a
+DOUBLE-VECTOR of length at least 3n, is scratch: pass one to solve without
+allocating. Needs n >= 3 and, like SOLVE-TRIDIAGONAL!, diagonal dominance.
+
+  (solve-tridiagonal-cyclic! a b c (copy-seq d))"
+  (declare (type double-vector a b c d work))
+  (let ((n (length d)))
+    (declare (fixnum n))
+    (unless (>= n 3)
+      (signal-invalid-argument '(length d) n '(integer 3) "at least 3 unknowns"))
+    (unless (>= (length work) (* 3 n))
+      (signal-invalid-argument '(length work) (length work) `(integer ,(* 3 n))
+                               (format nil "a scratch vector of at least ~D elements" (* 3 n))))
+    (let* ((alpha (aref c (1- n)))       ; row n-1, column 0
+           (beta (aref a 0))             ; row 0, column n-1
+           (gamma (- (aref b 0)))
+           (z0 (* 2 n)))                 ; WORK: diagonal [0, n), C copy [n, 2n), z [2n, 3n)
+      (declare (double-float alpha beta gamma) (fixnum z0))
+      (when (zerop gamma) (return-from solve-tridiagonal-cyclic! (signal-zero-pivot n)))
+      (replace work b)
+      (decf (aref work 0) gamma)
+      (decf (aref work (1- n)) (/ (* alpha beta) gamma))
+      ;; x: the corner-free system with the right-hand side.
+      (replace work c :start1 n)
+      (unless (%thomas! n a work 0 work n d 0)
+        (return-from solve-tridiagonal-cyclic! (signal-zero-pivot n)))
+      ;; z: the same system with u = (gamma, 0, ..., 0, alpha).
+      (replace work c :start1 n)
+      (fill work 0d0 :start z0 :end (+ z0 n))
+      (setf (aref work z0) gamma
+            (aref work (+ z0 n -1)) alpha)
+      (unless (%thomas! n a work 0 work n work z0)
+        (return-from solve-tridiagonal-cyclic! (signal-zero-pivot n)))
+      (let ((factor (/ (+ (aref d 0) (/ (* beta (aref d (1- n))) gamma))
+                       (+ 1 (aref work z0) (/ (* beta (aref work (+ z0 n -1))) gamma)))))
+        (declare (double-float factor))
+        (dotimes (i n d)
+          (decf (aref d i) (* factor (aref work (+ z0 i)))))))))
+
+(defun tridiagonal-multiply (a b c x out &key cyclic)
+  "OUT = M X for the tridiagonal M with sub-diagonal A, diagonal B and
+super-diagonal C, in the layout of SOLVE-TRIDIAGONAL! (with CYCLIC, A[0] and
+C[n-1] are corner elements). Returns OUT.
+
+  (tridiagonal-multiply a b c x (make-array n :element-type 'double-float))"
+  (declare (type double-vector a b c x out)
+           (optimize (speed 3) (safety 0)))
+  (let ((n (length x)))
+    (declare (fixnum n))
+    (dotimes (i n out)
+      (setf (aref out i)
+            (+ (* (aref b i) (aref x i))
+               (cond ((> i 0) (* (aref a i) (aref x (1- i))))
+                     (cyclic (* (aref a 0) (aref x (1- n))))
+                     (t 0d0))
+               (cond ((< i (1- n)) (* (aref c i) (aref x (1+ i))))
+                     (cyclic (* (aref c (1- n)) (aref x 0)))
+                     (t 0d0)))))))

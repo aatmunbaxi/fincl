@@ -15,23 +15,44 @@
 ;;; The readtable must exist at compile time, so later files in the same
 ;;; build can IN-READTABLE it.
 (eval-when (:compile-toplevel :load-toplevel :execute)
+  (define-condition invalid-literal (invalid-input reader-error)
+    ((subchar :initarg :subchar :reader invalid-literal-subchar)
+     (problem :initarg :problem :reader invalid-literal-problem))
+    (:report (lambda (c s)
+               (format s "Invalid #~C literal: ~A"
+                       (invalid-literal-subchar c) (invalid-literal-problem c))))
+    (:documentation "A malformed #D or #T literal. Also a READER-ERROR, so the
+reader reports the stream position."))
+
+  (defun literal-error (stream subchar problem)
+    (error 'invalid-literal :stream stream :subchar subchar :problem problem))
+
   (defun read-literal-string (stream subchar arg)
     (when arg
-      (error "#~D~C: numeric argument not allowed." arg subchar))
+      (literal-error stream subchar
+                     (format nil "#~D~C takes no numeric argument; write #~C\"...\"."
+                             arg subchar subchar)))
     (let ((string (read stream t nil t)))
       (unless (or *read-suppress* (stringp string))
-        (error "#~C must be followed by a string, not ~S." subchar string))
+        (literal-error stream subchar
+                       (format nil "#~C must be followed by a string, not ~S." subchar string)))
       string))
+
+  (defun parse-literal (stream subchar parser string)
+    "PARSER applied to STRING, with its INVALID-INPUT re-signalled as an
+INVALID-LITERAL at STREAM's position."
+    (handler-case (funcall parser string)
+      (invalid-input (c) (literal-error stream subchar (princ-to-string c)))))
 
   (defun read-date-literal (stream subchar arg)
     "#D\"2027-06-15\" => (parse-date \"2027-06-15\")"
     (let ((string (read-literal-string stream subchar arg)))
-      (unless *read-suppress* (parse-date string))))
+      (unless *read-suppress* (parse-literal stream subchar #'parse-date string))))
 
   (defun read-tenor-literal (stream subchar arg)
     "#T\"3M\" => (parse-tenor \"3M\")"
     (let ((string (read-literal-string stream subchar arg)))
-      (unless *read-suppress* (parse-tenor string))))
+      (unless *read-suppress* (parse-literal stream subchar #'parse-tenor string))))
 
   ;; Equivalent to (DEFREADTABLE SYNTAX (:MERGE :STANDARD) ...), built
   ;; without DEFREADTABLE: merging walks the source readtable with

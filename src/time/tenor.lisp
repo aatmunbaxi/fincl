@@ -2,7 +2,7 @@
 
 (in-package #:fincl)
 
-(define-condition invalid-tenor (error)
+(define-condition invalid-tenor (invalid-input)
   ((description :initarg :description :reader invalid-tenor-description))
   (:report (lambda (c s) (write-string (invalid-tenor-description c) s))))
 
@@ -22,8 +22,8 @@ tenors are EQUALP when they have the same N and UNIT.
   "Return a tenor of N UNITs. UNIT is :DAYS, :WEEKS, :MONTHS or :YEARS.
 
   (make-tenor 10 :days) => #T\"10D\""
-  (check-type n integer)
-  (check-type unit tenor-unit)
+  (check-input n integer)
+  (check-input unit tenor-unit ":DAYS, :WEEKS, :MONTHS or :YEARS")
   (%tenor n unit))
 
 (defmethod make-load-form ((p tenor) &optional environment)

@@ -7,7 +7,7 @@
 
 (in-package #:fincl)
 
-(define-condition invalid-date (error)
+(define-condition invalid-date (invalid-input)
   ((description :initarg :description :reader invalid-date-description))
   (:report (lambda (c s) (write-string (invalid-date-description c) s))))
 
@@ -84,9 +84,9 @@ DAY still yields a number, which MAKE-DATE rejects by round-tripping."
   "Return the date YEAR-MONTH-DAY. Signals INVALID-DATE if it does not exist.
 
   (make-date 2027 6 15) => #D\"2027-06-15\""
-  (check-type year integer)
-  (check-type month integer)
-  (check-type day integer)
+  (check-input year integer)
+  (check-input month integer)
+  (check-input day integer)
   (let ((serial (days-from-civil year month day)))
     (multiple-value-bind (y m d) (civil-from-days serial)
       (unless (and (= y year) (= m month) (= d day))
