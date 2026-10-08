@@ -133,3 +133,121 @@ that year's length (365 or 366)."))
 (defvar +actual-360+ (make-instance 'actual-360))
 (defvar +actual-365-fixed+ (make-instance 'actual-365-fixed))
 (defvar +actual-actual-isda+ (make-instance 'actual-actual-isda))
+
+;;; --------------------------------------------------------------------
+;;; ACT/ACT ICMA
+;;; --------------------------------------------------------------------
+
+(defun lround (x)
+  "C's lround: X rounded to the nearest integer, halves away from zero (CL's
+ROUND rounds halves to even)."
+  (if (minusp x) (- (floor (+ (- x) 1/2))) (floor (+ x 1/2))))
+
+(defclass actual-actual-icma (day-counter)
+  ((schedule :initarg :schedule :initform nil :reader day-counter-schedule))
+  (:documentation "ACT/ACT ICMA (ISMA), as QuantLib's ActualActual(ISMA). With a
+SCHEDULE, a period is split along the schedule's coupon dates, stubs
+completed by notional coupon dates, and each piece counts its days over its
+reference period's days times the coupons per year. Without one, the
+reference period is REF-START to REF-END of YEAR-FRACTION (QuantLib's
+original ISMA algorithm, which also splits long stubs).
+
+  (make-instance 'actual-actual-icma :schedule (make-schedule ...))"))
+
+(defun icma-quasi-coupon-dates (schedule)
+  "The schedule's dates with each stub's end replaced by the notional coupon
+date one tenor away, and a further notional date for a long stub (QuantLib's
+getListOfPeriodDatesIncludingQuasiPayments, indexing quirk included)."
+  (let* ((dates (coerce (schedule-dates schedule) 'list))
+         (size (length dates))
+         (regular (schedule-regular-p schedule))
+         (calendar (schedule-calendar schedule))
+         (tenor (schedule-tenor schedule))
+         (back (make-tenor (- (tenor-n tenor)) (tenor-unit tenor)))
+         (convention (schedule-convention schedule))
+         (eom (schedule-end-of-month schedule))
+         (new (copy-list dates)))
+    (flet ((move (date tenor) (advance calendar date tenor :convention convention :end-of-month eom)))
+      (when (zerop (sbit regular 0))
+        (let ((notional (move (second dates) back)))
+          (setf (first new) notional)
+          (when (date< (first dates) notional)
+            (push (move notional back) new))))
+      (when (zerop (sbit regular (1- (length regular))))
+        (let ((notional (move (nth (- size 2) dates) tenor)))
+          ;; QuantLib writes position size - 1 of the list it has possibly
+          ;; just extended at the front; so does this.
+          (setf (nth (1- size) new) notional)
+          (when (date< notional (a:lastcar dates))
+            (setf new `(,@new ,(move notional tenor)))))))
+    new))
+
+(defun icma-reference-fraction (d1 d2 d3 d4)
+  "Days from D1 to D2 over the reference period D3-D4's days times the
+coupons per year that period implies (one, over a year from D1, below 16
+days)."
+  (let ((reference (float (date- d4 d3) 1d0)) (per-year 0))
+    (if (< reference 16)
+        (setf per-year 1
+              reference (float (date- (add-tenor d1 (make-tenor 1 :years)) d1) 1d0))
+        (setf per-year (lround (/ 12d0 (float (lround (/ (* 12 reference) 365d0)) 1d0)))))
+    ;; A reference period over two years implies no coupons a year, where
+    ;; QuantLib divides by zero.
+    (when (zerop per-year)
+      (signal-invalid-argument '(- d4 d3) (date- d4 d3) '(integer 0 730)
+                               "a reference period of at most two years for ICMA"))
+    (/ (float (date- d2 d1) 1d0) (* reference per-year))))
+
+(defmethod year-fraction ((dc actual-actual-icma) start end &key ref-start ref-end)
+  (cond ((date= start end) 0d0)
+        ((day-counter-schedule dc)
+         (let* ((coupons (icma-quasi-coupon-dates (day-counter-schedule dc)))
+                (first (reduce (lambda (a b) (if (date< b a) b a)) coupons))
+                (last (reduce (lambda (a b) (if (date< a b) b a)) coupons)))
+           (unless (and (not (date< start first)) (not (date< last end)))
+             (signal-invalid-argument 'end end 'date
+                                      (format nil "dates within the schedule's coupon dates ~A to ~A"
+                                              first last)))
+           (loop for (period-start period-end) on coupons
+                 while period-end
+                 when (and (date< start period-end) (date< period-start end))
+                   sum (icma-reference-fraction (if (date< start period-start) period-start start)
+                                                (if (date< period-end end) period-end end)
+                                                period-start period-end))))
+        (t (icma-reference-year-fraction start end (or ref-start start) (or ref-end end)))))
+
+(defun icma-reference-year-fraction (d1 d2 ref-start ref-end)
+  "QuantLib's original ISMA algorithm (Old_ISMA_Impl) for D1 < D2."
+  (cond
+    ((date= d1 d2) 0d0)
+    (t
+     (unless (and (date< ref-start ref-end) (date< d1 ref-end))
+       (signal-invalid-argument 'ref-end ref-end 'date
+                                "a reference period ending after both its start and the first date"))
+     (let ((months (lround (/ (* 12 (float (date- ref-end ref-start) 1d0)) 365))))
+       (when (zerop months)
+         (setf ref-start d1
+               ref-end (add-tenor d1 (make-tenor 1 :years))
+               months 12))
+       (let ((period (/ (float months 1d0) 12d0)))
+         (flet ((plus-months (date k) (add-tenor date (make-tenor k :months))))
+           (if (not (date< ref-end d2))
+               (if (not (date< d1 ref-start))
+                   (/ (* period (float (date- d2 d1) 1d0)) (float (date- ref-end ref-start) 1d0))
+                   ;; Long first period: split at the notional coupon.
+                   (let ((previous (plus-months ref-start (- months))))
+                     (if (date< ref-start d2)
+                         (+ (icma-reference-year-fraction d1 ref-start previous ref-start)
+                            (icma-reference-year-fraction ref-start d2 ref-start ref-end))
+                         (icma-reference-year-fraction d1 d2 previous ref-start))))
+               (progn
+                 (unless (not (date< d1 ref-start))
+                   (signal-invalid-argument 'ref-start ref-start 'date
+                                            "a reference period starting on or before the first date"))
+                 (let ((sum (icma-reference-year-fraction d1 ref-end ref-start ref-end))
+                       (i 0) (new-start nil) (new-end nil))
+                   (loop do (setf new-start (plus-months ref-end (* months i))
+                                  new-end (plus-months ref-end (* months (1+ i))))
+                         until (date< d2 new-end)
+                         do (incf sum period) (incf i))
+                   (+ sum (icma-reference-year-fraction new-start d2 new-start new-end)))))))))))

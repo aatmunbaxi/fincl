@@ -52,6 +52,16 @@
    #:calendar #:null-calendar #:weekends-only #:joint-calendar
    #:joint-calendars #:joint-rule
    #:business-day-p #:holiday-p #:weekend-p #:adjust #:business-days-between
+   #:count-business-days #:holiday-calendar #:calendar-holidays #:define-calendar
+   #:define-observance #:easter #:nth-weekday #:clear-calendar-cache
+   #:target #:+target+ #:united-states-settlement #:+united-states-settlement+
+   #:nyse #:+nyse+ #:united-states-government-bond #:+united-states-government-bond+
+   #:united-kingdom-settlement #:+united-kingdom-settlement+
+   #:united-kingdom-exchange #:+united-kingdom-exchange+
+   #:advance #:calendar-end-of-month #:calendar-end-of-month-p
+   #:schedule #:make-schedule #:schedule-dates #:schedule-unadjusted-dates #:schedule-regular-p
+   #:schedule-calendar #:schedule-tenor #:schedule-convention #:schedule-termination-convention
+   #:schedule-rule #:schedule-end-of-month #:actual-actual-icma
    ;; day counters
    #:day-counter #:day-count #:year-fraction
    #:actual-360 #:actual-365-fixed #:thirty-360 #:thirty-360-variant

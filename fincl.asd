@@ -11,6 +11,7 @@
                "random-state"
                "lparallel"
                "trivia"
+               "bordeaux-threads"
                "arrow-macros"
                "named-readtables"
                "closer-mop")
@@ -36,6 +37,9 @@
                 :components ((:file "date")
                              (:file "tenor")
                              (:file "calendar")
+                             (:file "holidays")
+                             (:file "calendars")
+                             (:file "schedule")
                              (:file "day-counter")))
                ;; Defines the #D / #T readtable; every file after this one
                ;; may use it via NAMED-READTABLES:IN-READTABLE.
@@ -85,7 +89,7 @@
 
 (defsystem "fincl/tests"
   :description "Tests for fincl"
-  :depends-on ("fincl" "lparallel" "closer-mop" "magicl")
+  :depends-on ("fincl" "lparallel" "closer-mop" "magicl" "bordeaux-threads")
   :pathname "tests/"
   :serial t
   :components ((:file "package")
@@ -94,6 +98,7 @@
                (:file "math")
                (:file "numerics")
                (:file "time")
+               (:file "calendars")
                (:file "syntax")
                (:file "market")
                (:file "instruments")

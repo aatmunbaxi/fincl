@@ -8,3 +8,7 @@ bin=$(mktemp)
 trap 'rm -f "$bin"' EXIT
 c++ -std=c++17 -O1 "$dir/generate_day_counters.cpp" -lQuantLib -o "$bin"
 "$bin" "$dir/day-counters.sexp"
+c++ -std=c++17 -O1 "$dir/generate_calendars.cpp" -lQuantLib -o "$bin"
+"$bin" "$dir/calendars.sexp"
+c++ -std=c++17 -O1 "$dir/generate_schedules.cpp" -lQuantLib -o "$bin"
+"$bin" "$dir/schedules.sexp"

@@ -94,6 +94,14 @@ modified conventions reverse direction rather than leave DATE's month.
        (let ((d (roll date -1)))
          (if (= (date-month d) (date-month date)) d (roll date 1)))))))
 
+(defgeneric count-business-days (calendar from to)
+  (:documentation "Business days of CALENDAR in [FROM, TO), FROM <= TO. The
+default tests each day; holiday calendars use per-year prefix counts.")
+  (:method ((calendar calendar) from to)
+    (loop for d = from then (date+ d 1)
+          while (date< d to)
+          count (business-day-p calendar d))))
+
 (defun business-days-between (calendar from to &key (include-first t) include-last)
   "Business days of CALENDAR between FROM and TO, by default counting
 [FROM, TO). Negative when TO precedes FROM, as in QuantLib.
@@ -102,8 +110,46 @@ modified conventions reverse direction rather than leave DATE's month.
                          #D\"2027-06-14\" #D\"2027-06-21\") => 5"
   (let* ((lo (if (date< to from) to from))
          (hi (if (date< to from) from to))
-         (count (if (and include-last (business-day-p calendar hi)) 1 0)))
-    (loop for d = (if include-first lo (date+ lo 1)) then (date+ d 1)
-          while (date< d hi)
-          when (business-day-p calendar d) do (incf count))
+         (count (+ (count-business-days calendar lo hi)
+                   (if (and (not include-first) (date< lo hi) (business-day-p calendar lo)) -1 0)
+                   (if (and include-last (business-day-p calendar hi)) 1 0))))
     (if (date< to from) (- count) count)))
+
+(defun calendar-end-of-month (calendar date)
+  "The last business day of DATE's month in CALENDAR."
+  (multiple-value-bind (y m) (civil-from-days (date-serial date))
+    (adjust calendar (make-date y m (days-in-month y m)) :preceding)))
+
+(defun calendar-end-of-month-p (calendar date)
+  "True if DATE is on or after the last business day of its month."
+  (not (date< date (calendar-end-of-month calendar date))))
+
+(defun advance (calendar date tenor &key (convention :following) end-of-month)
+  "DATE moved by TENOR in CALENDAR, as QuantLib's Calendar::advance: days
+count business days; weeks add calendar days, then adjust by CONVENTION;
+months and years add calendar months (the day clamped to the month's
+length), then adjust, except that with END-OF-MONTH a DATE at its month's
+end (the last calendar day under :UNADJUSTED, the last business day
+otherwise) moves to the target month's end.
+
+  (advance +target+ #D\"2027-06-30\" #T\"2D\") => #D\"2027-07-02\""
+  (let ((n (tenor-n tenor)))
+    (cond ((zerop n) (adjust calendar date convention))
+          ((eq (tenor-unit tenor) :days)
+           (let ((step (if (plusp n) 1 -1)) (d date))
+             (loop repeat (abs n)
+                   do (setf d (date+ d step))
+                      (loop until (business-day-p calendar d) do (setf d (date+ d step))))
+             d))
+          ((eq (tenor-unit tenor) :weeks)
+           (adjust calendar (date+ date (* 7 n)) convention))
+          (t
+           (let ((target (add-tenor date tenor)))
+             (cond ((and end-of-month (eq convention :unadjusted)
+                         (= (date-day date) (days-in-month (date-year date) (date-month date))))
+                    (make-date (date-year target) (date-month target)
+                               (days-in-month (date-year target) (date-month target))))
+                   ((and end-of-month (not (eq convention :unadjusted))
+                         (calendar-end-of-month-p calendar date))
+                    (calendar-end-of-month calendar target))
+                   (t (adjust calendar target convention))))))))

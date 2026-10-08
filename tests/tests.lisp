@@ -19,7 +19,7 @@ when every check passed."
     (zerop *failures*)))
 
 (defparameter *serial-checks*
-  (list 'math-checks 'interpolation-checks 'tridiagonal-checks 'time-checks 'syntax-checks)
+  (list 'math-checks 'interpolation-checks 'tridiagonal-checks 'time-checks 'calendar-checks 'schedule-checks 'syntax-checks)
   "Checks that run before an lparallel kernel exists.")
 
 (defparameter *fast-checks*

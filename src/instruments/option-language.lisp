@@ -159,26 +159,23 @@ CALENDAR with ROLL-CONVENTION (see RESOLVE-EXPIRY)."
 ;;; Rules
 ;;; --------------------------------------------------------------------
 
-(defun roll-back-schedule (expiry tenor from calendar roll-convention end-of-month)
-  "Dates EXPIRY, EXPIRY - TENOR, EXPIRY - 2 TENOR, ... strictly after FROM,
-earliest first. Every date but the expiry moves onto a business day of
-CALENDAR, if given, and stays strictly between FROM and EXPIRY."
-  (let ((dates `(,expiry)))
-    (loop for k from 1
-          for unadjusted = (add-tenor expiry (make-tenor (- (* k (tenor-n tenor))) (tenor-unit tenor))
-                                      :end-of-month end-of-month)
-          while (date< from unadjusted)
-          do (let ((date (if calendar (adjust calendar unadjusted roll-convention) unadjusted)))
-               (when (and (date< from date) (date< date expiry))
-                 (push date dates))))
-    (remove-duplicates dates :test #'date=)))
+(defun bermudan-schedule-dates (expiry tenor from calendar roll-convention end-of-month)
+  "Exercise dates every TENOR back from EXPIRY, strictly after FROM: the dates
+of the backward MAKE-SCHEDULE from FROM to EXPIRY, without its first (FROM
+itself or a stub start). Dates move onto business days of CALENDAR, if
+given, by ROLL-CONVENTION; the expiry stays as given."
+  (rest (schedule-dates (make-schedule from expiry tenor
+                                       :calendar (or calendar (make-instance 'null-calendar))
+                                       :convention roll-convention
+                                       :termination-convention :unadjusted
+                                       :rule :backward :end-of-month end-of-month))))
 
 (define-fact-rule option :exercise-dates ((tenor :exercise-tenor) (from :exercise-from)
                                           (expiry :expiry)
                                           &optional (calendar :calendar nil)
                                           (roll-convention :roll-convention :following)
                                           (end-of-month :end-of-month nil))
-  (roll-back-schedule expiry tenor from calendar roll-convention end-of-month))
+  (bermudan-schedule-dates expiry tenor from calendar roll-convention end-of-month))
 
 (define-fact-rule option :expiry ((dates :exercise-dates))
   (a:lastcar dates))
