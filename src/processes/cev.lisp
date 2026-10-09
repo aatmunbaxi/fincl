@@ -6,12 +6,16 @@
 ;;;; the spot falls), which produces a negatively skewed implied vol smile
 ;;;; with one parameter. beta = 0 is the (Gaussian) Bachelier model.
 ;;;;
-;;;; Stepped in log space, so beta = 1 reproduces GBM exactly and S stays
-;;;; positive. That last part is a modelling choice, not a free lunch: for
-;;;; beta < 1 the true CEV process can reach zero in finite time (absorption
-;;;; at bankruptcy), and log-Euler cannot represent that. Use an absorbing
-;;;; Euler scheme or the exact non-central chi-squared sampler if the zero
-;;;; boundary matters for the product being priced.
+;;;; For beta < 1 the process can reach zero in finite time, where it is
+;;;; absorbed (bankruptcy); CEV-ENGINE prices Europeans in closed form under
+;;;; that absorbing boundary. Two path schemes, chosen by the SCHEME slot:
+;;;;
+;;;; :LOG-EULER (the default) steps ln S with the local vol sigma S^(beta-1),
+;;;; so beta = 1 reproduces GBM exactly and S stays positive. It cannot reach
+;;;; zero, which biases deep out-of-the-money puts for beta < 1.
+;;;;
+;;;; :ABSORBING-EULER steps S itself, S + drift + sigma S^beta sqrt(dt) Z,
+;;;; and absorbs a path at 0 the first time a step lands at or below 0.
 
 (in-package #:fincl)
 
@@ -27,7 +31,10 @@ instantaneous vol at the spot matches the market's vol to expiry."
    (sigma nil :bounds ((0) nil) :market-default cev-default-sigma
               :doc "Scale parameter; its units change with beta. NIL resolves to
 sigma_ATM(T) S0^(1 - beta), T the expiry, sigma_ATM(T) the market's
-ATM-forward Black vol to T."))
+ATM-forward Black vol to T.")
+   (scheme :log-euler :parameter nil :type (member :log-euler :absorbing-euler)
+           :doc "Path discretization: :LOG-EULER (positive, never absorbed) or
+:ABSORBING-EULER (Euler on S, absorbed at 0)."))
   (:documentation "Constant-elasticity-of-variance dynamics."))
 
 (defmethod make-stepper ((p cev) market times)
@@ -44,15 +51,42 @@ ATM-forward Black vol to T."))
              (type (simple-array double-float (*)) dt sqrt-dt mu))
     (dotimes (j n)
       (setf (aref mu j) (log-growth market (aref times j) (aref times (1+ j)))))
-    (lambda (state normals j)
-      (declare (type (simple-array double-float (*)) state normals)
-               (fixnum j)
-               (optimize (speed 3) (safety 0)))
-      (let* ((s (aref state 0))
-             ;; Local volatility sigma * S^(beta-1).
-             (local-vol (* sigma (expt s exponent)))
-             (dt (aref dt j)))
-        (declare (double-float s local-vol dt))
-        (setf (aref state 0)
-              (* s (exp (+ (- (aref mu j) (* 0.5d0 local-vol local-vol dt))
-                           (* local-vol (aref sqrt-dt j) (aref normals 0))))))))))
+    (if (eq (scheme p) :absorbing-euler)
+        (let ((growth (map '(simple-array double-float (*)) #'exp mu)))
+          (declare (type (simple-array double-float (*)) growth))
+          ;; The drift is the exact forward growth over the step, so with no
+          ;; absorption E[S(t+dt) | S(t)] = S(t) F(t+dt)/F(t).
+          (lambda (state normals j)
+            (declare (type (simple-array double-float (*)) state normals)
+                     (fixnum j)
+                     (optimize (speed 3) (safety 0)))
+            (let ((s (aref state 0)))
+              (declare (double-float s))
+              (when (plusp s)
+                (let ((next (+ (* s (aref growth j))
+                               (* sigma (expt s beta) (aref sqrt-dt j) (aref normals 0)))))
+                  (declare (double-float next))
+                  (setf (aref state 0) (max 0d0 next)))))))
+        (cev-log-euler-stepper sigma exponent sqrt-dt mu))))
+
+(defun cev-log-euler-stepper (sigma exponent sqrt-dt mu)
+  (declare (double-float sigma exponent)
+           (type (simple-array double-float (*)) sqrt-dt mu))
+  (lambda (state normals j)
+    (declare (type (simple-array double-float (*)) state normals)
+             (fixnum j)
+             (optimize (speed 3) (safety 0)))
+    (let ((s (aref state 0)))
+      (declare (double-float s))
+      ;; A path that underflowed to 0 stays there (S^(beta-1) is infinite).
+      (when (plusp s)
+        (let* (;; Local volatility sigma * S^(beta-1), and its step deviation.
+               (local-vol (* sigma (expt s exponent)))
+               (deviation (* local-vol (aref sqrt-dt j))))
+          (declare (double-float local-vol deviation))
+          (setf (aref state 0)
+                (if (> deviation 1d10)
+                    ;; exp(-deviation^2 / 2 + ...) underflows: the step lands at 0.
+                    0d0
+                    (* s (exp (+ (- (aref mu j) (* 0.5d0 deviation deviation))
+                                 (* deviation (aref normals 0))))))))))))

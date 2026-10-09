@@ -187,6 +187,12 @@ LOG-GROWTH over each interval, so the discounted observable is a martingale
 under any deterministic term structure. A process that is not resolved (see
 RESOLVE-PROCESS) is resolved at the last grid time."))
 
+(defgeneric simulatable-p (process)
+  (:documentation "True if PROCESS can generate paths (MAKE-STEPPER). A
+process known only through its characteristic function (CGMY) returns NIL,
+and the Monte Carlo engine reports the combination as unsupported.")
+  (:method ((p stochastic-process)) t))
+
 (defgeneric characteristic-function (process market horizon)
   (:documentation "If the log-return X = ln(S(HORIZON)/S(0)) has a known
 risk-neutral characteristic function, return a closure

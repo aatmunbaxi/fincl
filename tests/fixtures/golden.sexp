@@ -9,15 +9,21 @@
 ;;;; "pcg stream" entry (per-chunk streams) moved by round-off only, from
 ;;;; statistics taken in one pass instead of pooled per chunk. BAW, COS,
 ;;;; binomial and Black-Scholes entries are unchanged.
+;;;;
+;;;; Re-recorded in task 18 (2026-10-08). Heston paths default to Andersen's
+;;;; QE scheme, so the two Heston Monte Carlo entries are new draws (the
+;;;; European is 1.4 SE from COS); "cos european heston" moved by 1.4e-14,
+;;;; round-off from the cancellation-free characteristic function. Every
+;;;; other entry is unchanged.
 
 ("mc european gbm, antithetic" 10.426991644464705d0 0.04609972805935861d0)
 ("mc european gbm, no antithetic" 10.47021879563377d0 0.06557685977296052d0)
 ("mc european gbm, inverse transform" 10.407368253064677d0 0.04655309536203362d0)
 ("mc european gbm, pcg stream" 10.360163033837518d0 0.04645861770836062d0)
-("mc european heston, stepped" 10.168179821066007d0 0.05241491278675201d0)
+("mc european heston, stepped" 10.083887486175461d0 0.050155402285318534d0)
 ("mc european cev, stepped" 10.442490712192221d0 0.06836575626206788d0)
 ("mc american gbm, lsm" 4.479719882032638d0 0.013648880455394457d0)
-("mc american heston, lsm" 4.169094524635476d0 0.01828780282073729d0)
+("mc american heston, lsm" 4.201185886026186d0 0.017424042534750713d0)
 ("binomial american put, bbsr" 14.804493936664647d0 NIL)
 ("binomial american put, bbs" 14.805631483783706d0 NIL)
 ("binomial american put, crr" 14.8051140021255d0 NIL)
@@ -25,7 +31,7 @@
 ("binomial bermudan put, bbsr" 8.804118464559181d0 NIL)
 ("binomial bermudan put, crr" 8.801648022417876d0 NIL)
 ("cos european gbm" 10.450583572185586d0 NIL)
-("cos european heston" 10.154627030081738d0 NIL)
+("cos european heston" 10.154627030081752d0 NIL)
 ("cos bermudan gbm put" 8.804265380232518d0 NIL)
 ("cos american gbm put" 14.804436122779501d0 NIL)
 ("cos american gbm call" 15.9180214258165d0 NIL)
