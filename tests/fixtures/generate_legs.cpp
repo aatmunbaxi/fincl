@@ -1,0 +1,274 @@
+// Generate tests/fixtures/legs.sexp from QuantLib's FixedRateLeg, IborLeg
+// and OvernightLeg.
+//
+//   nix develop .#fixtures -c sh tests/fixtures/generate.sh
+//
+// Valued on 2026-09-24. The file holds:
+//   (:curves (id :dates (...) :discounts (...)) ...)   log-linear discount
+//       curves, ACT/365F, the first date the valuation date
+//   (:fixings (index-id ("date" rate) ...) ...)        past fixings
+//   (:legs leg...)  each leg a plist: :kind (:fixed, :ibor or :overnight),
+//       the schedule's inputs (:effective :termination :tenor :calendar
+//       :convention :termination-convention :rule :end-of-month
+//       :first-date), the leg's inputs, then :cashflows, each
+//       (payment start end ref-start ref-end rate accrual amount), :npv
+//       and :bps on the leg currency's curve, and :accrued at :accrued-date
+//       (fixed and Ibor legs).
+
+#include <ql/quantlib.hpp>
+#include <ql/version.hpp>
+
+#include <cmath>
+#include <cstdio>
+#include <map>
+#include <string>
+#include <vector>
+
+using namespace QuantLib;
+
+namespace {
+
+std::string iso(const Date& d) {
+    char buffer[16];
+    std::snprintf(buffer, sizeof buffer, "%04d-%02d-%02d", d.year(), int(d.month()),
+                  d.dayOfMonth());
+    return buffer;
+}
+
+Date parse(const std::string& s) {
+    return Date(std::stoi(s.substr(8, 2)), Month(std::stoi(s.substr(5, 2))),
+                std::stoi(s.substr(0, 4)));
+}
+
+const Date today(24, September, 2026);
+
+struct CurveSpec { std::string id; double r0, slope; };
+
+ext::shared_ptr<YieldTermStructure> makeCurve(FILE* out, const CurveSpec& spec) {
+    std::vector<Date> dates = {today};
+    std::vector<Real> dfs = {1.0};
+    for (int days : {1, 7, 30, 91, 182, 365, 548, 730, 1095, 1461, 1826, 2557, 3652, 5479, 7305}) {
+        Date d = today + days;
+        double t = days / 365.0;
+        dates.push_back(d);
+        dfs.push_back(std::exp(-(spec.r0 + spec.slope * t - 0.00004 * t * t) * t));
+    }
+    std::fprintf(out, " (%s :dates (", spec.id.c_str());
+    for (const Date& d : dates) std::fprintf(out, " \"%s\"", iso(d).c_str());
+    std::fprintf(out, ")\n   :discounts (");
+    for (Real df : dfs) std::fprintf(out, " %.17g", df);
+    std::fprintf(out, "))\n");
+    auto curve = ext::make_shared<InterpolatedDiscountCurve<LogLinear> >(dates, dfs, Actual365Fixed());
+    curve->enableExtrapolation();
+    return curve;
+}
+
+void addFixings(FILE* out, const char* id, const ext::shared_ptr<InterestRateIndex>& index,
+                double base) {
+    std::fprintf(out, " (%s", id);
+    int k = 0;
+    for (Date d(1, January, 2025); d < today; ++d) {
+        if (!index->isValidFixingDate(d)) continue;
+        double rate = base + 0.0003 * std::sin(0.37 * k++);
+        index->addFixing(d, rate);
+        std::fprintf(out, "\n  (\"%s\" %.17g)", iso(d).c_str(), rate);
+    }
+    std::fprintf(out, ")\n");
+}
+
+std::map<std::string, Calendar> calendars = {
+    {":target", TARGET()},
+    {":united-states-government-bond", UnitedStates(UnitedStates::GovernmentBond)},
+    {":united-states-settlement", UnitedStates(UnitedStates::Settlement)},
+    {":united-states-sofr", UnitedStates(UnitedStates::SOFR)},
+    {":united-kingdom-settlement", UnitedKingdom(UnitedKingdom::Settlement)},
+    {":united-kingdom-exchange", UnitedKingdom(UnitedKingdom::Exchange)}};
+
+std::map<std::string, BusinessDayConvention> conventions = {
+    {":following", Following}, {":modified-following", ModifiedFollowing},
+    {":preceding", Preceding}, {":unadjusted", Unadjusted}};
+
+std::map<std::string, DateGeneration::Rule> rules = {
+    {":backward", DateGeneration::Backward}, {":forward", DateGeneration::Forward}};
+
+std::map<std::string, DayCounter> dayCounters = {
+    {":actual-360", Actual360()}, {":actual-365-fixed", Actual365Fixed()},
+    {":thirty-360-bond-basis", Thirty360(Thirty360::BondBasis)},
+    {":thirty-360-european", Thirty360(Thirty360::European)},
+    {":actual-actual-isda", ActualActual(ActualActual::ISDA)}};
+
+Period parsePeriod(const std::string& s) {
+    int n = std::stoi(s.substr(0, s.size() - 1));
+    switch (s.back()) {
+      case 'D': return Period(n, Days);
+      case 'W': return Period(n, Weeks);
+      case 'M': return Period(n, Months);
+      default: return Period(n, Years);
+    }
+}
+
+struct LegSpec {
+    std::string kind, effective, termination, tenor, calendar, convention, terminationConvention,
+        rule;
+    bool eom;
+    std::string firstDate;
+    std::string index;      // fixed legs: the rate's day counter
+    double rate;            // fixed: coupon rate; floating: spread
+    double gearing;
+    int paymentLag;
+    std::string extra;      // fixed: "compounded"; ibor: fixing days override "0"
+    std::string accruedDate;
+};
+
+}
+
+int main(int argc, char** argv) {
+    if (argc != 2) {
+        std::fprintf(stderr, "usage: %s output.sexp\n", argv[0]);
+        return 1;
+    }
+    Settings::instance().evaluationDate() = today;
+    FILE* out = std::fopen(argv[1], "w");
+    std::fprintf(out, ";;;; legs.sexp --- generated by tests/fixtures/generate.sh from QuantLib %s\n",
+                 QL_VERSION);
+
+    std::fprintf(out, "(:curves\n");
+    std::map<std::string, Handle<YieldTermStructure> > handles;
+    for (const CurveSpec& c : std::vector<CurveSpec>{{":euribor-6m", 0.024, 0.0011},
+                                                    {":euribor-3m", 0.0225, 0.0010},
+                                                    {":estr", 0.0205, 0.0009},
+                                                    {":sofr", 0.0385, -0.0006},
+                                                    {":sonia", 0.0395, -0.0008}})
+        handles[c.id] = Handle<YieldTermStructure>(makeCurve(out, c));
+    std::fprintf(out, ")\n");
+
+    std::map<std::string, ext::shared_ptr<IborIndex> > indexes = {
+        {":euribor-6m", ext::make_shared<Euribor6M>(handles[":euribor-6m"])},
+        {":euribor-3m", ext::make_shared<Euribor3M>(handles[":euribor-3m"])},
+        {":estr", ext::make_shared<Estr>(handles[":estr"])},
+        {":sofr", ext::make_shared<Sofr>(handles[":sofr"])},
+        {":sonia", ext::make_shared<Sonia>(handles[":sonia"])}};
+    std::map<std::string, std::string> discountFor = {
+        {"EUR", ":estr"}, {"USD", ":sofr"}, {"GBP", ":sonia"}};
+
+    std::fprintf(out, "(:fixings\n");
+    addFixings(out, ":euribor-6m", indexes[":euribor-6m"], 0.025);
+    addFixings(out, ":euribor-3m", indexes[":euribor-3m"], 0.0235);
+    addFixings(out, ":estr", indexes[":estr"], 0.0215);
+    addFixings(out, ":sofr", indexes[":sofr"], 0.0405);
+    addFixings(out, ":sonia", indexes[":sonia"], 0.0415);
+    std::fprintf(out, ")\n");
+
+    std::vector<LegSpec> specs = {
+        // Fixed legs.
+        {"fixed", "2025-11-17", "2030-11-17", "6M", ":target", ":modified-following", ":modified-following",
+         ":backward", false, "", ":actual-360", 0.035, 1, 0, "", "2027-01-15"},
+        {"fixed", "2026-02-10", "2030-08-15", "6M", ":united-states-government-bond", ":following",
+         ":following", ":backward", false, "", ":thirty-360-bond-basis", 0.04, 1, 0, "", "2026-12-01"},
+        {"fixed", "2026-10-15", "2031-06-20", "3M", ":united-kingdom-settlement", ":modified-following",
+         ":modified-following", ":forward", false, "", ":actual-365-fixed", 0.045, 1, 2, "", "2031-06-21"},
+        {"fixed", "2026-02-28", "2032-02-29", "1Y", ":target", ":modified-following", ":modified-following",
+         ":backward", true, "", ":thirty-360-european", 0.025, 1, 0, "", "2026-10-30"},
+        {"fixed", "2026-12-01", "2036-12-01", "1Y", ":united-states-settlement", ":modified-following",
+         ":modified-following", ":backward", false, "", ":actual-actual-isda", 0.03, 1, 0, "compounded",
+         "2027-06-01"},
+        // Ibor legs (par coupons, QuantLib's default).
+        {"ibor", "2025-12-15", "2030-12-15", "6M", ":target", ":modified-following", ":modified-following",
+         ":backward", false, "", ":euribor-6m", 0.001, 1, 0, "", "2026-10-01"},
+        {"ibor", "2026-11-20", "2031-02-20", "6M", ":target", ":modified-following", ":modified-following",
+         ":backward", false, "", ":euribor-6m", 0.0, 1.2, 0, "", "2027-01-11"},
+        {"ibor", "2026-10-26", "2029-10-26", "3M", ":target", ":modified-following", ":modified-following",
+         ":backward", false, "", ":euribor-3m", -0.0005, 1, 2, "", "2027-01-27"},
+        {"ibor", "2026-03-31", "2030-03-31", "3M", ":target", ":modified-following", ":modified-following",
+         ":backward", true, "", ":euribor-3m", 0.0, 1, 0, "", "2026-11-11"},
+        {"ibor", "2026-10-12", "2033-06-10", "6M", ":target", ":modified-following", ":modified-following",
+         ":forward", false, "", ":euribor-6m", 0.002, 1, 0, "", "2027-02-01"},
+        {"ibor", "2026-09-30", "2031-09-30", "6M", ":target", ":modified-following", ":modified-following",
+         ":backward", true, "", ":euribor-6m", 0.0, 1, 0, "0", "2027-03-01"},
+        {"ibor", "2026-10-05", "2030-04-05", "6M", ":target", ":modified-following", ":modified-following",
+         ":backward", false, "2027-07-05", ":euribor-6m", 0.0015, 0.9, 1, "", "2027-05-05"},
+        {"ibor", "2025-09-24", "2027-09-24", "3M", ":target", ":modified-following", ":modified-following",
+         ":backward", false, "", ":euribor-3m", 0.0, 1, 0, "", "2026-09-24"},
+        // Overnight legs.
+        {"overnight", "2026-09-28", "2031-09-28", "1Y", ":united-states-sofr", ":modified-following",
+         ":modified-following", ":backward", false, "", ":sofr", 0.0, 1, 2, "", ""},
+        {"overnight", "2026-03-16", "2028-03-16", "1Y", ":united-states-sofr", ":modified-following",
+         ":modified-following", ":backward", false, "", ":sofr", 0.0, 1, 2, "", ""},
+        {"overnight", "2026-08-03", "2027-08-03", "3M", ":target", ":modified-following", ":modified-following",
+         ":backward", false, "", ":estr", 0.0, 1, 1, "", ""},
+        {"overnight", "2026-10-01", "2036-10-01", "1Y", ":target", ":modified-following", ":modified-following",
+         ":backward", false, "", ":estr", 0.001, 1, 1, "", ""},
+        {"overnight", "2026-06-15", "2029-06-15", "6M", ":united-kingdom-exchange", ":modified-following",
+         ":modified-following", ":backward", false, "", ":sonia", 0.0, 1, 0, "", ""},
+        {"overnight", "2026-10-30", "2027-01-30", "3M", ":united-kingdom-exchange", ":modified-following",
+         ":unadjusted", ":backward", false, "", ":sonia", 0.0005, 1, 0, "", ""},
+        {"overnight", "2026-12-26", "2027-12-26", "6M", ":target", ":unadjusted", ":unadjusted",
+         ":backward", false, "", ":estr", 0.0, 1, 0, "", ""}};
+
+    std::fprintf(out, "(:legs\n");
+    for (const LegSpec& s : specs) {
+        MakeSchedule make;
+        make.from(parse(s.effective)).to(parse(s.termination)).withTenor(parsePeriod(s.tenor))
+            .withCalendar(calendars[s.calendar]).withConvention(conventions[s.convention])
+            .withTerminationDateConvention(conventions[s.terminationConvention])
+            .withRule(rules[s.rule]).endOfMonth(s.eom);
+        if (!s.firstDate.empty()) make.withFirstDate(parse(s.firstDate));
+        Schedule schedule = make;
+        Leg leg;
+        std::string currency;
+        if (s.kind == "fixed") {
+            FixedRateLeg fixed(schedule);
+            fixed.withNotionals(100.0).withPaymentLag(s.paymentLag);
+            if (s.extra == "compounded")
+                fixed.withCouponRates(s.rate, dayCounters[s.index], Compounded, Annual);
+            else
+                fixed.withCouponRates(s.rate, dayCounters[s.index]);
+            leg = fixed;
+            currency = s.calendar == ":target" ? "EUR"
+                     : s.calendar.find("united-states") != std::string::npos ? "USD" : "GBP";
+        } else if (s.kind == "ibor") {
+            IborLeg ibor(schedule, indexes[s.index]);
+            ibor.withNotionals(100.0).withSpreads(s.rate).withGearings(s.gearing)
+                .withPaymentLag(s.paymentLag);
+            if (s.extra == "0") ibor.withFixingDays(0);
+            leg = ibor;
+            currency = "EUR";
+        } else {
+            OvernightLeg overnight(schedule, ext::dynamic_pointer_cast<OvernightIndex>(indexes[s.index]));
+            overnight.withNotionals(100.0).withSpreads(s.rate).withGearings(s.gearing)
+                .withPaymentLag(s.paymentLag);
+            leg = overnight;
+            currency = indexes[s.index]->currency().code();
+        }
+        const YieldTermStructure& curve = **handles[discountFor[currency]];
+        std::fprintf(out,
+                     " (:kind :%s :effective \"%s\" :termination \"%s\" :tenor \"%s\" :calendar %s\n"
+                     "  :convention %s :termination-convention %s :rule %s :end-of-month %s"
+                     " :first-date %s%s%s\n"
+                     "  :%s %s :rate %.17g :gearing %.17g :payment-lag %d :extra \"%s\" :currency :%s\n"
+                     "  :cashflows (\n",
+                     s.kind.c_str(), s.effective.c_str(), s.termination.c_str(), s.tenor.c_str(),
+                     s.calendar.c_str(), s.convention.c_str(), s.terminationConvention.c_str(),
+                     s.rule.c_str(), s.eom ? "t" : "nil", s.firstDate.empty() ? "nil" : "\"",
+                     s.firstDate.c_str(), s.firstDate.empty() ? "" : "\"",
+                     s.kind == "fixed" ? "day-counter" : "index", s.index.c_str(), s.rate, s.gearing,
+                     s.paymentLag, s.extra.c_str(), currency.c_str());
+        for (const auto& cf : leg) {
+            auto c = ext::dynamic_pointer_cast<Coupon>(cf);
+            std::fprintf(out, "   (\"%s\" \"%s\" \"%s\" \"%s\" \"%s\" %.17g %.17g %.17g)\n",
+                         iso(c->date()).c_str(), iso(c->accrualStartDate()).c_str(),
+                         iso(c->accrualEndDate()).c_str(), iso(c->referencePeriodStart()).c_str(),
+                         iso(c->referencePeriodEnd()).c_str(), c->rate(), c->accrualPeriod(),
+                         c->amount());
+        }
+        std::fprintf(out, "  )\n  :npv %.17g :bps %.17g", CashFlows::npv(leg, curve, true),
+                     CashFlows::bps(leg, curve, true));
+        if (!s.accruedDate.empty())
+            std::fprintf(out, " :accrued-date \"%s\" :accrued %.17g", s.accruedDate.c_str(),
+                         CashFlows::accruedAmount(leg, false, parse(s.accruedDate)));
+        std::fprintf(out, ")\n");
+    }
+    std::fprintf(out, ")\n");
+    std::fclose(out);
+    return 0;
+}
