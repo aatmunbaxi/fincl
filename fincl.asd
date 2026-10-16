@@ -66,7 +66,8 @@
                 :components ((:file "interest-rate")
                              (:file "protocol")
                              (:file "flat")
-                             (:file "yield-curves")))
+                             (:file "yield-curves")
+                             (:file "rates-vol")))
                (:file "market")
                (:module "instruments"
                 :serial t
@@ -75,7 +76,8 @@
                              (:file "option-language")
                              (:file "indexes")
                              (:file "cashflows")
-                             (:file "rate-helpers")))
+                             (:file "rate-helpers")
+                             (:file "rates")))
                (:module "processes"
                 :serial t
                 :components ((:file "parameters")
@@ -90,7 +92,8 @@
                              (:file "cev")
                              (:file "heston")
                              (:file "bates")
-                             (:file "garch")))
+                             (:file "garch")
+                             (:file "hull-white")))
                (:module "engines"
                 :serial t
                 :components ((:file "engine")
@@ -98,7 +101,10 @@
                              (:file "monte-carlo")
                              (:file "binomial")
                              (:file "cos")
-                             (:file "selection")))
+                             (:file "selection")
+                             (:file "discounting")
+                             (:file "rates-analytic")
+                             (:file "hull-white")))
                ;; Composite markets are priced through views; needs PRICE.
                (:file "pricing")
                (:file "implied-volatility")
@@ -134,7 +140,12 @@
                (:file "invariants")
                (:file "option-language")
                (:file "golden")
+               (:file "rates-instruments")
+               (:file "readme")
                ;; The runners call the checks above; keep them last.
                (:file "tests"))
+  ;; RUN-TESTS returns NIL when a check fails; make TEST-OP (and the shell
+  ;; command around it) fail too.
   :perform (test-op (o c)
-             (symbol-call '#:fincl/tests '#:run-tests)))
+             (unless (symbol-call '#:fincl/tests '#:run-tests)
+               (error "fincl/tests: RUN-TESTS reported failing checks."))))

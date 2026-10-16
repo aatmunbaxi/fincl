@@ -108,6 +108,27 @@
    #:rate-helper #:deposit-helper #:fra-helper #:futures-helper #:ois-helper #:swap-helper
    #:helper-quote #:helper-pillar-date #:helper-implied-quote #:helper-tenor
    #:bootstrap-curve #:piecewise-yield-curve #:curve-helpers #:bump-structure-quote
+   ;; interest-rate instruments (task 16)
+   #:rates-instrument #:bond #:fixed-rate-bond #:make-fixed-rate-bond #:bond-cashflows
+   #:bond-face #:bond-schedule #:bond-coupon #:bond-redemption #:bond-settlement-days
+   #:bond-maturity-date #:bond-settlement-date #:bond-notional
+   #:bond-accrued-amount #:bond-dirty-price #:bond-clean-price #:bond-bps #:bond-npv
+   #:bond-yield #:bond-price-from-yield #:bond-duration #:bond-convexity
+   #:z-spread #:bond-price-from-z-spread
+   #:swap #:vanilla-swap #:ois-swap #:make-vanilla-swap #:make-ois-swap #:swap-legs
+   #:swap-type #:swap-nominal #:swap-fixed-rate #:swap-spread
+   #:swap-npv #:swap-leg-npv #:swap-leg-bps #:fair-rate #:fair-spread
+   #:forward-rate-agreement #:make-forward-rate-agreement #:fra-forward-rate #:fra-amount
+   #:fra-npv
+   #:cap-floor #:make-cap-floor #:cap-floor-type #:cap-floor-leg #:cap-rates #:floor-rates
+   #:swaption #:make-swaption #:swaption-swap #:swaption-exercise #:swaption-settlement
+   #:rates-vol-structure #:flat-rates-vol #:expiry-rates-vol #:rates-vol-variance
+   #:rates-engine #:discounting-engine #:black-rates-engine #:bachelier-rates-engine
+   #:cap-floor-optionlet-prices
+   #:callable-fixed-rate-bond #:make-callable-fixed-rate-bond #:bond-call-schedule
+   #:hull-white #:make-hull-white #:hull-white-a #:make-rate-curve #:hull-white-discount-bond
+   #:hull-white-discount #:hull-white-bond-option
+   #:jamshidian-swaption-engine #:hull-white-tree-engine #:calibrate-hull-white
    ;; instruments
    #:instrument #:payoff #:call-put-payoff #:strike-payoff #:vanilla-payoff #:kind #:strike
    #:validate-payoff #:validate-pricing-inputs
