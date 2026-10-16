@@ -252,11 +252,12 @@ put-call parity fails; the formula here covers beta <= 1." beta)))
 
 (defmethod engine-candidates append ((designator (eql :black-scholes)) (x european-exercise) (p vanilla-payoff)
                                      (f path-independent) (process gbm))
-  '((10 :black-scholes)))
+  ;; A GBM with its own vol goes to engines that use it.
+  (unless (explicit-parameters process) '((10 :black-scholes))))
 
 (defmethod engine-candidates append ((designator (eql :baw)) (x american-exercise) (p vanilla-payoff)
                                      (f path-independent) (process gbm))
-  '((30 :baw)))
+  (unless (explicit-parameters process) '((30 :baw))))
 
 (defmethod engine-candidates append ((designator (eql :merton-series)) (x european-exercise) (p vanilla-payoff)
                                      (f path-independent) (process merton-jump))
