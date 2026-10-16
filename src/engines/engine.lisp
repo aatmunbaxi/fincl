@@ -42,18 +42,83 @@ approximation does not hold in this market regime."))
 ;;; Engines
 ;;; --------------------------------------------------------------------
 
-(defclass engine () ())
+(defclass engine-class (standard-class)
+  ((designator :initarg :designator :initform nil
+               :documentation "The keyword naming the class in MAKE-ENGINE, as a
+one-element list (class option syntax).")
+   (models :initarg :models :initform nil :reader engine-class-models
+           :documentation "Process classes the engine models."))
+  (:documentation "Metaclass of engines, accepting the class options
+(:designator keyword) and (:models process-class ...). A subclass defined
+without it is an ordinary engine with no designator of its own."))
+
+(defmethod c2mop:validate-superclass ((c engine-class) (s standard-class)) t)
+(defmethod c2mop:validate-superclass ((c standard-class) (s engine-class)) t)
+
+(defvar *engine-designators* (make-hash-table :test 'eq)
+  "Engine designator keyword -> engine class name.")
+
+(defun engine-class-designator (class)
+  (and (typep class 'engine-class) (first (slot-value class 'designator))))
+
+(defmethod shared-initialize :after ((c engine-class) slot-names &key)
+  (declare (ignore slot-names))
+  (let ((key (engine-class-designator c)))
+    (when key
+      (let ((owner (gethash key *engine-designators*)))
+        (when (and owner (not (eq owner (class-name c))))
+          (signal-invalid-argument 'designator key 'keyword
+                                   (format nil "a designator not already taken (~S names ~S)"
+                                           key owner))))
+      (setf (gethash key *engine-designators*) (class-name c)))))
+
+(defclass engine () ()
+  (:metaclass engine-class))
 
 (defclass analytic-engine (engine) ()
+  (:metaclass engine-class)
   (:documentation "Closed forms. An analytic engine's model is fixed by its
 class: there is no process slot, because a closed form exists only for the
 dynamics it was derived under. Adding Heston's characteristic-function
 solution means adding an engine class and a method, not a parameter."))
 
-(defclass black-scholes-engine (analytic-engine) ())
+(defclass black-scholes-engine (analytic-engine) ()
+  (:metaclass engine-class)
+  (:designator :black-scholes)
+  (:models gbm)
+  (:documentation "Black's formula for European vanillas."))
 
 (defclass barone-adesi-whaley-engine (analytic-engine) ()
+  (:metaclass engine-class)
+  (:designator :baw)
+  (:models gbm)
   (:documentation "Quadratic approximation for American vanillas."))
+
+(defclass merton-series-engine (analytic-engine)
+  ((process :initarg :process :initform (make-instance 'merton-jump) :reader process
+            :type merton-jump
+            :documentation "The Merton jump diffusion whose parameters the
+series uses."))
+  (:metaclass engine-class)
+  (:designator :merton-series)
+  (:models merton-jump)
+  (:documentation "Merton's (1976) series for European vanillas under a jump
+diffusion: Black prices conditional on the number of jumps, weighted by
+their Poisson probabilities.
+
+  (make-instance 'merton-series-engine :process (make-instance 'merton-jump :intensity 1))"))
+
+(defclass cev-engine (analytic-engine)
+  ((process :initarg :process :initform (make-instance 'cev :beta 0.5d0) :reader process
+            :type cev
+            :documentation "The CEV process, with beta <= 1."))
+  (:metaclass engine-class)
+  (:designator :cev)
+  (:models cev)
+  (:documentation "Schroder's (1989) noncentral chi-square formula for
+European vanillas under CEV with absorption at zero, beta <= 1.
+
+  (make-instance 'cev-engine :process (make-instance 'cev :beta 0.5d0))"))
 
 (defclass monte-carlo-engine (engine)
   ((process :initarg :process :initform (make-instance 'gbm) :reader process
@@ -89,7 +154,10 @@ REGRESSION-SCALE (the strike), other components by their value at t = 0.")
    (regressors :initarg :regressors :initform nil :reader regressors
                :documentation "State components the LSM regression uses, as
 indices into the state vector, starting with 0. NIL uses the process's
-PROCESS-REGRESSORS: spot and variance for Heston and GARCH, spot otherwise.")))
+PROCESS-REGRESSORS: spot and variance for Heston and GARCH, spot otherwise."))
+  (:metaclass engine-class)
+  (:designator :mc)
+  (:models stochastic-process))
 
 (defclass binomial-engine (engine)
   ((process :initarg :process :initform (make-instance 'gbm) :reader process
@@ -104,6 +172,9 @@ odd-even oscillation of the plain CRR tree.")
    (extrapolate :initarg :extrapolate :initform t :reader extrapolate
                 :documentation "If true, return 2 v(N) - v(N/2), which
 cancels the O(1/N) error of the tree. Reliable only with SMOOTH."))
+  (:metaclass engine-class)
+  (:designator :binomial)
+  (:models gbm)
   (:documentation "Cox-Ross-Rubinstein binomial tree.
 
   (make-instance 'binomial-engine :n-steps 5000)"))
@@ -121,6 +192,9 @@ cumulants of the log-return.")
                      :reader richardson-dates
                      :documentation "Exercise dates M of the coarsest
 Bermudan in the American extrapolation, which uses M, 2M, 4M and 8M."))
+  (:metaclass engine-class)
+  (:designator :cos)
+  (:models stochastic-process)
   (:documentation "Fang and Oosterlee's Fourier-cosine (COS) method.
 Europeans need only a characteristic function; Bermudans and Americans use
 the backward recursion of their 2009 paper, which needs a process whose
@@ -136,8 +210,27 @@ mixin; GBM).
 (defgeneric price (instrument engine market)
   ;; The market first: see src/pricing.lisp.
   (:argument-precedence-order market instrument engine)
-  (:documentation "Returns (values npv standard-error). The second value is
-NIL for deterministic engines."))
+  (:documentation "Returns (values npv standard-error engine). The second
+value is NIL for deterministic engines; the third is the engine that priced.
+ENGINE may be an engine designator (src/engines/selection.lisp): a keyword
+such as :binomial, a list (:cos :n-terms 512) as data, a process to price
+under with an automatically chosen engine, or :auto for GBM.
+
+  (price opt (make-engine :binomial :n-steps 4000) m)
+  (price opt (make-heston :xi 0.5d0) m)"))
+
+(defgeneric engine-candidates (designator exercise payoff path process)
+  (:method-combination append)
+  (:documentation "((priority designator) ...): how automatic selection may
+use the engine DESIGNATOR (a keyword) for EXERCISE x PAYOFF x PATH under
+PROCESS, tried in increasing priority across engines (10 a closed form, 20
+a Fourier or lattice method, 30 an approximation, 90 or more a slow
+fallback). Each engine file adds APPEND methods on (eql its-designator) next
+to its pricing methods: the designator keeps two engines with the same
+specializers from replacing each other's method.")
+  (:method append (designator exercise payoff path process)
+    (declare (ignore designator exercise payoff path process))
+    '()))
 
 (defgeneric validate-pricing-inputs (instrument engine market)
   (:documentation "Signal an error if INSTRUMENT cannot be priced by ENGINE
@@ -166,10 +259,14 @@ condition is given."
                (error 'option-expired :option o :valuation-date today))
               ((date= expiry today)
                ;; Nothing left to model: the option is worth its payoff.
-               (values (payoff-value (option-payoff o) (spot market)) nil))
+               (values (payoff-value (option-payoff o) (spot market)) nil
+                       (and (typep engine 'engine) engine)))
               (t
                (validate-pricing-inputs o engine market)
-               (call-next-method))))
+               ;; Engine methods return two values; designators already
+               ;; return the engine they resolved to.
+               (multiple-value-bind (npv se resolved) (call-next-method)
+                 (values npv se (or resolved (and (typep engine 'engine) engine)))))))
     (use-value (value)
       :test (lambda (c) (restart-applies-p c '(or option-expired non-positive-volatility)))
       :report "Return a value as the price."
@@ -200,6 +297,10 @@ condition is given."
 (defmethod price ((o option) (e monte-carlo-engine) market)
   ;; USE-PROCESS-PERIOD is offered only when the expiry is a whole number
   ;; of model periods; the handler records the condition for the restart.
+  (unless (simulatable-p (process e))
+    (error 'unsupported-combination
+           :exercise (option-exercise o) :payoff (option-payoff o) :path (option-path o)
+           :process (process e) :engine e :market market))
   (let ((tau (time-to-expiry (option-exercise o) market))
         (step-condition nil))
     (handler-bind ((incompatible-time-step (lambda (c) (setf step-condition c))))
@@ -266,11 +367,11 @@ immutable, like markets.
   (derive-engine (make-instance 'binomial-engine :n-steps 500) :n-steps 4000)"
   (apply #'make-instance (class-of engine)
          `(,@initargs
-           ,@(loop for slot in (c2mop:class-slots (class-of engine))
-                   for name = (c2mop:slot-definition-name slot)
-                   for initarg = (first (c2mop:slot-definition-initargs slot))
-                   when (and initarg (slot-boundp engine name))
-                     append `(,initarg ,(slot-value engine name))))))
+           ,@(iter (for slot in (c2mop:class-slots (class-of engine)))
+                   (for name = (c2mop:slot-definition-name slot))
+                   (for initarg = (first (c2mop:slot-definition-initargs slot)))
+                   (when (and initarg (slot-boundp engine name))
+                     (appending `(,initarg ,(slot-value engine name))))))))
 
 (defun use-engine (engine &optional condition)
   "Invoke the USE-ENGINE restart for CONDITION, if there is one, so the
@@ -307,7 +408,7 @@ so the condition propagates.
                         (option-expired (use-value 0d0)))
     (mapcar (lambda (o) (price o *cos* market)) options))"
   `(handler-bind
-       ,(loop for (type (function . arguments)) in clauses
-              collect (let ((c (gensym "CONDITION")))
-                        `(,type (lambda (,c) (,function ,@arguments ,c)))))
+       ,(iter (for (type (function . arguments)) in clauses)
+              (collect (let ((c (gensym "CONDITION")))
+                         `(,type (lambda (,c) (,function ,@arguments ,c))))))
      ,@body))

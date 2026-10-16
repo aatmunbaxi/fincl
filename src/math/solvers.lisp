@@ -39,10 +39,10 @@ restarts."
   (let ((flo (funcall f lo))
         (fhi (funcall f hi)))
     (when expand-hi
-      (loop repeat 60
-            while (plusp (* flo fhi))
-            do (setf hi (* hi 2d0)
-                     fhi (funcall f hi))))
+      (iter (repeat 60)
+            (while (plusp (* flo fhi)))
+            (setf hi (* hi 2d0)
+                  fhi (funcall f hi))))
     (if (plusp (* flo fhi))
         (restart-case
             (error 'convergence-failure
@@ -85,39 +85,40 @@ Derivatives, 1973, ch. 4). Returns (values root iterations)."
   ;; keeps the root bracketed; D and E are the last two step sizes.
   (let* ((c b) (fc fb) (d (- b a)) (e d))
     (declare (double-float c fc d e))
-    (loop for iteration fixnum from 1 to max-iterations
-          do (when (or (and (plusp fb) (plusp fc)) (and (minusp fb) (minusp fc)))
-               (setf c a fc fa d (- b a) e d))
-             (when (< (abs fc) (abs fb))
-               (setf a b b c c a
-                     fa fb fb fc fc fa))
-             (let ((tol (+ (* 2d0 double-float-epsilon (abs b)) (* 0.5d0 tolerance)))
-                   (half (* 0.5d0 (- c b))))
-               (when (or (<= (abs half) tol) (zerop fb))
-                 (return-from brent (values b iteration)))
-               (if (and (>= (abs e) tol) (> (abs fa) (abs fb)))
-                   ;; Try interpolation: secant when only two points are
-                   ;; distinct, inverse quadratic otherwise.
-                   (let* ((s (/ fb fa))
-                          (p 0d0) (q 0d0))
-                     (declare (double-float s p q))
-                     (if (= a c)
-                         (setf p (* 2d0 half s)
-                               q (- 1d0 s))
-                         (let ((qq (/ fa fc)) (r (/ fb fc)))
-                           (setf p (* s (- (* 2d0 half qq (- qq r)) (* (- b a) (- r 1d0))))
-                                 q (* (- qq 1d0) (- r 1d0) (- s 1d0)))))
-                     (if (plusp p) (setf q (- q)) (setf p (- p)))
-                     ;; Accept the step only if it stays well inside the
-                     ;; bracket and shrinks faster than bisection would.
-                     (if (< (* 2d0 p) (min (- (* 3d0 half q) (abs (* tol q)))
-                                           (abs (* e q))))
-                         (setf e d d (/ p q))
-                         (setf d half e d)))
-                   (setf d half e d))
-               (setf a b fa fb)
-               (incf b (if (> (abs d) tol) d (float-sign half tol)))
-               (setf fb (float (funcall f b) 1d0))))
+    (iter (declare (declare-variables))
+          (for (the fixnum iteration) from 1 to max-iterations)
+          (when (or (and (plusp fb) (plusp fc)) (and (minusp fb) (minusp fc)))
+            (setf c a fc fa d (- b a) e d))
+          (when (< (abs fc) (abs fb))
+            (setf a b b c c a
+                  fa fb fb fc fc fa))
+          (let ((tol (+ (* 2d0 double-float-epsilon (abs b)) (* 0.5d0 tolerance)))
+                (half (* 0.5d0 (- c b))))
+            (when (or (<= (abs half) tol) (zerop fb))
+              (return-from brent (values b iteration)))
+            (if (and (>= (abs e) tol) (> (abs fa) (abs fb)))
+                ;; Try interpolation: secant when only two points are
+                ;; distinct, inverse quadratic otherwise.
+                (let* ((s (/ fb fa))
+                       (p 0d0) (q 0d0))
+                  (declare (double-float s p q))
+                  (if (= a c)
+                      (setf p (* 2d0 half s)
+                            q (- 1d0 s))
+                      (let ((qq (/ fa fc)) (r (/ fb fc)))
+                        (setf p (* s (- (* 2d0 half qq (- qq r)) (* (- b a) (- r 1d0))))
+                              q (* (- qq 1d0) (- r 1d0) (- s 1d0)))))
+                  (if (plusp p) (setf q (- q)) (setf p (- p)))
+                  ;; Accept the step only if it stays well inside the
+                  ;; bracket and shrinks faster than bisection would.
+                  (if (< (* 2d0 p) (min (- (* 3d0 half q) (abs (* tol q)))
+                                        (abs (* e q))))
+                      (setf e d d (/ p q))
+                      (setf d half e d)))
+                (setf d half e d))
+            (setf a b fa fb)
+            (incf b (if (> (abs d) tol) d (float-sign half tol)))
+            (setf fb (float (funcall f b) 1d0))))
     (signal-convergence-failure
      "Brent's method: no convergence in ~D iterations near ~,12F" max-iterations b)))
 
@@ -166,24 +167,25 @@ diverge, which signals CONVERGENCE-FAILURE.
           (return-from solve-newton
             (call-with-bracket (constantly nil) f lo hi nil))))
       (unless (< lo x hi) (setf x (* 0.5d0 (+ lo hi)))))
-    (loop for iteration fixnum from 1 to max-iterations
-          do (let ((fx (float (funcall f x) 1d0)))
-               (when (zerop fx)
-                 (return-from solve-newton (values x iteration)))
-               (when bracketed
-                 (if (plusp (* fx flo)) (setf lo x flo fx) (setf hi x)))
-               (let* ((h (* relative-step (max 1d0 (abs x))))
-                      (slope (difference-quotient f x h :scheme :central))
-                      ;; NIL when the step is undefined or overflows.
-                      (next (handler-case (- x (/ fx slope))
-                              (arithmetic-error () nil))))
-                 (when (and bracketed (or (null next) (not (< lo next hi))))
-                   (setf next (* 0.5d0 (+ lo hi))))
-                 (unless next
-                   (return-from solve-newton
-                     (signal-convergence-failure "Newton's method: zero derivative at ~,12F" x)))
-                 (when (< (abs (- next x)) tolerance)
-                   (return-from solve-newton (values next iteration)))
-                 (setf x next))))
+    (iter (declare (declare-variables))
+          (for (the fixnum iteration) from 1 to max-iterations)
+          (let ((fx (float (funcall f x) 1d0)))
+            (when (zerop fx)
+              (return-from solve-newton (values x iteration)))
+            (when bracketed
+              (if (plusp (* fx flo)) (setf lo x flo fx) (setf hi x)))
+            (let* ((h (* relative-step (max 1d0 (abs x))))
+                   (slope (difference-quotient f x h :scheme :central))
+                   ;; NIL when the step is undefined or overflows.
+                   (next (handler-case (- x (/ fx slope))
+                           (arithmetic-error () nil))))
+              (when (and bracketed (or (null next) (not (< lo next hi))))
+                (setf next (* 0.5d0 (+ lo hi))))
+              (unless next
+                (return-from solve-newton
+                  (signal-convergence-failure "Newton's method: zero derivative at ~,12F" x)))
+              (when (< (abs (- next x)) tolerance)
+                (return-from solve-newton (values next iteration)))
+              (setf x next))))
     (signal-convergence-failure
      "Newton's method: no convergence in ~D iterations from ~,12F" max-iterations x0)))

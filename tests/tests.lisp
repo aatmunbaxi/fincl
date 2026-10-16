@@ -19,11 +19,11 @@ when every check passed."
     (zerop *failures*)))
 
 (defparameter *serial-checks*
-  (list 'math-checks 'interpolation-checks 'tridiagonal-checks 'time-checks 'calendar-checks 'schedule-checks 'syntax-checks)
+  (list 'math-checks 'iteration-helper-checks 'interpolation-checks 'tridiagonal-checks 'time-checks 'calendar-checks 'schedule-checks 'syntax-checks)
   "Checks that run before an lparallel kernel exists.")
 
 (defparameter *fast-checks*
-  (list 'construction-checks 'market-checks 'composite-market-checks 'dated-pricing-checks 'payoff-protocol-checks
+  (list 'construction-checks 'rates-checks 'market-checks 'composite-market-checks 'dated-pricing-checks 'payoff-protocol-checks
         'define-payoff-checks 'option-language-checks 'exercise-mask-checks
         'cos-checks 'cos-term-structure-checks 'binomial-checks 'analytic-checks 'parameter-checks
         'error-checks 'condition-hierarchy-checks 'restart-checks 'lsm-basis-checks
@@ -32,7 +32,7 @@ when every check passed."
   "Checks that take seconds, not minutes.")
 
 (defparameter *slow-checks*
-  (list 'mc-checks 'counter-stream-checks 'antithetic-se-checks 'process-checks 'term-structure-checks 'clarke-parrott-checks
+  (list 'mc-checks 'counter-stream-checks 'antithetic-se-checks 'process-checks 'levy-checks 'selection-test-checks 'term-structure-checks 'clarke-parrott-checks
         'greeks-checks 'invariant-checks 'option-round-trip-checks 'golden-checks)
   "Monte Carlo-heavy checks, the invariant sweep and the golden values.")
 

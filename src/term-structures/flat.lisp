@@ -38,11 +38,13 @@
   (check-input (slot-value s 'vol) real "a real vol")
   (setf (slot-value s 'vol) (float (slot-value s 'vol) 1d0)))
 
-(defmethod curve-discount ((c flat-yield-curve) horizon)
+(defmethod curve-discount ((c flat-yield-curve) (horizon real))
   (exp (- (* (flat-rate c) horizon))))
-(defmethod curve-zero-rate ((c flat-yield-curve) horizon)
-  (declare (ignore horizon))
-  (flat-rate c))
+(defmethod curve-zero-rate ((c flat-yield-curve) horizon &optional (compounding :continuous)
+                                                           (frequency :annual) day-counter)
+  (if (and (eq compounding :continuous) (null day-counter) (realp horizon))
+      (flat-rate c)
+      (call-next-method)))
 
 (defmethod curve-dividend-discount ((c flat-dividend-curve) horizon)
   (exp (- (* (flat-rate c) horizon))))

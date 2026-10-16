@@ -38,14 +38,14 @@
     (format t "~&Processes: qualitative behaviour~%")
     ;; beta < 1 raises local vol as spot falls: fatter left tail, so an
     ;; out-of-the-money put is worth more than under GBM.
-    (let ((otm-put (option (put 80) (expires #D"2027-09-24"))))
+    (let ((otm-put (make-option (put 80) (expires #D"2027-09-24"))))
       (check-that "CEV beta=0.5 dearer OTM put than GBM"
                   (> (price otm-put (mc :n-paths 200000 :n-steps 50
                                         :process (make-instance 'cev :beta 0.5d0))
                             mkt)
                      (price otm-put (mc :n-paths 200000 :n-steps 50) mkt))))
     ;; Negative correlation in Heston does the same thing.
-    (let ((otm-put (option (put 80) (expires #D"2027-09-24"))))
+    (let ((otm-put (make-option (put 80) (expires #D"2027-09-24"))))
       (check-that "Heston rho<0 dearer OTM put than xi=0"
                   (> (price otm-put (mc :n-paths 200000 :n-steps 50
                                         :process (make-instance 'heston
@@ -161,12 +161,12 @@
                  (aref (parameter-vector (make-instance 'toy-base) m 1.5d0) 2))
     (format t "~&A process defined in a test file~%")
     (multiple-value-bind (v se)
-        (price (option (call 100) (expires #D"2027-09-24"))
+        (price (make-option (call 100) (expires #D"2027-09-24"))
                (mc :n-paths 50000 :n-steps 20 :process (make-instance 'log-ou :pull 0))
                m)
       (check "log-ou with pull = 0 is GBM" 10.4506 v (* 4 se)))
     (check-that "log-ou with pull > 0 prices lower: mean reversion cuts variance"
-                (< (price (option (call 100) (expires #D"2027-09-24"))
+                (< (price (make-option (call 100) (expires #D"2027-09-24"))
                           (mc :n-paths 50000 :n-steps 20 :process (make-instance 'log-ou :pull 2))
                           m)
                    10))))
@@ -191,17 +191,17 @@ error is that of the pair means."
          (n (fincl::path-matrix-n-paths paths))
          (half (/ n 2))
          (data (fincl::path-matrix-data paths)))
-    (loop for j from 0 to n-steps
-          for time = (* j (/ horizon n-steps))
-          for pairs = (loop for i below half
-                            collect (* 0.5d0 (+ (aref data (+ i (* j n)))
-                                                (aref data (+ i half (* j n))))))
-          for mean = (/ (reduce #'+ pairs) half)
-          for se = (sqrt (/ (/ (reduce #'+ pairs :key (lambda (x) (expt (- x mean) 2)))
-                               (1- half))
-                            half))
-          unless (<= (abs (- mean (forward market time))) (+ (* 4 se) 1d-12))
-            collect (list time mean (forward market time) se))))
+    (iter (for j from 0 to n-steps)
+          (for time = (* j (/ horizon n-steps)))
+          (for pairs = (iter (for i below half)
+                             (collect (* 0.5d0 (+ (aref data (+ i (* j n)))
+                                                  (aref data (+ i half (* j n))))))))
+          (for mean = (/ (reduce #'+ pairs) half))
+          (for se = (sqrt (/ (/ (reduce #'+ pairs :key (lambda (x) (expt (- x mean) 2)))
+                                (1- half))
+                             half)))
+          (unless (<= (abs (- mean (forward market time))) (+ (* 4 se) 1d-12))
+            (collect (list time mean (forward market time) se))))))
 
 (defun term-structure-checks ()
   (format t "~&Term structure: processes on a piecewise market~%")
@@ -216,7 +216,7 @@ error is that of the pair means."
                       (null violations))
           (when violations (format t "~&       ~S~%" violations)))))
     ;; Black's formula with the market's integrated D, F and w to expiry.
-    (let* ((call (option (call 100) (expires #D"2027-09-24")))
+    (let* ((call (make-option (call 100) (expires #D"2027-09-24")))
            (exact (fincl::black-formula 1d0 (forward pm 1d0) 100d0 (discount-factor pm 1d0)
                                         (black-variance pm 100d0 1d0))))
       (multiple-value-bind (v se)
@@ -259,7 +259,7 @@ error is that of the pair means."
   ;; The stepped path and the terminal sampler both average antithetic
   ;; pairs before the statistics, so they report the same estimator's SE.
   (let ((m (make-bs-market :valuation-date *today* :spot 100 :rate 0.05d0 :vol 0.2d0))
-        (call (option (call 100) (expires #D"2027-09-24"))))
+        (call (make-option (call 100) (expires #D"2027-09-24"))))
     (multiple-value-bind (v-terminal se-terminal) (price call (mc :n-paths 200000) m)
       (declare (ignore v-terminal))
       (multiple-value-bind (v-stepped se-stepped)

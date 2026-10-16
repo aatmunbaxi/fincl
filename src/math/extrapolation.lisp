@@ -22,7 +22,7 @@
 
 (defun default-exponents (n)
   "The exponents 1, 2, ..., N-1 of a Taylor-type error expansion in h."
-  (loop for p from 1 below n collect p))
+  (iter (for p from 1 below n) (collect p)))
 
 (defun check-richardson-arguments (n ratio exponents)
   (check-input n (integer 1) "a positive number of values")
@@ -46,18 +46,18 @@ rational and the exponents are integers, and floats otherwise.
   (richardson-weights 2 :exponents '(2)) => #(-1/3 4/3)"
   (check-richardson-arguments n ratio exponents)
   ;; Column k of the tableau, as coefficient vectors over the inputs.
-  (let ((column (loop for i below n
-                      collect (let ((e (make-array n :initial-element 0)))
-                                (setf (svref e i) 1)
-                                e))))
+  (let ((column (iter (for i below n)
+                      (collect (let ((e (make-array n :initial-element 0)))
+                                 (setf (svref e i) 1)
+                                 e)))))
     (dolist (p exponents (first column))
       (let ((factor (expt ratio p)))
         (setf column
-              (loop for (coarse fine) on column
-                    while fine
-                    collect (map 'simple-vector
-                                 (lambda (c f) (/ (- (* factor f) c) (- factor 1)))
-                                 coarse fine)))))))
+              (iter (for (coarse fine) on column)
+                    (while fine)
+                    (collect (map 'simple-vector
+                                  (lambda (c f) (/ (- (* factor f) c) (- factor 1)))
+                                  coarse fine))))))))
 
 (defun exact-weighted-sum (weights values)
   "Sum of WEIGHTS times VALUES, last element first, returned as

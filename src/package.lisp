@@ -1,7 +1,10 @@
 ;;;; package.lisp
 
 (defpackage #:fincl
-  (:use #:cl)
+  (:use #:cl #:iterate)
+  ;; ITERATE exports a MINIMIZE clause; fincl's MINIMIZE is the optimizer.
+  ;; Inside ITER forms, write the clause as ITER:MINIMIZE.
+  (:shadow #:minimize)
   ;; Package-local nicknames keep NU.STATISTICS:MEAN and similar names from
   ;; colliding and keep call sites short. Supported natively by SBCL,
   ;; CCL, ECL, ABCL, Clasp and Allegro; elsewhere load
@@ -56,6 +59,7 @@
    #:define-observance #:easter #:nth-weekday #:clear-calendar-cache
    #:target #:+target+ #:united-states-settlement #:+united-states-settlement+
    #:nyse #:+nyse+ #:united-states-government-bond #:+united-states-government-bond+
+   #:united-states-sofr #:+united-states-sofr+
    #:united-kingdom-settlement #:+united-kingdom-settlement+
    #:united-kingdom-exchange #:+united-kingdom-exchange+
    #:advance #:calendar-end-of-month #:calendar-end-of-month-p
@@ -67,6 +71,13 @@
    #:actual-360 #:actual-365-fixed #:thirty-360 #:thirty-360-variant
    #:actual-actual-isda #:business-252 #:day-counter-calendar
    #:+actual-360+ #:+actual-365-fixed+ #:+actual-actual-isda+
+   ;; currencies and money
+   #:currency #:define-currency #:currency-mismatch #:currency-name
+   #:money #:make-money #:money-amount #:money-currency #:money+ #:money- #:money*
+   ;; interest rates
+   #:interest-rate #:make-interest-rate #:interest-rate-rate #:interest-rate-day-counter
+   #:interest-rate-compounding #:interest-rate-frequency #:compounding #:frequency
+   #:compound-factor #:discount-factor-of #:implied-rate #:equivalent-rate
    ;; market protocol
    #:market #:make-bs-market
    #:spot #:zero-rate #:dividend-yield #:black-vol
@@ -77,10 +88,26 @@
    #:curve-discount #:curve-zero-rate #:curve-dividend-discount #:curve-dividend-yield
    #:structure-black-variance #:structure-black-vol #:bump-structure #:shift #:apply-shift
    #:flat-yield-curve #:flat-dividend-curve #:flat-black-vol #:flat-rate #:flat-vol
+   #:dated-curve #:interpolated-discount-curve #:interpolated-zero-curve
+   #:interpolated-forward-curve #:curve-forward-rate #:curve-reference-date #:curve-day-counter
+   #:curve-time #:curve-dates
    #:composite-market #:make-market #:market-underlyings #:market-view #:view-underlying
    #:view-discount-curve #:bump #:ambiguous-underlying #:missing-market-data
-   #:currency-mismatch
+   #:unsupported-quanto
    #:instrument-underlying #:instrument-currency
+   ;; indexes, cash flows and legs
+   #:interest-rate-index #:ibor-index #:overnight-index #:euribor #:sofr #:estr #:sonia
+   #:index-name #:index-tenor #:index-fixing-calendar #:index-fixing-days #:index-day-counter
+   #:index-currency #:index-forecast-curve #:index-fixing #:index-value-date
+   #:index-maturity-date #:index-fixing-date #:missing-fixing
+   #:cashflow #:simple-cashflow #:coupon #:fixed-rate-coupon #:floating-rate-coupon
+   #:ibor-coupon #:overnight-indexed-coupon #:payment-date #:cashflow-amount #:coupon-rate
+   #:coupon-nominal #:accrual-start #:accrual-end #:accrual-period
+   #:fixed-leg #:floating-leg #:leg-npv #:leg-bps #:accrued-amount #:market-fixings
+   ;; rate helpers and bootstrapping
+   #:rate-helper #:deposit-helper #:fra-helper #:futures-helper #:ois-helper #:swap-helper
+   #:helper-quote #:helper-pillar-date #:helper-implied-quote #:helper-tenor
+   #:bootstrap-curve #:piecewise-yield-curve #:curve-helpers #:bump-structure-quote
    ;; instruments
    #:instrument #:payoff #:call-put-payoff #:strike-payoff #:vanilla-payoff #:kind #:strike
    #:validate-payoff #:validate-pricing-inputs
@@ -89,7 +116,7 @@
    #:resolve-expiry
    #:path-feature #:path-independent
    #:option #:option-payoff #:option-exercise #:option-path
-   #:make-option #:make-vanilla-option
+   #:make-option #:make-option-from-clauses #:make-vanilla-option
    #:payoff-value #:payoff-kernel #:define-payoff #:declare-payoff-variables
    #:formula-payoff-superclass
    ;; processes
@@ -100,15 +127,21 @@
    #:calendar-arbitrage
    #:define-process #:parameterized-class #:parameterized #:invalid-parameter
    #:process-parameters #:process-parameter #:parameter-bounds #:parameter-vector #:with-parameter-vector
-   #:gbm #:cev #:heston #:garch
+   #:gbm #:cev #:heston #:garch #:constructor-collision
+   #:make-gbm #:make-cev #:make-heston #:make-garch #:make-merton-jump #:make-kou-jump
+   #:make-variance-gamma #:make-nig #:make-cgmy #:make-bates
+   #:exponential-levy #:levy-exponent #:levy-cumulants #:diffusion-variance
+   #:no-exponential-moment #:simulatable-p #:jump-diffusion
+   #:merton-jump #:kou-jump #:variance-gamma #:nig #:cgmy #:bates
    ;; engines
    #:engine #:analytic-engine #:black-scholes-engine
-   #:barone-adesi-whaley-engine #:monte-carlo-engine
+   #:barone-adesi-whaley-engine #:merton-series-engine #:cev-engine #:monte-carlo-engine
    #:cos-engine #:n-terms #:truncation #:richardson-dates
    #:binomial-engine #:smooth #:extrapolate
    #:process #:n-paths #:n-steps #:seed #:antithetic #:n-chunks
    #:basis-degree #:basis #:regressors #:process-regressors #:rng #:sampler
    #:price #:price-analytic #:price-mc #:price-cos #:price-binomial
+   #:make-engine #:engine-candidates #:with-engines #:engine-fallback #:no-suitable-engine
    ;; conditions and restarts
    #:fincl-error #:invalid-input #:pricing-error
    #:invalid-argument #:check-input #:signal-invalid-argument

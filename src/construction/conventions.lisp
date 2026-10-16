@@ -28,9 +28,7 @@ priority."
          (clauses (or (gethash (clause-key name) conventions)
                       (error 'unknown-convention
                              :name name :language (construction-language-name *language*)
-                             :known (sort (loop for key being the hash-keys of conventions
-                                                collect (a:make-keyword key))
-                                          #'string<)))))
+                             :known (mapcar #'a:make-keyword (sorted-keys conventions))))))
     (let ((*priority* :convention))
       (apply-clauses clauses))))
 

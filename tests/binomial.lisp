@@ -9,8 +9,8 @@
          (m (make-bs-market :valuation-date *today* :spot 100 :rate 0.05d0
                             :dividend 0.03d0 :vol 0.25d0))
          (ls (make-bs-market :valuation-date *today* :spot 36 :rate 0.06d0 :vol 0.2d0))
-         (aput (option (put 40) (american) (expires #D"2027-09-24")))
-         (acall (option (call 100) (american) (expires #D"2027-09-24"))))
+         (aput (make-option (put 40) (american) (expires #D"2027-09-24")))
+         (acall (make-option (call 100) (american) (expires #D"2027-09-24"))))
 
     (format t "~&Binomial: American under GBM~%")
     (check "American put = COS" (price aput cos ls) (price aput (binomial 8000) ls) 2d-5)
@@ -20,7 +20,7 @@
            (price acall cos m) (price acall (binomial 8000) m) 2d-5)
     (let ((no-div (make-bs-market :valuation-date *today* :spot 100 :rate 0.05d0 :vol 0.25d0)))
       (check "American call without dividends = European"
-             (price (option (call 100) (expires #D"2027-09-24")) bs no-div)
+             (price (make-option (call 100) (expires #D"2027-09-24")) bs no-div)
              (price acall (binomial 8000) no-div)
              1d-4))
     ;; Smoothing the last step removes the odd-even oscillation of the
@@ -57,7 +57,7 @@
                      (abs (- (price quarterly cos m)
                              (price quarterly (binomial 730 :extrapolate nil) m)))))
       (check "single-date Bermudan = European"
-             (price (option (put 100) (expires #D"2027-09-24")) bs m)
+             (price (make-option (put 100) (expires #D"2027-09-24")) bs m)
              (price (make-instance 'option
                                    :payoff payoff
                                    :exercise (make-instance 'bermudan-exercise
@@ -71,11 +71,11 @@
                                  :spot 100 :rate (* 0.05d0 scale)
                                  :dividend (* 0.03d0 scale) :vol (* 0.25d0 (sqrt scale)))))
       (check "American put: ACT/365F = rescaled ACT/360"
-             (price (option (put 100) (american) (expires #D"2027-06-18")) (binomial 2000) m)
-             (price (option (put 100) (american) (expires #D"2027-06-18")) (binomial 2000) m360)
+             (price (make-option (put 100) (american) (expires #D"2027-06-18")) (binomial 2000) m)
+             (price (make-option (put 100) (american) (expires #D"2027-06-18")) (binomial 2000) m360)
              1d-10))
     (check-error "European under GBM is left to Black-Scholes"
-                 (price (option (put 100) (expires #D"2027-09-24")) (binomial 1000) m)
+                 (price (make-option (put 100) (expires #D"2027-09-24")) (binomial 1000) m)
                  unsupported-combination)
     (check-error "American under Heston"
                  (price aput (binomial 1000 :process (make-instance 'heston)) ls)

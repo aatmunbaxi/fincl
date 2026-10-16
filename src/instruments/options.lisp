@@ -76,4 +76,4 @@ to a subclass and return the vanilla price.
   (check-input (slot-value o 'path) path-feature))
 
 ;;; Options are built with the option construction language
-;;; (option-language.lisp): (option (put 40) (american) (expires #D"...")).
+;;; (option-language.lisp): (make-option (put 40) (american) (expires #D"...")).

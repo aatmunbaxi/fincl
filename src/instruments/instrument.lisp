@@ -98,7 +98,7 @@ moved onto a business day with CONVENTION (see ADJUST).
   (unless (and dates (listp dates))
     (error 'invalid-exercise :datum dates :reason :no-dates))
   (mapc #'check-expiry dates)
-  (let ((sorted (sort (copy-list dates) #'date<)))
+  (let ((sorted (-> dates copy-list (sort #'date<))))
     (apply #'call-next-method x :dates sorted :expiry (a:lastcar sorted) initargs)))
 
 (defgeneric exercise-allowed-p (exercise date)
@@ -213,10 +213,10 @@ to the subclass and return the superclass's price."))
     "The variables SUPERCLASSES declare, renamed into *PACKAGE*. Variables
 are matched by name, as LOOP keywords are, so a formula written in any
 package can say PHI without FINCL exporting it."
-    (remove-duplicates (loop for class in superclasses
-                             append (loop for (variable . rest) in (gethash class *payoff-variables*)
-                                          collect (cons (intern (symbol-name variable))
-                                                        rest)))
+    (remove-duplicates (iter (for class in superclasses)
+                             (appending (iter (for (variable . rest) in (gethash class *payoff-variables*))
+                                              (collect (cons (intern (symbol-name variable))
+                                                             rest)))))
                        :key #'first :from-end t)))
 
 (defmacro declare-payoff-variables (class &rest variables)
@@ -254,46 +254,46 @@ such as STRIKE-PAYOFF instead."
             :format-arguments (list name super super name))))
   (let* ((documentation (when (and (stringp (first body)) (rest body)) (first body)))
          (body (if documentation (rest body) body))
-         (own (loop for (slot type . options) in slots
-                    collect (list slot (getf options :reader slot) type)))
+         (own (iter (for (slot type . options) in slots)
+                    (collect (list slot (getf options :reader slot) type))))
          (variables (append (inherited-payoff-variables superclasses) own))
          (payoff (gensym "PAYOFF")))
     (flet ((bindings ()
-             (loop for (variable reader) in variables
-                   collect `(,variable (,reader ,payoff))))
+             (iter (for (variable reader) in variables)
+                   (collect `(,variable (,reader ,payoff)))))
            (declarations ()
              ;; A formula need not use every inherited variable.
              (cons `(ignorable ,@(mapcar #'first variables))
-                   (loop for (variable nil type) in variables
-                         collect `(type ,type ,variable)))))
+                   (iter (for (variable nil type) in variables)
+                         (collect `(type ,type ,variable))))))
       `(progn
          (eval-when (:compile-toplevel :load-toplevel :execute)
            (setf (gethash ',name *payoff-variables*) ',variables
                  (gethash ',name *formula-payoffs*) t))
          (defclass ,name ,superclasses
-           ,(loop for (slot type . options) in slots
-                  collect `(,slot :initarg ,(a:make-keyword slot)
-                                  :reader ,(getf options :reader slot)
-                                  :type ,type
-                                  :initform ,(if (member :initform options)
-                                                 (getf options :initform)
-                                                 `(a:required-argument ,(a:make-keyword slot)))
-                                  ,@(when (getf options :fact)
-                                      `(:fact ,(getf options :fact)))
-                                  ,@(when (getf options :doc)
-                                      `(:documentation ,(getf options :doc)))))
+           ,(iter (for (slot type . options) in slots)
+                  (collect `(,slot :initarg ,(a:make-keyword slot)
+                                   :reader ,(getf options :reader slot)
+                                   :type ,type
+                                   :initform ,(if (member :initform options)
+                                                  (getf options :initform)
+                                                  `(a:required-argument ,(a:make-keyword slot)))
+                                   ,@(when (getf options :fact)
+                                       `(:fact ,(getf options :fact)))
+                                   ,@(when (getf options :doc)
+                                       `(:documentation ,(getf options :doc))))))
            (:metaclass component-class)
            ,@(when documentation `((:documentation ,documentation))))
-         ,@(let ((floats (loop for (slot type) in slots
-                               when (eq type 'double-float) collect slot)))
+         ,@(let ((floats (iter (for (slot type) in slots)
+                               (when (eq type 'double-float) (collect slot)))))
              ;; Accept any real for a double-float slot, as MAKE-BS-MARKET does.
              (when floats
                `((defmethod initialize-instance :after ((,payoff ,name) &key)
-                   ,@(loop for slot in floats
-                           collect `(let ((value (slot-value ,payoff ',slot)))
-                                      (check-input value real ,(format nil "a real ~(~A~)" slot))
-                                      (setf (slot-value ,payoff ',slot)
-                                            (float value 1d0))))))))
+                   ,@(iter (for slot in floats)
+                           (collect `(let ((value (slot-value ,payoff ',slot)))
+                                       (check-input value real ,(format nil "a real ~(~A~)" slot))
+                                       (setf (slot-value ,payoff ',slot)
+                                             (float value 1d0)))))))))
          (defmethod payoff-value ((,payoff ,name) ,observable)
            (let ((,observable (float ,observable 1d0)) ,@(bindings))
              (declare (double-float ,observable) ,@(declarations))

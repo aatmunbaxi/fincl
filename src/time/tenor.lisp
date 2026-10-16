@@ -47,8 +47,8 @@ case). Signals INVALID-TENOR otherwise.
                     (case (char-upcase (char string (1- len)))
                       (#\D :days) (#\W :weeks) (#\M :months) (#\Y :years)))))
     (unless (and unit
-                 (loop for i from start below (1- len)
-                       always (char<= #\0 (char string i) #\9)))
+                 (iter (for i from start below (1- len))
+                       (always (char<= #\0 (char string i) #\9))))
       (error 'invalid-tenor
              :description (format nil "~S is not a tenor such as \"10D\", \"2W\", \"3M\" or \"1Y\"."
                                   string)))

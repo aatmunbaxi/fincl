@@ -80,8 +80,8 @@ modified conventions reverse direction rather than leave DATE's month.
   (adjust (make-instance 'weekends-only) #D\"2027-07-31\" :modified-following)
   => #D\"2027-07-30\""
   (flet ((roll (d step)
-           (loop until (business-day-p calendar d)
-                 do (setf d (date+ d step)))
+           (iter (until (business-day-p calendar d))
+                 (setf d (date+ d step)))
            d))
     (ecase convention
       (:unadjusted date)
@@ -98,9 +98,8 @@ modified conventions reverse direction rather than leave DATE's month.
   (:documentation "Business days of CALENDAR in [FROM, TO), FROM <= TO. The
 default tests each day; holiday calendars use per-year prefix counts.")
   (:method ((calendar calendar) from to)
-    (loop for d = from then (date+ d 1)
-          while (date< d to)
-          count (business-day-p calendar d))))
+    (iter (for d in-dates from below to)
+          (counting (business-day-p calendar d)))))
 
 (defun business-days-between (calendar from to &key (include-first t) include-last)
   "Business days of CALENDAR between FROM and TO, by default counting
@@ -137,9 +136,9 @@ otherwise) moves to the target month's end.
     (cond ((zerop n) (adjust calendar date convention))
           ((eq (tenor-unit tenor) :days)
            (let ((step (if (plusp n) 1 -1)) (d date))
-             (loop repeat (abs n)
-                   do (setf d (date+ d step))
-                      (loop until (business-day-p calendar d) do (setf d (date+ d step))))
+             (iter (repeat (abs n))
+                   (setf d (date+ d step))
+                   (iter (until (business-day-p calendar d)) (setf d (date+ d step))))
              d))
           ((eq (tenor-unit tenor) :weeks)
            (adjust calendar (date+ date (* 7 n)) convention))

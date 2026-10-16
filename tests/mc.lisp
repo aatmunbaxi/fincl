@@ -8,12 +8,12 @@
   (with-standard-fixtures
     (format t "~&Monte Carlo, GBM (benchmarks 10.4506 / 4.478)~%")
     ;; Within 4 standard errors (about 0.065 at 400k paths).
-    (loop for (label engine) in `(("terminal sampler" ,(mc :n-paths 400000))
-                                  ("PCG stream" ,(mc :n-paths 400000 :rng :pcg))
-                                  ("inverse transform"
-                                   ,(mc :n-paths 400000 :sampler :inverse-transform)))
-          do (multiple-value-bind (v se) (price call engine mkt)
-               (check (format nil "European, ~A" label) 10.4506 v (* 4 se))))
+    (iter (for (label engine) in `(("terminal sampler" ,(mc :n-paths 400000))
+                                   ("PCG stream" ,(mc :n-paths 400000 :rng :pcg))
+                                   ("inverse transform"
+                                    ,(mc :n-paths 400000 :sampler :inverse-transform))))
+          (multiple-value-bind (v se) (price call engine mkt)
+            (check (format nil "European, ~A" label) 10.4506 v (* 4 se))))
     (check "LSM American put" 4.478
            (price aput (mc :n-paths 100000 :n-steps 50) mkt2) 0.02)
     (check-that "thread-count invariance"
@@ -58,22 +58,22 @@
   (with-standard-fixtures
     (let ((heston (make-instance 'heston :xi 0.5d0 :rho -0.7d0)))
       ;; (label thunk-of-n-chunks): every engine path, terminal, stepped and LSM.
-      (loop for (label price) in
-            `(("terminal GBM European"
-               ,(lambda (k) (price call (mc :n-paths 20000 :n-chunks k) mkt)))
-              ("stepped Heston European"
-               ,(lambda (k) (price call (mc :n-paths 20000 :n-steps 20 :n-chunks k
-                                            :process heston)
-                                   mkt)))
-              ("LSM American put"
-               ,(lambda (k) (price aput (mc :n-paths 20000 :n-chunks k) mkt2))))
-            do (let ((prices (loop for k in '(1 7 64)
-                                   append (loop for w in '(1 2 8)
-                                                collect (with-workers w (lambda ()
-                                                                          (funcall price k)))))))
-                 (check-that (format nil "~A: = for n-chunks 1, 7, 64 x 1, 2, 8 workers (~,6F)"
-                                     label (first prices))
-                             (every (lambda (p) (= p (first prices))) prices)))))
+      (iter (for (label price) in
+             `(("terminal GBM European"
+                ,(lambda (k) (price call (mc :n-paths 20000 :n-chunks k) mkt)))
+               ("stepped Heston European"
+                ,(lambda (k) (price call (mc :n-paths 20000 :n-steps 20 :n-chunks k
+                                             :process heston)
+                                    mkt)))
+               ("LSM American put"
+                ,(lambda (k) (price aput (mc :n-paths 20000 :n-chunks k) mkt2)))))
+            (let ((prices (iter (for k in '(1 7 64))
+                                (appending (iter (for w in '(1 2 8))
+                                                 (collect (with-workers w (lambda ()
+                                                                            (funcall price k)))))))))
+              (check-that (format nil "~A: = for n-chunks 1, 7, 64 x 1, 2, 8 workers (~,6F)"
+                                  label (first prices))
+                          (every (lambda (p) (= p (first prices))) prices)))))
     (flet ((terminals (n-paths antithetic)
              (terminal-column (fincl::simulate-paths (mc :n-paths n-paths :n-steps 4
                                                          :antithetic antithetic)
@@ -87,17 +87,17 @@
     ;; GBM over one step: log S_T is linear in the normal, so a path and its
     ;; partner have log-terminals symmetric about the same centre.
     (let* ((s (terminal-column (fincl::simulate-paths (mc :n-paths 2000 :n-steps 1) mkt 1d0)))
-           (centres (loop for i below 1000
-                          collect (+ (log (aref s i)) (log (aref s (+ i 1000)))))))
+           (centres (iter (for i below 1000)
+                          (collect (+ (log (aref s i)) (log (aref s (+ i 1000))))))))
       (check-that "antithetic partner i uses the negated normals of path i"
                   (< (- (reduce #'max centres) (reduce #'min centres)) 1d-12)))
     ;; 50 seeds: z = (MC - BS) / SE should be standard normal.
     (let* ((exact (price call (make-instance 'black-scholes-engine) mkt))
-           (zs (loop for seed from 1 to 50
-                     collect (multiple-value-bind (v se) (price call (mc :n-paths 100000 :seed seed) mkt)
-                               (/ (- v exact) se))))
+           (zs (iter (for seed from 1 to 50)
+                     (collect (multiple-value-bind (v se) (price call (mc :n-paths 100000 :seed seed) mkt)
+                                (/ (- v exact) se)))))
            (mean (/ (reduce #'+ zs) 50))
-           (variance (/ (loop for z in zs sum (expt (- z mean) 2)) 49)))
+           (variance (/ (iter (for z in zs) (sum (expt (- z mean) 2))) 49)))
       (check-that (format nil "50 seeds: z-scores have mean ~,3F (within 0.4) and variance ~,3F ~
                                (in [0.6, 1.5])" mean variance)
                   (and (< (abs mean) 0.4d0) (<= 0.6d0 variance 1.5d0))))
@@ -160,22 +160,22 @@
         ;; ACT/360 and 90 days: T = 0.25 exactly.
         (expiry (date+ *today* 90))
         (s-only-error 0d0) (s-v-error 0d0))
-    (loop for (spot reference) in '((8 2.0000d0) (9 1.1076d0) (10 0.5199d0)
-                                    (11 0.2135d0) (12 0.0820d0))
-          do (let ((m (make-bs-market :valuation-date *today* :day-counter +actual-360+
-                                      :spot spot :rate 0.1d0 :vol 0.25d0))
-                   (put (option (put 10) (american) (expires expiry))))
-               (multiple-value-bind (v se)
-                   (price put (mc :n-paths 100000 :n-steps 100 :process heston) m)
-                 (incf s-v-error (abs (- v reference)))
-                 (check (format nil "S = ~D, regressors (S, v): ~,4F, reference ~,4F"
-                                spot v reference)
-                        reference v (+ (* 3 se) 0.01)))
-               (let ((v (price put (mc :n-paths 100000 :n-steps 100 :process heston
-                                       :regressors '(0))
-                               m)))
-                 (incf s-only-error (abs (- v reference)))
-                 (format t "~&       S only: ~,4F (error ~,4F)~%" v (- v reference)))))
+    (iter (for (spot reference) in '((8 2.0000d0) (9 1.1076d0) (10 0.5199d0)
+                                     (11 0.2135d0) (12 0.0820d0)))
+          (let ((m (make-bs-market :valuation-date *today* :day-counter +actual-360+
+                                   :spot spot :rate 0.1d0 :vol 0.25d0))
+                (put (make-option (put 10) (american) (expires expiry))))
+            (multiple-value-bind (v se)
+                (price put (mc :n-paths 100000 :n-steps 100 :process heston) m)
+              (incf s-v-error (abs (- v reference)))
+              (check (format nil "S = ~D, regressors (S, v): ~,4F, reference ~,4F"
+                             spot v reference)
+                     reference v (+ (* 3 se) 0.01)))
+            (let ((v (price put (mc :n-paths 100000 :n-steps 100 :process heston
+                                    :regressors '(0))
+                            m)))
+              (incf s-only-error (abs (- v reference)))
+              (format t "~&       S only: ~,4F (error ~,4F)~%" v (- v reference)))))
     (format t "~&       total |error|: (S, v) ~,4F, S only ~,4F~%" s-v-error s-only-error)
     (check-that "regressing on (S, v) is closer to the reference than on S alone"
                 (< s-v-error s-only-error))))

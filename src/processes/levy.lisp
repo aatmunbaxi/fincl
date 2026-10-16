@@ -100,16 +100,14 @@ a martingale."
 and the Brownian shock: log(F(t1)/F(t0)) - v/2 + omega dt, and the Brownian
 standard deviations sqrt(v), as two typed vectors."
   (declare (type (simple-array double-float (*)) times))
-  (let* ((n (1- (length times)))
-         (omega (levy-drift process))
-         (drift (make-array n :element-type 'double-float))
-         (diffusion (make-array n :element-type 'double-float)))
-    (dotimes (j n)
-      (let* ((t0 (aref times j)) (t1 (aref times (1+ j)))
-             (v (float (diffusion-variance process market t0 t1) 1d0)))
-        (setf (aref drift j) (+ (log-growth market t0 t1) (* -0.5d0 v) (* omega (- t1 t0)))
-              (aref diffusion j) (sqrt v))))
-    (values drift diffusion)))
+  (iter (with n = (1- (length times)))
+        (with omega = (levy-drift process))
+        (for (t0 t1) in-intervals times)
+        (for v = (float (diffusion-variance process market t0 t1) 1d0))
+        (collect-double (+ (log-growth market t0 t1) (* -0.5d0 v) (* omega (- t1 t0)))
+                        into drift length n)
+        (collect-double (sqrt v) into diffusion length n)
+        (finally (return (values drift diffusion)))))
 
 (defgeneric log-increment-sampler (process market times)
   (:documentation "A closure (lambda (normals j)) -> ln(S(TIMES[j+1]) /
@@ -147,6 +145,7 @@ MAKE-STEPPER and TERMINAL-SAMPLER are built on it.")
             :doc "Volatility of the Brownian part. NIL follows the market's
 ATM-forward Black variance w(t), as for GBM, so with no jumps every ATM
 European is repriced. RESOLVE-PROCESS keeps it NIL."))
+  (:constructor nil)
   (:documentation "Superclass of GBM plus independent compound Poisson jumps:
 the Brownian part is GBM's, with the market's rate, dividend and (by
 default) vol term structures."))

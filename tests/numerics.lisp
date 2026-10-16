@@ -8,38 +8,38 @@
 ;;; --------------------------------------------------------------------
 
 (defun sample-points (lo hi n)
-  (loop for i to n collect (+ lo (* (- hi lo) (/ i (float n 1d0))))))
+  (iter (for i from 0 to n) (collect (+ lo (* (- hi lo) (/ i (float n 1d0)))))))
 
 (defun worst-error (f g points)
-  (loop for x in points maximize (abs (- (funcall f x) (funcall g x)))))
+  (iter (for x in points) (maximize (abs (- (funcall f x) (funcall g x))))))
 
 (defun exact-natural-spline (xs ys)
   "The natural cubic spline through rational knots, in exact arithmetic:
 second derivatives by Gaussian elimination, then the cubic on each segment."
   (let* ((n (length xs))
-         (h (loop for i below (1- n) collect (- (nth (1+ i) xs) (nth i xs))))
-         (slope (loop for i below (1- n) collect (/ (- (nth (1+ i) ys) (nth i ys)) (nth i h))))
+         (h (iter (for i below (1- n)) (collect (- (nth (1+ i) xs) (nth i xs)))))
+         (slope (iter (for i below (1- n)) (collect (/ (- (nth (1+ i) ys) (nth i ys)) (nth i h)))))
          (m (make-array n :initial-element 0))
          (k (- n 2))
-         (rows (loop for r below k
-                     for i = (1+ r)
-                     collect (let ((row (make-array (1+ k) :initial-element 0)))
-                               (when (> r 0) (setf (aref row (1- r)) (nth (1- i) h)))
-                               (setf (aref row r) (* 2 (+ (nth (1- i) h) (nth i h))))
-                               (when (< r (1- k)) (setf (aref row (1+ r)) (nth i h)))
-                               (setf (aref row k) (* 6 (- (nth i slope) (nth (1- i) slope))))
-                               row))))
+         (rows (iter (for r below k)
+                     (for i = (1+ r))
+                     (collect (let ((row (make-array (1+ k) :initial-element 0)))
+                                (when (> r 0) (setf (aref row (1- r)) (nth (1- i) h)))
+                                (setf (aref row r) (* 2 (+ (nth (1- i) h) (nth i h))))
+                                (when (< r (1- k)) (setf (aref row (1+ r)) (nth i h)))
+                                (setf (aref row k) (* 6 (- (nth i slope) (nth (1- i) slope))))
+                                row)))))
     ;; Gaussian elimination, exact.
-    (loop for p below k
-          do (loop for r from (1+ p) below k
-                   for factor = (/ (aref (nth r rows) p) (aref (nth p rows) p))
-                   do (loop for c from p to k
-                            do (decf (aref (nth r rows) c) (* factor (aref (nth p rows) c))))))
-    (loop for p from (1- k) downto 0
-          do (setf (aref m (1+ p))
-                   (/ (- (aref (nth p rows) k)
-                         (loop for c from (1+ p) below k sum (* (aref (nth p rows) c) (aref m (1+ c)))))
-                      (aref (nth p rows) p))))
+    (iter (for p below k)
+          (iter (for r from (1+ p) below k)
+                (for factor = (/ (aref (nth r rows) p) (aref (nth p rows) p)))
+                (iter (for c from p to k)
+                      (decf (aref (nth r rows) c) (* factor (aref (nth p rows) c))))))
+    (iter (for p from (1- k) downto 0)
+          (setf (aref m (1+ p))
+                (/ (- (aref (nth p rows) k)
+                      (iter (for c from (1+ p) below k) (sum (* (aref (nth p rows) c) (aref m (1+ c))))))
+                   (aref (nth p rows) p))))
     (lambda (x)
       (let* ((x (rational x))
              (i (or (position-if (lambda (knot) (<= knot x)) xs :from-end t :end (1- n)) 0))
@@ -53,7 +53,7 @@ second derivatives by Gaussian elimination, then the cubic on each segment."
                           0.998636d0 0.999919d0 0.999994d0))
 
 (defun non-decreasing-p (f lo hi n)
-  (loop for (a b) on (mapcar f (sample-points lo hi n)) while b always (<= a b)))
+  (iter (for (a b) on (mapcar f (sample-points lo hi n))) (while b) (always (<= a b))))
 
 (defun interpolation-checks ()
   (format t "~&Interpolation~%")
@@ -84,8 +84,8 @@ on 10 knots (~,1E)" (reproduces :natural-cubic cubic :end-second-derivatives '(1
            (exact (exact-natural-spline xs ys))
            (spline (make-interpolator :natural-cubic xs ys)))
       (check-that "natural cubic = exact rational solution on 5 knots to 1e-14"
-                  (< (loop for x in (sample-points 0d0 4d0 80)
-                           maximize (abs (- (funcall spline x) (float (funcall exact x) 1d0))))
+                  (< (iter (for x in (sample-points 0d0 4d0 80))
+                           (maximize (abs (- (funcall spline x) (float (funcall exact x) 1d0)))))
                      1d-14)))
     (let ((monotone (make-interpolator :monotone-cubic *rpn14-x* *rpn14-y*))
           (natural (make-interpolator :natural-cubic *rpn14-x* *rpn14-y*)))
@@ -100,12 +100,12 @@ on 10 knots (~,1E)" (reproduces :natural-cubic cubic :end-second-derivatives '(1
            (zeros '(0.02d0 0.025d0 0.03d0 0.032d0 0.031d0))
            (curve (make-interpolator :flat-forward xs zeros)))
       (check-that "flat-forward: the instantaneous forward (x z)' is constant on each segment"
-                  (loop for (a b) on xs while b
-                        always (let ((forwards (mapcar (lambda (x)
-                                                         (+ (funcall curve x)
-                                                            (* x (interpolator-derivative curve x))))
-                                                       (sample-points (+ a 1d-9) (- b 1d-9) 20))))
-                                 (< (- (reduce #'max forwards) (reduce #'min forwards)) 1d-12)))))
+                  (iter (for (a b) on xs) (while b)
+                        (always (let ((forwards (mapcar (lambda (x)
+                                                          (+ (funcall curve x)
+                                                             (* x (interpolator-derivative curve x))))
+                                                        (sample-points (+ a 1d-9) (- b 1d-9) 20))))
+                                  (< (- (reduce #'max forwards) (reduce #'min forwards)) 1d-12))))))
     (let ((interp (make-interpolator :linear '(0 1 2) '(0 1 4) :extrapolation :error)))
       (check-error "extrapolation-error under :error" (funcall interp 2.5d0) extrapolation-error)
       (check-that "the report names the domain"
@@ -135,23 +135,23 @@ on 10 knots (~,1E)" (reproduces :natural-cubic cubic :end-second-derivatives '(1
                (declare (function f))
                (let ((start (get-internal-real-time)) (sum 0d0))
                  (declare (double-float sum))
-                 (loop for x across (the (simple-array double-float (*)) points)
-                       do (incf sum (the double-float (funcall f x))))
+                 (iter (for x in-vector (the (simple-array double-float (*)) points))
+                       (incf sum (the double-float (funcall f x))))
                  (/ (* 1000d0 (- (get-internal-real-time) start))
                     internal-time-units-per-second))))
         ;; Interleaved, best of 7 each, to shed load from other processes.
         (let ((lookups most-positive-double-float) (calls most-positive-double-float))
-          (loop repeat 7
-                do (setf lookups (min lookups (ms interp))
-                         calls (min calls (ms trivial))))
+          (iter (repeat 7)
+                (setf lookups (min lookups (ms interp))
+                      calls (min calls (ms trivial))))
           (check-that (format nil "10^6 lookups on 50 knots: ~,1F ms, ~,1F ms beyond a trivial ~
 closure call (< 40)" lookups (- lookups calls))
                       (< (- lookups calls) 40d0)))))
     (let ((bilinear (make-interpolator-2d :bilinear '(0 1 2) '(0 10)
                                           '((0 10) (1 11) (2 12))))
           (bicubic (make-interpolator-2d :bicubic '(0 1 2 3) '(0 1 2 3)
-                                         (loop for x below 4
-                                               collect (loop for y below 4 collect (+ x (* 2 y)))))))
+                                         (iter (for x below 4)
+                                               (collect (iter (for y below 4) (collect (+ x (* 2 y)))))))))
       (check "bilinear reproduces x + y" 6.5d0 (funcall bilinear 1.5d0 5d0) 1d-14)
       (check "bicubic reproduces x + 2y" 4.3d0 (funcall bicubic 1.1d0 1.6d0) 1d-13))))
 
@@ -183,8 +183,8 @@ closure call (< 40)" lookups (- lookups calls))
     (magicl::storage (magicl:linear-solve m (magicl:from-array (copy-seq d) (list n 1))))))
 
 (defun vector-relative-error (x reference)
-  (/ (loop for i below (length x) maximize (abs (- (aref x i) (aref reference i))))
-     (loop for i below (length x) maximize (abs (aref reference i)))))
+  (/ (iter (for i below (length x)) (maximize (abs (- (aref x i) (aref reference i)))))
+     (iter (for i below (length x)) (maximize (abs (aref reference i))))))
 
 (defun tridiagonal-checks ()
   (format t "~&Tridiagonal systems~%")
@@ -231,9 +231,9 @@ closure call (< 40)" lookups (- lookups calls))
 ;;; --------------------------------------------------------------------
 
 (defun rosenbrock (x)
-  (loop for i below (1- (length x))
-        sum (+ (* 100 (expt (- (aref x (1+ i)) (expt (aref x i) 2)) 2))
-               (expt (- 1 (aref x i)) 2))))
+  (iter (for i below (1- (length x)))
+        (sum (+ (* 100 (expt (- (aref x (1+ i)) (expt (aref x i) 2)) 2))
+                (expt (- 1 (aref x i)) 2)))))
 
 (defun rosenbrock-residuals (x)
   "Residuals whose sum of squares is ROSENBROCK: 10 (x_{i+1} - x_i^2), 1 - x_i."
@@ -244,10 +244,10 @@ closure call (< 40)" lookups (- lookups calls))
 
 (defun rastrigin (x)
   (+ (* 10 (length x))
-     (loop for v across x sum (- (* v v) (* 10 (cos (* 2 pi v)))))))
+     (iter (for v in-vector x) (sum (- (* v v) (* 10 (cos (* 2 pi v))))))))
 
 (defun distance-to-ones (x)
-  (loop for v across x maximize (abs (- v 1))))
+  (iter (for v in-vector x) (maximize (abs (- v 1)))))
 
 (defun optimizer-checks ()
   (format t "~&Optimization~%")
@@ -263,7 +263,7 @@ closure call (< 40)" lookups (- lookups calls))
                  ;; Column-major 2 x 3: (dr0/dx0 dr1/dx0 dr0/dx1 dr1/dx1 dr0/dx2 dr1/dx2).
                  (expected (vector (exp -1.5d0) 2d0 (* 0.5d0 (exp -1.5d0)) 0d0 0d0
                                    (+ (cos 2d0) 0.5d0)))
-                 (worst (loop for i below 6 maximize (abs (- (aref out i) (aref expected i))))))
+                 (worst (iter (for i below 6) (maximize (abs (- (aref out i) (aref expected i)))))))
             (check-that (format nil "jacobian!, ~(~A~): within ~:[1e-7~;1e-9~] of the analytic ~
 Jacobian (~,1E)" scheme (eq scheme :central) worst)
                         (< worst (if (eq scheme :central) 1d-9 1d-7))))))))
@@ -274,7 +274,7 @@ Jacobian (~,1E)" scheme (eq scheme :central) worst)
                 (< (distance-to-ones x) 1d-6)))
   (multiple-value-bind (x fx iterations)
       (minimize :levenberg-marquardt #'rosenbrock-residuals
-                (loop for i below 10 collect (if (evenp i) -1.2d0 1d0)) :max-iterations 500)
+                (iter (for i below 10) (collect (if (evenp i) -1.2d0 1d0))) :max-iterations 500)
     (check-that (format nil "Levenberg-Marquardt, Rosenbrock 10-D residuals: |x - 1| = ~,1E < 1e-6 ~
 (~D iterations, f ~,1E)" (distance-to-ones x) iterations fx)
                 (< (distance-to-ones x) 1d-6)))
@@ -288,8 +288,8 @@ Jacobian (~,1E)" scheme (eq scheme :central) worst)
                (lp:end-kernel :wait t)))))
     (let ((one (de 1)) (eight (de 8)))
       (check-that (format nil "differential evolution, Rastrigin 2-D: |x| = ~,1E < 1e-6 (~D generations)"
-                          (loop for v across (first one) maximize (abs v)) (third one))
-                  (< (loop for v across (first one) maximize (abs v)) 1d-6))
+                          (iter (for v in-vector (first one)) (maximize (abs v))) (third one))
+                  (< (iter (for v in-vector (first one)) (maximize (abs v))) 1d-6))
       (check-that "... identical with 1 and 8 workers" (equalp one eight))))
   ;; (x - 3)^2 + (y + 1)^2 on x in (0, 2), y > 0: the minimum is the corner (2, 0).
   (let ((corner (lambda (x) (+ (expt (- (aref x 0) 3) 2) (expt (+ (aref x 1) 1) 2))))

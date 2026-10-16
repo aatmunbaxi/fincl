@@ -62,9 +62,17 @@ HORIZON 0."
 (defun interval-lengths (times)
   "TIMES[j+1] - TIMES[j], as a (SIMPLE-ARRAY DOUBLE-FLOAT (*))."
   (declare (type (simple-array double-float (*)) times))
-  (let ((dt (make-array (1- (length times)) :element-type 'double-float)))
-    (dotimes (j (length dt) dt)
-      (setf (aref dt j) (- (aref times (1+ j)) (aref times j))))))
+  (iter (for (t0 t1) in-intervals times)
+        (collect-double (- t1 t0) into dt length (1- (length times)))
+        (finally (return dt))))
+
+(defun interval-log-growths (market times)
+  "log(F(TIMES[j+1]) / F(TIMES[j])) for each interval j of the grid TIMES,
+as a (SIMPLE-ARRAY DOUBLE-FLOAT (*))."
+  (declare (type (simple-array double-float (*)) times))
+  (iter (for (t0 t1) in-intervals times)
+        (collect-double (log-growth market t0 t1) into mu length (1- (length times)))
+        (finally (return mu))))
 
 (defclass stochastic-process (parameterized)
   ()
@@ -79,10 +87,39 @@ processes with DEFINE-PROCESS."))
   (:documentation "Length of the state vector. Element 0 is the observable.")
   (:method ((p stochastic-process)) 1))
 
+(define-condition constructor-collision (invalid-input)
+  ((name :initarg :name :reader collision-name)
+   (class :initarg :class :reader collision-class))
+  (:report (lambda (c s)
+             (format s "Defining the process ~S would make ~S its constructor, but ~S ~
+already names ~:[a function not defined by ~S~;a symbol of the COMMON-LISP package~]. ~
+Rename the process, or give it (:constructor nil)."
+                     (collision-class c) (collision-name c) (collision-name c)
+                     (eq (symbol-package (collision-name c)) (find-package '#:common-lisp))
+                     'define-process)))
+  (:documentation "A process constructor MAKE-<class> would replace a
+function DEFINE-PROCESS did not define for that class."))
+
+(defun check-constructor-name (constructor class)
+  "Signal CONSTRUCTOR-COLLISION unless CONSTRUCTOR is free, or is CLASS's
+own constructor from an earlier DEFINE-PROCESS."
+  (when (or (eq (symbol-package constructor) (find-package '#:common-lisp))
+            (and (fboundp constructor)
+                 (not (eq (get constructor 'process-constructor) class))))
+    (error 'constructor-collision :name constructor :class class)))
+
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defvar *process-initargs* (make-hash-table :test 'eq)
+    "Process class name -> the keyword initargs DEFINE-PROCESS gave it and its
+DEFINE-PROCESS superclasses, for constructor lambda lists.")
+
+  (defun constructor-name (class)
+    (intern (format nil "MAKE-~A" (symbol-name class)) (symbol-package class))))
+
 (defmacro define-process (name superclasses (&key state-size factors) slots
                           &rest class-options)
-  "Define the process class NAME. SUPERCLASSES defaults to
-(STOCHASTIC-PROCESS). STATE-SIZE and FACTORS, when given, define
+  "Define the process class NAME and its constructor MAKE-NAME. SUPERCLASSES
+defaults to (STOCHASTIC-PROCESS). STATE-SIZE and FACTORS, when given, define
 PROCESS-STATE-SIZE and PROCESS-FACTORS (both default to 1). Each of SLOTS is
 
   (slot-name default &key bounds market-default (parameter t) doc reader type)
@@ -97,12 +134,19 @@ PROCESS-STATE-SIZE and PROCESS-FACTORS (both default to 1). Each of SLOTS is
 - READER defaults to SLOT-NAME, and the initarg is the keyword SLOT-NAME.
 - TYPE defaults to DOUBLE-FLOAT, or (OR NULL DOUBLE-FLOAT) when DEFAULT is NIL.
 
-Steppers, characteristic functions and samplers stay ordinary DEFMETHODs.
+MAKE-NAME takes the initargs of NAME and its DEFINE-PROCESS superclasses as
+keywords, passing only those given, so omitted ones keep their defaults. The
+class option (:constructor nil) leaves it out (abstract classes); it signals
+CONSTRUCTOR-COLLISION at load time if MAKE-NAME is already a function it
+did not define for NAME. Steppers, characteristic functions and samplers
+stay ordinary DEFMETHODs.
 
   (define-process heston (stochastic-process) (:state-size 2 :factors 2)
     ((v0 nil :market-default heston-default-v0 :bounds (0 nil) :doc \"Initial variance.\")
      (kappa 2d0 :bounds ((0) nil) :doc \"Mean-reversion speed.\"))
-    (:documentation \"Heston stochastic volatility.\"))"
+    (:documentation \"Heston stochastic volatility.\"))
+
+  (make-heston :kappa 1.5d0)"
   (flet ((slot-form (spec)
            (destructuring-bind (slot default &key (bounds nil bounds-p)
                                                (market-default nil market-default-p)
@@ -116,16 +160,34 @@ Steppers, characteristic functions and samplers stay ordinary DEFMETHODs.
                      ,@(when bounds-p `(:bounds ,bounds))
                      ,@(when market-default-p `(:market-default ,market-default))
                      ,@(when doc `(:documentation ,doc))))))
-    `(progn
-       (defclass ,name ,(or superclasses '(stochastic-process))
-         ,(mapcar #'slot-form slots)
-         (:metaclass parameterized-class)
-         ,@class-options)
-       ,@(when state-size
-           `((defmethod process-state-size ((p ,name)) ,state-size)))
-       ,@(when factors
-           `((defmethod process-factors ((p ,name)) ,factors)))
-       ',name)))
+    (let* ((constructor-option (assoc :constructor class-options))
+           (class-options (remove :constructor class-options :key #'first))
+           (constructor (if constructor-option (second constructor-option) (constructor-name name)))
+           (parameters (remove-duplicates
+                        `(,@(iter (for super in superclasses)
+                                  (appending (gethash super *process-initargs*)))
+                          ,@(mapcar #'first slots))
+                        :from-end t)))
+      (setf (gethash name *process-initargs*) parameters)
+      `(progn
+         (eval-when (:compile-toplevel :load-toplevel :execute)
+           (setf (gethash ',name *process-initargs*) ',parameters))
+         (defclass ,name ,(or superclasses '(stochastic-process))
+           ,(mapcar #'slot-form slots)
+           (:metaclass parameterized-class)
+           ,@class-options)
+         ,@(when state-size
+             `((defmethod process-state-size ((p ,name)) ,state-size)))
+         ,@(when factors
+             `((defmethod process-factors ((p ,name)) ,factors)))
+         ,@(when constructor
+             `((check-constructor-name ',constructor ',name)
+               (defun ,constructor (&rest initargs &key ,@parameters)
+                 ,(format nil "A new ~(~A~) process: (make-instance '~(~A~) initarg...)." name name)
+                 (declare (ignore ,@parameters))
+                 (apply #'make-instance ',name initargs))
+               (setf (get ',constructor 'process-constructor) ',name)))
+         ',name))))
 
 (defgeneric process-regressors (process)
   (:documentation "Indices of the state components an LSM regression should

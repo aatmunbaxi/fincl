@@ -47,8 +47,8 @@
   (format t "~&Option language: clauses and defaults~%")
   (let* ((d #D"2027-09-24")
          (k 95)
-         (call (option (call 100) (expires d)))
-         (aput (option (put k) (american) (expires d))))
+         (call (make-option (call 100) (expires d)))
+         (aput (make-option (put k) (american) (expires d))))
     (check-that "(call 100) (expires d) is a European vanilla call"
                 (and (typep (option-exercise call) 'european-exercise)
                      (typep (option-payoff call) 'vanilla-payoff)
@@ -61,33 +61,33 @@
                      (= (strike (option-payoff aput)) 95d0)))
     (check-that "(european) is the default, and saying it changes nothing"
                 (equalp (object-clauses 'option call)
-                        (object-clauses 'option (option (european) (call 100) (expires d)))))
+                        (object-clauses 'option (make-option (european) (call 100) (expires d)))))
     (check-that "the macro and the data function build the same option"
                 (equalp (object-clauses 'option aput)
-                        (object-clauses 'option (make-option `((:put ,k) (:american) (:expires ,d))))))
+                        (object-clauses 'option (make-option-from-clauses `((:put ,k) (:american) (:expires ,d))))))
     (check-that "make-vanilla-option is the same option"
                 (equalp (object-clauses 'option aput)
                         (object-clauses 'option (make-vanilla-option :put 95 d :exercise :american))))
     (check-that "a define-payoff class is a clause: (capped-call :kind :call ...)"
-                (let ((o (option (capped-call :kind :call :strike 100 :cap 30) (expires d))))
+                (let ((o (make-option (capped-call :kind :call :strike 100 :cap 30) (expires d))))
                   (and (typep (option-payoff o) 'capped-call)
                        (= 30d0 (payoff-value (option-payoff o) 200d0)))))
     (check-that "(call k) feeds another struck payoff: (call 100) (capped-call :cap 30)"
-                (let ((o (option (call 100) (capped-call :cap 30) (expires d))))
+                (let ((o (make-option (call 100) (capped-call :cap 30) (expires d))))
                   (and (typep (option-payoff o) 'capped-call)
                        (= 100d0 (strike (option-payoff o)))
                        (equalp (object-clauses 'option o)
                                `((:call 100d0) (:capped-call :cap 30d0) (:expires ,d))))))
     (check-that "a struck payoff with its own kind and strike needs no (call k)"
-                (equalp (object-clauses 'option (option (capped-call :kind :put :strike 90 :cap 5)
+                (equalp (object-clauses 'option (make-option (capped-call :kind :put :strike 90 :cap 5)
                                                         (expires d)))
                         `((:put 90d0) (:capped-call :cap 5d0) (:expires ,d))))
     (check-that "(payoff class initargs...) names any payoff class"
-                (typep (option-payoff (option (payoff 'capped-call :kind :put :strike 90 :cap 5)
+                (typep (option-payoff (make-option (payoff 'capped-call :kind :put :strike 90 :cap 5)
                                               (expires d)))
                        'capped-call))
     (check "a digital built from its clause prices at expiry"
-           1d0 (price (option (digital 95) (expires *today*)) (make-instance 'black-scholes-engine)
+           1d0 (price (make-option (digital 95) (expires *today*)) (make-instance 'black-scholes-engine)
                       (make-bs-market :valuation-date *today* :spot 100 :rate 0.05d0 :vol 0.2d0))
            0))
 
@@ -95,122 +95,122 @@
   (let ((weekends (make-instance 'weekends-only))
         (d1 #D"2027-03-24") (d2 #D"2027-09-24"))
     (check-that "the expiry is the last explicit date, given in any order"
-                (let ((o (option (put 95) (bermudan :dates (list d2 d1)))))
+                (let ((o (make-option (put 95) (bermudan :dates (list d2 d1)))))
                   (and (date= (expiry-of o) d2)
                        (dates= (list d1 d2) (exercise-dates (option-exercise o))))))
     (check-that "an explicit expiry equal to the last date is accepted"
-                (date= d2 (expiry-of (option (put 95) (bermudan :dates (list d1 d2)) (expires d2)))))
+                (date= d2 (expiry-of (make-option (put 95) (bermudan :dates (list d1 d2)) (expires d2)))))
     ;; Back from Monday 2027-11-29 in steps of 3 months: 2027-08-29 is a
     ;; Sunday, 2027-05-29 a Saturday, 2027-02-28 and 2026-11-29 Sundays.
     (check-equal ":every rolls back from the expiry, strictly after :from"
                  (list #D"2026-11-29" #D"2027-02-28" #D"2027-05-29" #D"2027-08-29" #D"2027-11-29")
                  (exercise-dates (option-exercise
-                                  (option (put 95) (bermudan :every #T"3M" :from *today*)
+                                  (make-option (put 95) (bermudan :every #T"3M" :from *today*)
                                           (expires #D"2027-11-29"))))
                  :test #'dates=)
     (check-equal ":every with a calendar moves each date but the expiry onto a business day"
                  (list #D"2026-11-30" #D"2027-03-01" #D"2027-05-31" #D"2027-08-30" #D"2027-11-29")
                  (exercise-dates (option-exercise
-                                  (option (put 95) (bermudan :every #T"3M" :from *today*
+                                  (make-option (put 95) (bermudan :every #T"3M" :from *today*
                                                              :calendar weekends)
                                           (expires #D"2027-11-29"))))
                  :test #'dates=)
     (check-equal ":every with a tenor expiry"
                  (list #D"2026-12-24" #D"2027-03-24" #D"2027-06-24" #D"2027-09-24")
                  (exercise-dates (option-exercise
-                                  (option (put 95) (bermudan :every #T"3M" :from *today*)
+                                  (make-option (put 95) (bermudan :every #T"3M" :from *today*)
                                           (expires #T"1Y" :from *today*))))
                  :test #'dates=))
 
   (format t "~&Option language: diagnostics~%")
   (let ((d #D"2027-09-24"))
-    (let ((c (condition-of (lambda () (make-option `((:expires ,d)))))))
+    (let ((c (condition-of (lambda () (make-option-from-clauses `((:expires ,d)))))))
       (check-that "with no payoff clause the vanilla payoff asks for (call) or (put)"
                   (and (typep c 'missing-fact)
                        (every (lambda (s) (search s (princ-to-string c)))
                               '("VANILLA-PAYOFF" "(call)" "(put)")))))
-    (let ((c (condition-of (lambda () (option (call 100))))))
+    (let ((c (condition-of (lambda () (make-option (call 100))))))
       (check-that "a missing expiry names the exercise slot and (expires)"
                   (and (typep c 'missing-fact)
                        (search "(expires)" (princ-to-string c))
                        (search "expiry" (princ-to-string c)))))
-    (let ((c (condition-of (lambda () (option (put 95) (bermudan :every #T"3M" :from *today*))))))
+    (let ((c (condition-of (lambda () (make-option (put 95) (bermudan :every #T"3M" :from *today*))))))
       (check-that ":every with no expiry reports the schedule/expiry cycle and how to break it"
                   (and (typep c 'fact-rule-cycle) (search "(expires)" (princ-to-string c)))))
     (check-error "two exercise styles conflict"
-                 (option (call 100) (american) (bermudan :dates (list d)))
+                 (make-option (call 100) (american) (bermudan :dates (list d)))
                  conflicting-clauses)
-    (check-error "a call and a put conflict" (option (call 100) (put 100) (expires d))
+    (check-error "a call and a put conflict" (make-option (call 100) (put 100) (expires d))
                  conflicting-clauses)
     (check-error "two payoff clauses conflict"
-                 (option (call 100) (capped-call :cap 5) (digital 95) (expires d))
+                 (make-option (call 100) (capped-call :cap 5) (digital 95) (expires d))
                  conflicting-clauses)
     (check-that "a strike nothing reads warns: (call 100) with (digital 95)"
                 (let ((warned nil))
                   (handler-bind ((unused-fact (lambda (w)
                                                 (setf warned (search "(call 100)" (princ-to-string w)))
                                                 (muffle-warning w))))
-                    (option (call 100) (digital 95) (expires d)))
+                    (make-option (call 100) (digital 95) (expires d)))
                   warned))
     (let ((c (condition-of (lambda ()
-                             (option (put 95) (bermudan :dates (list #D"2027-03-24" d))
+                             (make-option (put 95) (bermudan :dates (list #D"2027-03-24" d))
                                      (expires #D"2027-06-24"))))))
       (check-that "explicit Bermudan dates and a different expiry conflict, naming both"
                   (and (typep c 'conflicting-clauses)
                        (search "(bermudan" (princ-to-string c))
                        (search "(expires" (princ-to-string c)))))
-    (check-error "(bermudan) needs :dates or :every" (option (put 95) (bermudan) (expires d))
+    (check-error "(bermudan) needs :dates or :every" (make-option (put 95) (bermudan) (expires d))
                  clause-argument-error)
     (check-error "(bermudan :every ...) needs :from"
-                 (option (put 95) (bermudan :every #T"3M") (expires d))
+                 (make-option (put 95) (bermudan :every #T"3M") (expires d))
                  clause-argument-error)
     (check-that "a strike of the wrong type names its clause"
-                (let ((c (condition-of (lambda () (option (call "100") (expires d))))))
+                (let ((c (condition-of (lambda () (make-option (call "100") (expires d))))))
                   (and (typep c 'fact-type-error) (search "(call \"100\")" (princ-to-string c)))))
     (check-that "an expiry must be a date or a tenor"
-                (search "not a date" (error-message (lambda () (option (call 100) (expires 1))))))
+                (search "not a date" (error-message (lambda () (make-option (call 100) (expires 1))))))
     (check-that "an unknown clause is a macroexpansion error suggesting the nearest"
                 (let ((c (condition-of (lambda ()
-                                         (macroexpand-1 '(option (cal 100) (expires d)))))))
+                                         (macroexpand-1 '(make-option (cal 100) (expires d)))))))
                   (and (typep c 'unknown-clause) (search "call?" (princ-to-string c)))))
     (check-error "an unknown clause through the data function"
-                 (make-option '((:call 100) (:expiers #D"2027-09-24")))
+                 (make-option-from-clauses '((:call 100) (:expiers #D"2027-09-24")))
                  unknown-clause)
     (check-that "a fact nothing reads warns: (rebate 5) on a vanilla call"
                 (let ((warned nil))
                   (handler-bind ((unused-fact (lambda (w)
                                                 (setf warned (search "(rebate 5)" (princ-to-string w)))
                                                 (muffle-warning w))))
-                    (option (call 100) (rebate 5) (expires d)))
+                    (make-option (call 100) (rebate 5) (expires d)))
                   warned)))
 
   (format t "~&Option language: extension from outside fincl~%")
   (let* ((m (make-bs-market :valuation-date *today* :spot 100 :rate 0.05d0 :vol 0.2d0))
-         (o (option (rebated-call :kind :call :strike 100) (rebate 5) (expires #D"2027-09-24"))))
+         (o (make-option (rebated-call :kind :call :strike 100) (rebate 5) (expires #D"2027-09-24"))))
     (check-that "(rebate 5) fills the payoff's :fact slot"
                 (and (typep (option-payoff o) 'rebated-call)
                      (= 5d0 (payoff-value (option-payoff o) 90d0))
                      (= 20d0 (payoff-value (option-payoff o) 120d0))))
     (check-that "a rebated call missing its rebate names (rebate)"
                 (search "(rebate)" (error-message
-                                    (lambda () (option (rebated-call :kind :call :strike 100)
+                                    (lambda () (make-option (rebated-call :kind :call :strike 100)
                                                        (expires #D"2027-09-24"))))))
     (multiple-value-bind (v se) (price o (mc :n-paths 50000) m)
       (check "a rebated call = vanilla + discounted rebate x P(S_T <= K), by Monte Carlo"
-             (+ (price (option (call 100) (expires #D"2027-09-24"))
+             (+ (price (make-option (call 100) (expires #D"2027-09-24"))
                        (make-instance 'black-scholes-engine) m)
                 (* 5 (exp -0.05d0) (norm-cdf (- (- (/ (+ (log (/ 100 100d0)) 0.05d0) 0.2d0) 0.1d0)))))
              v (* 4 se))))
 
   (format t "~&Option language: printing~%")
   (let ((d #D"2027-09-24"))
-    (dolist (o (list (option (call 100) (expires d))
-                     (option (put 95) (american) (expires d))
-                     (option (put 95) (bermudan :every #T"3M" :from *today*) (expires d))
-                     (option (capped-call :kind :call :strike 100 :cap 30) (expires d))
-                     (option (put 90) (capped-call :cap 30) (american) (expires d))
-                     (option (rebated-call :kind :call :strike 100) (rebate 5) (expires d))
-                     (option (digital 95) (expires d))))
+    (dolist (o (list (make-option (call 100) (expires d))
+                     (make-option (put 95) (american) (expires d))
+                     (make-option (put 95) (bermudan :every #T"3M" :from *today*) (expires d))
+                     (make-option (capped-call :kind :call :strike 100 :cap 30) (expires d))
+                     (make-option (put 90) (capped-call :cap 30) (american) (expires d))
+                     (make-option (rebated-call :kind :call :strike 100) (rebate 5) (expires d))
+                     (make-option (digital 95) (expires d))))
       (check-that (format nil "~A round-trips" o) (round-trip-p 'option o))
       (check-that (format nil "~A reads back" o)
                   (equalp (object-clauses 'option o)
@@ -223,7 +223,7 @@
     (check-equal "a Bermudan prints its dates and no separate expiry"
                  "#<OPTION (put 95.0d0) (bermudan :dates (#D\"2027-03-24\" #D\"2027-09-24\"))>"
                  (let ((*package* (find-package '#:fincl)))
-                   (prin1-to-string (option (put 95) (bermudan :dates (list #D"2027-03-24" d)))))
+                   (prin1-to-string (make-option (put 95) (bermudan :dates (list #D"2027-03-24" d)))))
                  :test #'string=)))
 
 (defun option-round-trip-checks ()
@@ -240,7 +240,7 @@
             (dolist (kind '(:call :put))
               (dolist (strike *invariant-strikes*)
                 (let* ((o (invariant-option style kind strike))
-                       (rebuilt (make-option (object-clauses 'option o))))
+                       (rebuilt (make-option-from-clauses (object-clauses 'option o))))
                   (incf count)
                   (unless (and (round-trip-p 'option o)
                                (equal (price-or-status o engine market)

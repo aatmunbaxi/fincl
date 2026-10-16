@@ -19,13 +19,13 @@
   "The MARKET-VIEW of MARKET that INSTRUMENT is priced on: its underlying
 (or the market's only one), discounting on the curve of the underlying's
 currency. An instrument paying in another currency is a quanto and signals
-CURRENCY-MISMATCH."
+UNSUPPORTED-QUANTO."
   (let* ((underlying (resolve-underlying market (instrument-underlying instrument)))
          (underlying-currency (gethash underlying (market-underlying-currency market)))
          (currency (instrument-currency instrument)))
     (when (and currency (not (eq currency underlying-currency)))
-      (error 'currency-mismatch :underlying underlying :underlying-currency underlying-currency
-                                :currency currency))
+      (error 'unsupported-quanto :underlying underlying :underlying-currency underlying-currency
+                                  :currency currency))
     (market-view market :underlying underlying)))
 
 (defmethod price :around ((instrument instrument) engine (market composite-market))
@@ -41,7 +41,4 @@ composite, else MARKET itself."
 (defun market-with-flat-vol (market underlying vol)
   "A copy of the composite MARKET with UNDERLYING's vol structure replaced by
 a flat VOL."
-  (let ((new (copy-composite-market market)))
-    (setf (gethash underlying (market-vol-structures new))
-          (make-instance 'flat-black-vol :vol vol))
-    new))
+  (market-with market :vol-structures underlying (make-instance 'flat-black-vol :vol vol)))

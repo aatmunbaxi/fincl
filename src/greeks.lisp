@@ -45,6 +45,17 @@ carry :standard-errors, a plist with the same keys.
   (greeks call (make-instance 'black-scholes-engine) m :which '(:delta :vega))
   => (:DELTA 0.6368... :VEGA 37.52...)"))
 
+(macrolet ((designator-method (type)
+             `(defmethod greeks (instrument (designator ,type) market &rest options &key which bumps)
+                (declare (ignore which bumps))
+                ;; Select once, on the unbumped market; that engine prices
+                ;; every bumped market.
+                (apply #'greeks instrument (resolve-designator instrument designator market) market
+                       options))))
+  (designator-method symbol)
+  (designator-method cons)
+  (designator-method stochastic-process))
+
 (defun one-day (market)
   "The market time of one calendar day from MARKET's valuation date."
   (market-time market (date+ (valuation-date market) 1)))
@@ -75,7 +86,8 @@ because the fitted exercise boundary moves discontinuously with the bumps.
 
   (bump-greeks aput (make-instance 'barone-adesi-whaley-engine) m :which '(:delta))"
   (check-input market composite-market "a composite market, whose named factors can be bumped")
-  (let* ((bumps `(,@bumps ,@(default-greek-bumps engine)))
+  (let* ((engine (resolve-designator instrument engine market))
+         (bumps `(,@bumps ,@(default-greek-bumps engine)))
          (view (instrument-view market instrument))
          (underlying (view-underlying view))
          (curve (view-discount-curve view))
@@ -102,20 +114,20 @@ because the fitted exercise boundary moves discontinuously with the bumps.
                ;; FACTOR is the keyword of PRICE-AT that moves.
                (stencil-derivative '(-1 0 1) order h
                                    (lambda (k) (apply #'price-at `(,(first factor) ,k))))))
-      (loop for key in which
-            append `(,key ,(ecase key
-                             (:delta (central 1 (* h-spot spot) :s))
-                             (:gamma (central 2 (* h-spot spot) :s))
-                             (:vega (central 1 h-vol :v))
-                             (:volga (central 2 h-vol :v))
-                             (:rho (central 1 h-rate :r))
-                             (:dividend-rho (central 1 h-dividend :q))
-                             (:theta (stencil-derivative '(0 1) 1 1 (lambda (k) (price-at :day k))))
-                             (:vanna (stencil-derivative
-                                      '(-1 0 1) 1 (* h-spot spot)
-                                      (lambda (i)
-                                        (stencil-derivative '(-1 0 1) 1 h-vol
-                                                            (lambda (j) (price-at :s i :v j))))))))))))
+      (iter (for key in which)
+            (appending `(,key ,(ecase key
+                                 (:delta (central 1 (* h-spot spot) :s))
+                                 (:gamma (central 2 (* h-spot spot) :s))
+                                 (:vega (central 1 h-vol :v))
+                                 (:volga (central 2 h-vol :v))
+                                 (:rho (central 1 h-rate :r))
+                                 (:dividend-rho (central 1 h-dividend :q))
+                                 (:theta (stencil-derivative '(0 1) 1 1 (lambda (k) (price-at :day k))))
+                                 (:vanna (stencil-derivative
+                                          '(-1 0 1) 1 (* h-spot spot)
+                                          (lambda (i)
+                                            (stencil-derivative '(-1 0 1) 1 h-vol
+                                                                (lambda (j) (price-at :s i :v j)))))))))))))
 
 (defmethod greeks (instrument engine market &key (which *greek-keys*) bumps)
   (bump-greeks instrument engine market :which which :bumps bumps))
@@ -130,19 +142,18 @@ because the fitted exercise boundary moves discontinuously with the bumps.
 (seeds derived from the engine's), averaged; the standard errors are those
 of the batch means."
   (let* ((per-batch (ceiling (n-paths e) batches))
-         (estimates (loop for b below batches
-                          collect (bump-greeks instrument
-                                               (derive-engine e :n-paths per-batch
-                                                                :seed (+ (* 7919 (seed e)) b 1))
-                                               market :which which :bumps bumps)))
-         (values '()) (errors '()))
-    (dolist (key which)
-      (let* ((xs (mapcar (lambda (estimate) (getf estimate key)) estimates))
-             (mean (/ (reduce #'+ xs) batches))
-             (variance (/ (loop for x in xs sum (expt (- x mean) 2)) (1- batches))))
-        (setf values `(,@values ,key ,mean)
-              errors `(,@errors ,key ,(sqrt (/ variance batches))))))
-    `(,@values :standard-errors ,errors)))
+         (estimates (iter (for b below batches)
+                          (collect (bump-greeks instrument
+                                                (derive-engine e :n-paths per-batch
+                                                                 :seed (+ (* 7919 (seed e)) b 1))
+                                                market :which which :bumps bumps)))))
+    (iter (for key in which)
+          (for xs = (mapcar (lambda (estimate) (getf estimate key)) estimates))
+          (for mean = (/ (reduce #'+ xs) batches))
+          (for variance = (/ (iter (for x in xs) (sum (expt (- x mean) 2))) (1- batches)))
+          (appending `(,key ,mean) into values)
+          (appending `(,key ,(-> variance (/ batches) sqrt)) into errors)
+          (finally (return `(,@values :standard-errors ,errors))))))
 
 ;;; --------------------------------------------------------------------
 ;;; Black-Scholes: closed form
@@ -169,19 +180,19 @@ price under aging."
          (n1 (norm-pdf d1))
          (carry (/ (* d f) s))                  ; e^(-q tau)
          (vega (* d f n1 (sqrt tau))))
-    (loop for key in which
-          append `(,key ,(ecase key
-                           (:delta (* carry phi (norm-cdf (* phi d1))))
-                           (:gamma (/ (* carry n1) (* s sd)))
-                           (:vega vega)
-                           (:volga (/ (* vega d1 d2) vol))
-                           (:vanna (/ (* (- carry) n1 d2) vol))
-                           (:rho (* phi k tau d (norm-cdf (* phi d2))))
-                           (:dividend-rho (* -1 phi tau d f (norm-cdf (* phi d1))))
-                           (:theta (- (nth-value 0 (price o e (derive-market
-                                                               market :valuation-date
-                                                               (date+ (valuation-date market) 1))))
-                                      (nth-value 0 (price o e market)))))))))
+    (iter (for key in which)
+          (appending `(,key ,(ecase key
+                               (:delta (* carry phi (norm-cdf (* phi d1))))
+                               (:gamma (/ (* carry n1) (* s sd)))
+                               (:vega vega)
+                               (:volga (/ (* vega d1 d2) vol))
+                               (:vanna (/ (* (- carry) n1 d2) vol))
+                               (:rho (* phi k tau d (norm-cdf (* phi d2))))
+                               (:dividend-rho (* -1 phi tau d f (norm-cdf (* phi d1))))
+                               (:theta (- (nth-value 0 (price o e (derive-market
+                                                                   market :valuation-date
+                                                                   (date+ (valuation-date market) 1))))
+                                          (nth-value 0 (price o e market))))))))))
 
 ;;; --------------------------------------------------------------------
 ;;; Binomial: Greeks from the tree's own nodes
@@ -204,8 +215,8 @@ price under aging."
          (nodes (and from-nodes (binomial-node-greeks o e market)))
          (bumped (let ((rest (if from-nodes (set-difference which node-keys) which)))
                    (and rest (bump-greeks o e market :which rest :bumps bumps)))))
-    (loop for key in which
-          append `(,key ,(getf (if (and from-nodes (member key node-keys)) nodes bumped) key)))))
+    (iter (for key in which)
+          (appending `(,key ,(getf (if (and from-nodes (member key node-keys)) nodes bumped) key))))))
 
 (defun binomial-node-greeks (o e market)
   "Delta from the step-1 nodes, gamma from the step-2 nodes (spots S u, S d
@@ -237,8 +248,8 @@ the price."
       (let ((full (tree-greeks (n-steps e))))
         (if (extrapolate e)
             (let ((half (tree-greeks (max 1 (floor (n-steps e) 2)))))
-              (loop for (key value) on full by #'cddr
-                    append `(,key ,(nth-value 0 (richardson-extrapolate
-                                                 (list (getf half key) value)
-                                                 :exponents '(1))))))
+              (iter (for (key value) in-plist full)
+                    (appending `(,key ,(nth-value 0 (richardson-extrapolate
+                                                     (list (getf half key) value)
+                                                     :exponents '(1)))))))
             full)))))

@@ -35,10 +35,10 @@ KNOTS."))
 
 (defun integrate-piecewise (knots values horizon &optional (f #'identity))
   "Integral over [0, HORIZON] of (F value) on each interval."
-  (loop for value in values
-        for lo = 0d0 then hi
-        for hi in (append knots (list most-positive-double-float))
-        sum (* (funcall f value) (max 0d0 (- (min horizon hi) lo)))))
+  (iter (for value in values)
+        (for lo first 0d0 then hi)
+        (for hi in (append knots (list most-positive-double-float)))
+        (sum (* (funcall f value) (max 0d0 (- (min horizon hi) lo))))))
 
 (defmethod spot ((m piecewise-market)) (piecewise-spot m))
 

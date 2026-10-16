@@ -109,7 +109,8 @@ or above the high end's signals PRICE-OUT-OF-BOUNDS.
              (p (option-payoff o)))
         (implied-black-vol (phi p) price (forward m (expiry x)) (strike p)
                            (discount-factor m (expiry x)) (time-to-expiry x m)))
-      (invert-engine-price o price engine market bracket)))
+      ;; Resolve a designator once: every trial vol then uses that engine.
+      (invert-engine-price o price (resolve-designator o engine market) market bracket)))
 
 (defun invert-engine-price (instrument price engine market bracket)
   (check-input market composite-market
@@ -117,16 +118,17 @@ or above the high end's signals PRICE-OUT-OF-BOUNDS.
   (let* ((underlying (resolve-underlying market (instrument-underlying instrument)))
          (target (float price 1d0)))
     (flet ((price-at (vol)
-             (nth-value 0 (price instrument engine
-                                 (market-with-flat-vol market underlying vol)))))
+             (->> (market-with-flat-vol market underlying vol)
+                  (price instrument engine)
+                  (nth-value 0))))
       (destructuring-bind (lo hi) bracket
         ;; Some engines cannot price at tiny vols (a binomial tree whose drift
         ;; per step exceeds its vol move): raise the low end until they can.
-        (loop for attempt from 0
-              while (and (< lo hi)
-                         (handler-case (progn (price-at lo) nil)
-                           (pricing-error (c) (if (< attempt 20) t (error c)))))
-              do (setf lo (min hi (* 4 lo))))
+        (iter (for attempt from 0)
+              (while (and (< lo hi)
+                          (handler-case (progn (price-at lo) nil)
+                            (pricing-error (c) (if (< attempt 20) t (error c))))))
+              (setf lo (min hi (* 4 lo))))
         (let ((at-lo (price-at lo)) (at-hi (price-at hi)))
           (if (or (<= target at-lo) (>= target at-hi))
               (signal-price-out-of-bounds target at-lo at-hi :engine)

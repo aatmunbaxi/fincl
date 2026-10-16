@@ -137,3 +137,8 @@ weekday."
 
 (define-calendar united-kingdom-exchange (united-kingdom-settlement)
   "London Stock Exchange: the same holidays as UK settlement.")
+
+(define-calendar united-states-sofr (united-states-government-bond)
+  "SOFR fixings: the government bond market's days, closed on every Good
+Friday (SOFR has never fixed on one)."
+  (:easter -2))

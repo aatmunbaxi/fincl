@@ -156,12 +156,12 @@ observance (which can move a date into a neighbouring year)."
           (:easter (observed (date+ (easter year) (first arguments))))
           (:dates (remove year arguments :key #'date-year :test-not #'=))
           (:when (let ((predicate (first arguments)))
-                   (loop for serial from (date-serial (make-date year 1 1))
-                           below (date-serial (make-date (1+ year) 1 1))
-                         for date = (%date serial)
-                         when (multiple-value-bind (y m d) (civil-from-days serial)
-                                (funcall predicate y m d))
-                           collect date))))))))
+                   (iter (for serial from (date-serial (make-date year 1 1))
+                            below (date-serial (make-date (1+ year) 1 1)))
+                         (for date = (%date serial))
+                         (when (multiple-value-bind (y m d) (civil-from-days serial)
+                                 (funcall predicate y m d))
+                           (collect date))))))))))
 
 ;;; --------------------------------------------------------------------
 ;;; Holiday calendars and their cache
@@ -250,8 +250,8 @@ calendar's lock on first use; outside that range built afresh."
           (- (aref (counts y1) (index to y1)) (aref (counts y1) (index from y1)))
           (+ (let ((counts (counts y1)))
                (- (aref counts (1- (length counts))) (aref counts (index from y1))))
-             (loop for y from (1+ y1) below y2
-                   sum (let ((counts (counts y))) (aref counts (1- (length counts)))))
+             (iter (for y from (1+ y1) below y2)
+                   (sum (let ((counts (counts y))) (aref counts (1- (length counts))))))
              (aref (counts y2) (index to y2)))))))
 
 ;;; --------------------------------------------------------------------
@@ -306,7 +306,7 @@ weekend comes from SUPERCLASS.
            ,@(when documentation `((:documentation ,documentation))))
          (let ((,own (mapcar #'make-holiday-rule (list ,@rule-forms))))
            (defmethod calendar-holidays ((,calendar ,name) ,year)
-             `(,@(loop for rule in ,own append (rule-dates rule ,year))
+             `(,@(iter (for rule in ,own) (appending (rule-dates rule ,year)))
                ,@(call-next-method))))
          (defvar ,constant (make-instance ',name)
            ,(format nil "The ~(~A~) calendar." name))

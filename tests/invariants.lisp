@@ -32,6 +32,12 @@ engine does not take a process and PROCESS is not the one its model fixes
   (process-free black-scholes-engine)
   (process-free barone-adesi-whaley-engine))
 
+(defmethod test-engine-instance ((c (eql 'merton-series-engine)) process)
+  (when (typep process 'merton-jump) (make-instance c :process process)))
+
+(defmethod test-engine-instance ((c (eql 'cev-engine)) process)
+  (when (typep process 'cev) (make-instance c :process process)))
+
 (defmethod test-engine-instance ((c (eql 'monte-carlo-engine)) process)
   (make-instance 'monte-carlo-engine :process process :n-paths 20000 :n-steps 50))
 
@@ -75,7 +81,12 @@ invariant involves, for Monte Carlo engines.")
     1d-3)
   (:method ((e monte-carlo-engine) magnitude &optional se)
     (declare (ignore magnitude))
-    (+ (* 4 (or se 0d0)) 1d-10)))
+    (+ (* 4 (or se 0d0)) 1d-10))
+  ;; Automatic selection: Monte Carlo when there is a standard error, else
+  ;; the loosest deterministic engine's (the tree's).
+  (:method ((e stochastic-process) magnitude &optional se)
+    (declare (ignore magnitude))
+    (if se (+ (* 4 se) 1d-10) 1d-3)))
 
 ;;; --------------------------------------------------------------------
 ;;; The grid
@@ -101,10 +112,12 @@ premium."
   "(label process) pairs."
   (list (list "gbm" (make-instance 'gbm))
         (list "cev" (make-instance 'cev :beta 0.7d0))
-        (list "heston" (make-instance 'heston :xi 0.5d0 :rho -0.7d0))))
+        (list "heston" (make-instance 'heston :xi 0.5d0 :rho -0.7d0))
+        (list "merton" (make-instance 'merton-jump))
+        (list "kou" (make-instance 'kou-jump))))
 
 (defun invariant-option (style kind strike)
-  (make-option `((,kind ,strike)
+  (make-option-from-clauses `((,kind ,strike)
                  ,@(if (eq style :bermudan)
                        `((:bermudan :dates ,*invariant-bermudan-dates*))
                        `((,style) (:expires ,*invariant-expiry*))))))
@@ -140,11 +153,11 @@ list of (coefficient result), results as from PRICE-OR-STATUS; the check is
 skipped unless all of them priced."
   (when (every (lambda (term) (ok-result-p (second term))) terms)
     (incf *invariant-count*)
-    (let* ((value (loop for (c r) in terms sum (* c (second r))))
-           (ses (loop for (c r) in terms
-                      when (third r) collect (* c (third r))))
-           (se (and ses (sqrt (loop for x in ses sum (* x x)))))
-           (scale (if se 1 (loop for (c) in terms sum (abs c))))
+    (let* ((value (iter (for (c r) in terms) (sum (* c (second r)))))
+           (ses (iter (for (c r) in terms)
+                      (when (third r) (collect (* c (third r))))))
+           (se (and ses (sqrt (iter (for x in ses) (sum (* x x))))))
+           (scale (if se 1 (iter (for (c) in terms) (sum (abs c)))))
            (tol (* scale (invariant-tolerance engine (abs value) se))))
       (unless (>= value (- bound tol))
         (setf *cell-failed* t)
@@ -198,23 +211,23 @@ skipped unless all of them priced."
                 (invariant engine label `((1 ,v) (-1 ,(at kind k :european))) 0
                            (format nil "~A: Bermudan >= European" where)))))
           ;; Monotone in strike: calls fall and puts rise as K increases.
-          (loop for (k1 k2) on *invariant-strikes* while k2
-                do (invariant engine label `((,phi ,(at kind k1)) (,(- phi) ,(at kind k2))) 0
-                              (format nil "~A: monotone in strike, K=~D..~D" tag k1 k2)))
+          (iter (for (k1 k2) on *invariant-strikes*) (while k2)
+                (invariant engine label `((,phi ,(at kind k1)) (,(- phi) ,(at kind k2))) 0
+                           (format nil "~A: monotone in strike, K=~D..~D" tag k1 k2)))
           ;; Convex in strike: butterflies are worth at least zero.
-          (loop for (k1 k2 k3) on *invariant-strikes* while k3
-                do (invariant engine label
-                              `((1 ,(at kind k1)) (-2 ,(at kind k2)) (1 ,(at kind k3))) 0
-                              (format nil "~A: convex in strike at K=~D" tag k2))))))))
+          (iter (for (k1 k2 k3) on *invariant-strikes*) (while k3)
+                (invariant engine label
+                           `((1 ,(at kind k1)) (-2 ,(at kind k2)) (1 ,(at kind k3))) 0
+                           (format nil "~A: convex in strike at K=~D" tag k2))))))))
 
 ;;; --------------------------------------------------------------------
 ;;; The sweep and its coverage matrix
 ;;; --------------------------------------------------------------------
 
 (defun cell-status (grid style failed)
-  (let ((results (loop for kind in '(:call :put)
-                       append (loop for k in *invariant-strikes*
-                                    collect (gethash (list style kind k) grid)))))
+  (let ((results (iter (for kind in '(:call :put))
+                       (appending (iter (for k in *invariant-strikes*)
+                                        (collect (gethash (list style kind k) grid)))))))
     (cond ((some (lambda (r) (and (consp r) (eq (first r) :error))) results) "ERROR")
           (failed "FAIL")
           ((every (lambda (r) (eq r :unsupported)) results) "--")
@@ -222,14 +235,14 @@ skipped unless all of them priced."
           (t "ok"))))
 
 (defun print-coverage (rows processes)
-  (let ((columns (loop for style in *invariant-styles*
-                       append (loop for (label) in processes
-                                    collect (format nil "~(~A~)/~A"
-                                                    (subseq (string style) 0 3) label)))))
+  (let ((columns (iter (for style in *invariant-styles*)
+                       (appending (iter (for (label) in processes)
+                                        (collect (format nil "~(~A~)/~A"
+                                                         (subseq (string style) 0 3) label)))))))
     (format t "~&~%  Coverage (--: unsupported, n/a: engine has no such process)~%")
     (format t "  ~28A~{ ~10@A~}~%" "" columns)
-    (loop for (name . cells) in rows
-          do (format t "  ~28A~{ ~10@A~}~%" (string-downcase name) cells))))
+    (iter (for (name . cells) in rows)
+          (format t "  ~28A~{ ~10@A~}~%" (string-downcase name) cells))))
 
 (defun invariant-markets ()
   "(label market) pairs: a flat market with a dividend yield, the same at zero
@@ -245,8 +258,8 @@ and negative rates, and a market with rate, dividend and vol term structure."
   (handler-case
       (let* ((g (greeks option engine market :which '(:delta :gamma :vega)))
              (ses (getf g :standard-errors)))
-        (loop for key in '(:delta :gamma :vega)
-              append `(,key (:ok ,(getf g key) ,(getf ses key)))))
+        (iter (for key in '(:delta :gamma :vega))
+              (appending `(,key (:ok ,(getf g key) ,(getf ses key))))))
     (unsupported-combination () :unsupported)
     (error (c) `(:error ,(princ-to-string c)))))
 
@@ -278,31 +291,55 @@ and negative rates, and a market with rate, dividend and vol term structure."
       (let ((name (class-name class)))
         (when (and (concrete-engine-class-p class) (has-test-instance-p class))
           (let ((cells (make-hash-table :test 'equal)))
-            (loop for (label process) in processes
-                  for engine = (test-engine-instance name process)
-                  for where = (format nil "~(~A~)/~A/~A" name label market-label)
-                  do (if (null engine)
-                         (dolist (style *invariant-styles*)
-                           (setf (gethash (list style label) cells) "n/a"))
-                         (let ((grid (price-grid engine market)))
-                           (maphash (lambda (key r)
-                                      (when (and (consp r) (eq (first r) :error))
-                                        (incf *failures*)
-                                        (format t "~&  FAIL ~A ~S: ~A~%" where key (second r))))
-                                    grid)
-                           (dolist (style *invariant-styles*)
-                             (let ((*cell-failed* nil))
-                               (check-invariants engine grid market style where)
-                               (setf (gethash (list style label) cells)
-                                     (cell-status grid style *cell-failed*))))
-                           ;; Bump Greeks need named factors: composite markets only.
-                           (when (typep market 'composite-market)
-                             (let ((*cell-failed* nil))
-                               (check-greek-invariants engine market where))))))
-            (push (cons name (loop for style in *invariant-styles*
-                                   append (loop for (label) in processes
-                                                collect (gethash (list style label) cells))))
+            (iter (for (label process) in processes)
+                  (for engine = (test-engine-instance name process))
+                  (for where = (format nil "~(~A~)/~A/~A" name label market-label))
+                  (if (null engine)
+                      (dolist (style *invariant-styles*)
+                        (setf (gethash (list style label) cells) "n/a"))
+                      (let ((grid (price-grid engine market)))
+                        (maphash (lambda (key r)
+                                   (when (and (consp r) (eq (first r) :error))
+                                     (incf *failures*)
+                                     (format t "~&  FAIL ~A ~S: ~A~%" where key (second r))))
+                                 grid)
+                        (dolist (style *invariant-styles*)
+                          (let ((*cell-failed* nil))
+                            (check-invariants engine grid market style where)
+                            (setf (gethash (list style label) cells)
+                                  (cell-status grid style *cell-failed*))))
+                        ;; Bump Greeks need named factors: composite markets only.
+                        (when (typep market 'composite-market)
+                          (let ((*cell-failed* nil))
+                            (check-greek-invariants engine market where))))))
+            (push (cons name (iter (for style in *invariant-styles*)
+                                   (appending (iter (for (label) in processes)
+                                                    (collect (gethash (list style label) cells))))))
                   rows)))))))
+
+(defun auto-sweep (market market-label processes)
+  "The coverage row of automatic selection: every cell priced through
+(price option process market), Monte Carlo fallbacks at 10,000 paths.
+A cell automatic selection cannot price is a failure."
+  (let ((cells (make-hash-table :test 'equal)))
+    (handler-bind ((engine-fallback #'muffle-warning))
+      (iter (for (label process) in processes)
+            (for where = (format nil "auto/~A/~A" label market-label))
+            (let ((grid (with-engines ((:fallback '(:mc :n-paths 10000 :n-steps 50)))
+                          (price-grid process market))))
+              (maphash (lambda (key r)
+                         (when (or (eq r :unsupported) (and (consp r) (eq (first r) :error)))
+                           (incf *failures*)
+                           (format t "~&  FAIL ~A ~S: ~A~%" where key
+                                   (if (consp r) (second r) "no engine prices it"))))
+                       grid)
+              (dolist (style *invariant-styles*)
+                (let ((*cell-failed* nil))
+                  (check-invariants process grid market style where)
+                  (setf (gethash (list style label) cells) (cell-status grid style *cell-failed*)))))))
+    (cons 'auto (iter (for style in *invariant-styles*)
+                      (appending (iter (for (label) in processes)
+                                       (collect (gethash (list style label) cells))))))))
 
 (defun invariant-checks ()
   (format t "~&Invariants: no-arbitrage relations over every engine~%")
@@ -313,10 +350,11 @@ and negative rates, and a market with rate, dividend and vol term structure."
         (incf *failures*)
         (format t "~&  FAIL ~(~A~) is untested: define a TEST-ENGINE-INSTANCE method~%"
                 (class-name class))))
-    (loop for (label market) in (invariant-markets)
-          do (format t "~&  ~A market~%" label)
-             (print-coverage (sort (invariant-sweep market label processes) #'string< :key #'car)
-                             processes))
+    (iter (for (label market) in (invariant-markets))
+          (format t "~&  ~A market~%" label)
+          (print-coverage (append (sort (invariant-sweep market label processes) #'string< :key #'car)
+                                  (list (auto-sweep market label processes)))
+                          processes))
     (format t "~&  ~D invariants checked~%" *invariant-count*)))
 
 (defun run-invariant-tests ()

@@ -39,25 +39,25 @@ rational weights.
     (unless (= n (length (remove-duplicates nodes :test #'=)))
       (signal-invalid-argument 'offsets offsets 'sequence "distinct offsets"))
     (setf (aref c 0 0) 1)
-    (loop for i from 1 below n
-          do (let ((mn (min i order)) (c2 1) (c5 c4))
-               (setf c4 (svref nodes i))
-               (loop for j from 0 below i
-                     do (let ((c3 (- (svref nodes i) (svref nodes j))))
-                          (setf c2 (* c2 c3))
-                          (when (= j (1- i))
-                            (loop for k from mn downto 1
-                                  do (setf (aref c i k)
-                                           (/ (* c1 (- (* k (aref c (1- i) (1- k)))
-                                                       (* c5 (aref c (1- i) k))))
-                                              c2)))
-                            (setf (aref c i 0) (/ (- (* c1 c5 (aref c (1- i) 0))) c2)))
-                          (loop for k from mn downto 1
-                                do (setf (aref c j k)
-                                         (/ (- (* c4 (aref c j k)) (* k (aref c j (1- k))))
-                                            c3)))
-                          (setf (aref c j 0) (/ (* c4 (aref c j 0)) c3))))
-               (setf c1 c2)))
+    (iter (for i from 1 below n)
+          (let ((mn (min i order)) (c2 1) (c5 c4))
+            (setf c4 (svref nodes i))
+            (iter (for j from 0 below i)
+                  (let ((c3 (- (svref nodes i) (svref nodes j))))
+                    (setf c2 (* c2 c3))
+                    (when (= j (1- i))
+                      (iter (for k from mn downto 1)
+                            (setf (aref c i k)
+                                  (/ (* c1 (- (* k (aref c (1- i) (1- k)))
+                                              (* c5 (aref c (1- i) k))))
+                                     c2)))
+                      (setf (aref c i 0) (/ (- (* c1 c5 (aref c (1- i) 0))) c2)))
+                    (iter (for k from mn downto 1)
+                          (setf (aref c j k)
+                                (/ (- (* c4 (aref c j k)) (* k (aref c j (1- k))))
+                                   c3)))
+                    (setf (aref c j 0) (/ (* c4 (aref c j 0)) c3))))
+            (setf c1 c2)))
     (let ((weights (make-array n)))
       (dotimes (i n weights)
         (setf (svref weights i) (aref c i order))))))
@@ -81,10 +81,10 @@ second-order accurate; forward and backward ones are first-order accurate.
   (scheme-offsets :central 2) => (-1 0 1)"
   (ecase scheme
     (:central (let ((half (ceiling order 2)))
-                (loop for k from (- half) to half
-                      unless (and (zerop k) (oddp order)) collect k)))
-    (:forward (loop for k from 0 to order collect k))
-    (:backward (loop for k from (- order) to 0 collect k))))
+                (iter (for k from (- half) to half)
+                      (unless (and (zerop k) (oddp order)) (collect k)))))
+    (:forward (iter (for k from 0 to order) (collect k)))
+    (:backward (iter (for k from (- order) to 0) (collect k)))))
 
 (defun difference-quotient (f x h &key (scheme :central) (order 1))
   "Finite-difference estimate of the ORDER-th derivative of F at X with step
@@ -127,28 +127,25 @@ removed.
 
   (derivative #'sin 1d0) => 0.5403023058681398d0, ~1d-14"
   (let* ((h0 (or h0 (* 0.1d0 (max 1d0 (abs x)))))
-         (steps (loop for i below levels collect (/ h0 (expt ratio i))))
+         (steps (iter (for i below levels) (collect (/ h0 (expt ratio i)))))
          (quotients (mapcar (lambda (h) (difference-quotient f x h :order order)) steps))
          (stencil-size (reduce #'+ (finite-difference-weights (scheme-offsets :central order)
                                                               order)
                                :key #'abs))
          (f-scale (+ (abs (funcall f x))
-                     (* (abs x) (abs (difference-quotient f x h0)))))
-         (best nil) (best-error nil))
-    (loop for k from 2 to levels
-          do (let ((exponents (loop for p from 1 below k collect (* 2 p))))
-               (multiple-value-bind (estimate tableau-error)
-                   (richardson-extrapolate (subseq quotients 0 k)
-                                           :ratio ratio :exponents exponents)
-                 (let* ((weights (richardson-weights k :ratio ratio :exponents exponents))
-                        (rounding (* 2 double-float-epsilon f-scale stencil-size
-                                     (loop for w across weights
-                                           for h in steps
-                                           sum (/ (abs w) (expt h order)))))
-                        (error (max tableau-error rounding)))
-                   (when (or (null best-error) (< error best-error))
-                     (setf best estimate best-error error))))))
-    (values best best-error)))
+                     (* (abs x) (abs (difference-quotient f x h0))))))
+    (iter (for k from 2 to levels)
+          (for exponents = (iter (for p from 1 below k) (collect (* 2 p))))
+          (for (values estimate tableau-error) = (richardson-extrapolate (subseq quotients 0 k)
+                                                                         :ratio ratio
+                                                                         :exponents exponents))
+          (for rounding = (* 2 double-float-epsilon f-scale stencil-size
+                             (iter (for w in-vector (richardson-weights k :ratio ratio
+                                                                          :exponents exponents))
+                                   (for h in steps)
+                                   (sum (/ (abs w) (expt h order))))))
+          (finding estimate minimizing (max tableau-error rounding) into (best best-error))
+          (finally (return (values best best-error))))))
 
 (defun jacobian! (f x out &key (scheme :forward) steps f0)
   "The Jacobian of the vector function F (a DOUBLE-VECTOR of m residuals of a

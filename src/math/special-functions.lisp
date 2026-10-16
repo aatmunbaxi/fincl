@@ -1,4 +1,5 @@
-;;;; math/special-functions.lisp --- the normal distribution, expm1 and log1p
+;;;; math/special-functions.lisp --- the normal distribution, expm1 and log1p,
+;;;; erfcx, modified Bessel K and the noncentral chi-square distribution
 
 (in-package #:fincl)
 
@@ -146,12 +147,12 @@ log(u) x / (u - 1) cancels the rounding error of u.
                     (xnum (* 0.185777706184603153d0 ysq))
                     (xden ysq))
                (declare (double-float ysq xnum xden))
-               (loop for a across #(3.1611237438705656d0 113.864154151050156d0
-                                    377.485237685302021d0)
-                     for b across #(23.6012909523441209d0 244.024637934444173d0
-                                    1282.61652607737228d0)
-                     do (setf xnum (* (+ xnum (the double-float a)) ysq)
-                              xden (* (+ xden (the double-float b)) ysq)))
+               (iter (for a in-vector #(3.1611237438705656d0 113.864154151050156d0
+                                        377.485237685302021d0))
+                     (for b in-vector #(23.6012909523441209d0 244.024637934444173d0
+                                        1282.61652607737228d0))
+                     (setf xnum (* (+ xnum (the double-float a)) ysq)
+                           xden (* (+ xden (the double-float b)) ysq)))
                (setf result (/ (* x (+ xnum 3209.37758913846947d0))
                                (+ xden 2844.23683343917062d0)))
                (unless (zerop jint) (setf result (- 1d0 result)))
@@ -160,16 +161,16 @@ log(u) x / (u - 1) cancels the rounding error of u.
             ((<= y 4d0)
              (let ((xnum (* 2.15311535474403846d-8 y)) (xden y))
                (declare (double-float xnum xden))
-               (loop for c across #(0.564188496988670089d0 8.88314979438837594d0
-                                    66.1191906371416295d0 298.635138197400131d0
-                                    881.95222124176909d0 1712.04761263407058d0
-                                    2051.07837782607147d0)
-                     for d across #(15.7449261107098347d0 117.693950891312499d0
-                                    537.181101862009858d0 1621.38957456669019d0
-                                    3290.79923573345963d0 4362.61909014324716d0
-                                    3439.36767414372164d0)
-                     do (setf xnum (* (+ xnum (the double-float c)) y)
-                              xden (* (+ xden (the double-float d)) y)))
+               (iter (for c in-vector #(0.564188496988670089d0 8.88314979438837594d0
+                                        66.1191906371416295d0 298.635138197400131d0
+                                        881.95222124176909d0 1712.04761263407058d0
+                                        2051.07837782607147d0))
+                     (for d in-vector #(15.7449261107098347d0 117.693950891312499d0
+                                        537.181101862009858d0 1621.38957456669019d0
+                                        3290.79923573345963d0 4362.61909014324716d0
+                                        3439.36767414372164d0))
+                     (setf xnum (* (+ xnum (the double-float c)) y)
+                           xden (* (+ xden (the double-float d)) y)))
                (setf result (/ (+ xnum 1230.33935479799725d0) (+ xden 1230.33935480374942d0)))
                (unless (= jint 2) (setf result (* (scaled-exp y) result)))))
             (t
@@ -183,12 +184,12 @@ log(u) x / (u - 1) cancels the rounding error of u.
                       (xnum (* 0.0163153871373020978d0 ysq))
                       (xden ysq))
                  (declare (double-float ysq xnum xden))
-                 (loop for p across #(0.305326634961232344d0 0.360344899949804439d0
-                                      0.125781726111229246d0 0.0160837851487422766d0)
-                       for q across #(2.56852019228982242d0 1.87295284992346047d0
-                                      0.527905102951428412d0 0.0605183413124413191d0)
-                       do (setf xnum (* (+ xnum (the double-float p)) ysq)
-                                xden (* (+ xden (the double-float q)) ysq)))
+                 (iter (for p in-vector #(0.305326634961232344d0 0.360344899949804439d0
+                                          0.125781726111229246d0 0.0160837851487422766d0))
+                       (for q in-vector #(2.56852019228982242d0 1.87295284992346047d0
+                                          0.527905102951428412d0 0.0605183413124413191d0))
+                       (setf xnum (* (+ xnum (the double-float p)) ysq)
+                             xden (* (+ xden (the double-float q)) ysq)))
                  (setf result (/ (* ysq (+ xnum 6.58749161529837803d-4))
                                  (+ xden 0.00233520497626869185d0))
                        result (/ (- 0.56418958354775628695d0 result) y))
@@ -212,3 +213,259 @@ rational approximations, without overflow or cancellation for large X.
 
   (erfcx 10d0) => 0.05614099274382259d0"
   (cody-calerf (float x 1d0) 2))
+
+;;; --------------------------------------------------------------------
+;;; Modified Bessel function of the second kind, K_nu(x)
+;;; --------------------------------------------------------------------
+;;;
+;;; N. M. Temme, "On the numerical evaluation of the modified Bessel function
+;;; of the third kind", J. Comput. Phys. 19 (1975) 324-337, as arranged in
+;;; Numerical Recipes' BESSIK: write nu = n + mu with |mu| <= 1/2, find K_mu
+;;; and K_mu+1 by Temme's series for x < 2 or Steed's continued fraction
+;;; (CF2) for x >= 2, then recur upwards in the order, which is stable for K.
+
+(defparameter *reciprocal-gamma-coefficients*
+  (coerce '(1d0 0.5772156649015329d0 -0.6558780715202538d0 -0.0420026350340952d0
+            0.1665386113822915d0 -0.0421977345555443d0 -0.0096219715278770d0
+            0.0072189432466630d0 -0.0011651675918591d0 -0.0002152416741149d0
+            0.0001280502823882d0 -0.0000201348547807d0 -0.0000012504934821d0
+            0.0000011330272320d0 -0.0000002056338417d0 0.0000000061160950d0
+            0.0000000050020075d0 -0.0000000011812746d0 0.0000000001043427d0
+            0.0000000000077823d0 -0.0000000000036968d0 0.0000000000005100d0
+            -0.0000000000000206d0 -0.0000000000000054d0 0.0000000000000014d0
+            0.0000000000000001d0)
+          '(simple-array double-float (*)))
+  "c_1 .. c_26 of 1/Gamma(z) = sum c_k z^k (Abramowitz and Stegun 6.1.34), so
+1/Gamma(1 + z) = sum c_k z^(k-1).")
+
+(defun temme-gammas (mu)
+  "Temme's (values gamma1 gamma2 1/Gamma(1+MU) 1/Gamma(1-MU)) for |MU| <= 1/2:
+gamma1 = (1/Gamma(1-mu) - 1/Gamma(1+mu)) / (2 mu), gamma2 = their mean, from
+the even and odd parts of the series of 1/Gamma(1 + z), with no cancellation
+at small MU."
+  (declare (double-float mu))
+  (let ((c *reciprocal-gamma-coefficients*) (even 0d0) (odd 0d0) (mu2 (* mu mu)))
+    (declare (double-float even odd mu2))
+    ;; Coefficient c_(k+1) multiplies z^k: even k into EVEN, odd k into ODD.
+    (iter (for k from (1- (length c)) downto 0)
+          (if (evenp k)
+              (setf even (+ (aref c k) (* mu2 even)))
+              (setf odd (+ (aref c k) (* mu2 odd)))))
+    (values (- odd) even (+ even (* mu odd)) (- even (* mu odd)))))
+
+(defun bessel-k-mu (mu x)
+  "(values K_MU(X) K_MU+1(X)) for |MU| <= 1/2 and X > 0."
+  (declare (double-float mu x))
+  (let ((eps 1d-17))
+    (if (< x 2d0)
+        ;; Temme's series.
+        (let* ((x2 (* 0.5d0 x))
+               (pimu (* pi mu))
+               (fact (if (< (abs pimu) eps) 1d0 (/ pimu (sin pimu))))
+               (d (- (log x2)))
+               (e (* mu d))
+               (fact2 (if (< (abs e) eps) 1d0 (/ (sinh e) e))))
+          (multiple-value-bind (gam1 gam2 gampl gammi) (temme-gammas mu)
+            (let* ((ff (* fact (+ (* gam1 (cosh e)) (* gam2 fact2 d))))
+                   (sum ff)
+                   (ee (exp e))
+                   (p (/ (* 0.5d0 ee) gampl))
+                   (q (/ 0.5d0 (* ee gammi)))
+                   (c 1d0)
+                   (dd (* x2 x2))
+                   (sum1 p))
+              (declare (double-float ff sum ee p q c dd sum1))
+              (iter (for i from 1 to 10000)
+                    (setf ff (/ (+ (* i ff) p q) (- (* i i) (* mu mu)))
+                          c (* c (/ dd i))
+                          p (/ p (- i mu))
+                          q (/ q (+ i mu)))
+                    (let ((del (* c ff)))
+                      (incf sum del)
+                      (incf sum1 (* c (- p (* i ff))))
+                      (when (< (abs del) (* (abs sum) eps)) (finish))))
+              (values sum (* sum1 (/ 2d0 x))))))
+        ;; Steed's continued fraction CF2, with Temme's normalization.
+        (let* ((b (* 2d0 (+ 1d0 x)))
+               (d (/ b))
+               (h d) (delh d)
+               (q1 0d0) (q2 1d0)
+               (a1 (- 0.25d0 (* mu mu)))
+               (q a1) (c a1) (a (- a1))
+               (s (+ 1d0 (* q delh))))
+          (declare (double-float b d h delh q1 q2 a1 q c a s))
+          (iter (for i from 2 to 100000)
+                (decf a (* 2 (1- i)))
+                (setf c (/ (* (- a) c) i))
+                (let ((qnew (/ (- q1 (* b q2)) a)))
+                  (setf q1 q2 q2 qnew)
+                  (incf q (* c qnew)))
+                (incf b 2d0)
+                (setf d (/ (+ b (* a d)))
+                      delh (* (- (* b d) 1d0) delh))
+                (incf h delh)
+                (let ((dels (* q delh)))
+                  (incf s dels)
+                  (when (< (abs (/ dels s)) eps) (finish))))
+          (let ((kmu (/ (* (sqrt (/ pi (* 2d0 x))) (exp (- x))) s)))
+            (values kmu (/ (* kmu (- (+ mu x 0.5d0) (* a1 h))) x)))))))
+
+(defun bessel-k (nu x)
+  "The modified Bessel function of the second kind K_NU(X), for real NU and
+X > 0 (K_-nu = K_nu). Relative accuracy about 1e-15.
+
+  (bessel-k 1 0.5d0) => 1.6564411200033008d0"
+  (check-input nu real "a real order")
+  (check-input x (real (0)) "a positive real")
+  (let* ((nu (abs (float nu 1d0)))
+         (x (float x 1d0))
+         (n (floor (+ nu 0.5d0)))
+         (mu (- nu n)))
+    (multiple-value-bind (k k1) (bessel-k-mu mu x)
+      (declare (double-float k k1))
+      ;; K_(m+1) = 2 m / x K_m + K_(m-1), upwards from m = mu + 1.
+      (iter (for i from 1 to n)
+            (psetf k k1
+                   k1 (+ (* (/ (* 2d0 (+ mu i)) x) k1) k)))
+      k)))
+
+;;; --------------------------------------------------------------------
+;;; Noncentral chi-square distribution
+;;; --------------------------------------------------------------------
+;;;
+;;; D. Benton and K. Krishnamoorthy, "Computing discrete mixtures of
+;;; continuous distributions: noncentral chisquare, noncentral t and the
+;;; distribution of the square of the sample multiple correlation
+;;; coefficient", Comput. Stat. Data Anal. 43 (2003) 249-267. The CDF is a
+;;; Poisson(lambda/2) mixture of central chi-square CDFs, P(f/2 + k, x/2) in
+;;; the regularized incomplete gamma P. The sum starts at the Poisson mode,
+;;; where the weights are largest, and runs both ways with the recurrences
+;;; P(a + 1, y) = P(a, y) - y^a e^-y / Gamma(a + 1) for the gamma terms and
+;;; ratios for the weights, so only one incomplete gamma is evaluated. The
+;;; complement is summed the same way from Q = 1 - P, so upper tails keep
+;;; their relative precision.
+
+(defun log-gamma (x)
+  "log Gamma(X) for X > 0, as a double-float."
+  (float (sf:log-gamma (float x 1d0)) 1d0))
+
+(defun regularized-gamma (a x)
+  "(values P(A, X) Q(A, X)), the regularized incomplete gamma functions, as
+double-floats (SF:INCOMPLETE-GAMMA returns integers in some branches)."
+  (multiple-value-bind (p q) (sf:incomplete-gamma (float a 1d0) (float x 1d0))
+    (values (float p 1d0) (float q 1d0))))
+
+(defun stirling-error (x)
+  "log Gamma(X + 1) - ((X + 1/2) log X - X + log(2 pi)/2), the error of
+Stirling's formula, for X > 0: by its asymptotic series above 15, where
+the difference itself would cancel, directly below (C. Loader, \"Fast and
+accurate computation of binomial probabilities\", 2000)."
+  (declare (double-float x))
+  (let ((s0 (/ 1d0 12)) (s1 (/ 1d0 360)) (s2 (/ 1d0 1260)) (s3 (/ 1d0 1680))
+        (s4 (/ 1d0 1188)))
+    (if (<= x 15d0)
+        (- (log-gamma (+ x 1d0)) (* (+ x 0.5d0) (log x)) (- x) (* 0.5d0 (log (* 2 pi))))
+        (let ((x2 (/ 1d0 (* x x))))
+          (/ (cond ((> x 500d0) (- s0 (* s1 x2)))
+                   ((> x 80d0) (- s0 (* x2 (- s1 (* s2 x2)))))
+                   ((> x 35d0) (- s0 (* x2 (- s1 (* x2 (- s2 (* s3 x2)))))))
+                   (t (- s0 (* x2 (- s1 (* x2 (- s2 (* x2 (- s3 (* s4 x2))))))))))
+             x)))))
+
+(defun bd0 (x m)
+  "X log(X / M) + M - X, the deviance term of the Poisson density, without
+the cancellation of its three large terms when X is near M (Loader 2000)."
+  (declare (double-float x m))
+  (if (< (abs (- x m)) (* 0.1d0 (+ x m)))
+      (let* ((v (/ (- x m) (+ x m)))
+             (s (* (- x m) v))
+             (ej (* 2d0 x v))
+             (v2 (* v v)))
+        (declare (double-float v s ej v2))
+        (iter (for j from 1 to 1000)
+              (setf ej (* ej v2))
+              (let ((next (+ s (/ ej (+ (* 2 j) 1)))))
+                (when (= next s) (return))
+                (setf s next)))
+        s)
+      (+ (* x (log (/ x m))) m (- x))))
+
+(defun poisson-density (x m)
+  "M^X e^-M / Gamma(X + 1) for real X >= 0 and M > 0: the Poisson
+probability at integer X, and the gamma-prefix term of the incomplete gamma
+recurrences otherwise. Saddle-point form exp(-stirlerr(X) - bd0(X, M)) /
+sqrt(2 pi X), accurate to a few ulps also when X and M are 1e10."
+  (declare (double-float x m))
+  (if (zerop x)
+      (exp (- m))
+      (/ (exp (- (- (stirling-error x)) (bd0 x m))) (sqrt (* 2 pi x)))))
+
+(defun noncentral-chi-square-cdf (x df lambda)
+  "(values F 1-F): the noncentral chi-square distribution function with DF
+degrees of freedom (DF > 0) and noncentrality LAMBDA >= 0 at X, and its
+complement, each with full relative precision.
+
+  (noncentral-chi-square-cdf 3d0 2d0 1d0) => 0.6081..., 0.3918..."
+  (check-input x real "a real")
+  (check-input df (real (0)) "positive degrees of freedom")
+  (check-input lambda (real 0) "a non-negative noncentrality")
+  (let ((x (float x 1d0)) (df (float df 1d0)) (lambda (float lambda 1d0)))
+    (when (<= x 0d0)
+      (return-from noncentral-chi-square-cdf (values 0d0 1d0)))
+    (let* ((y (* 0.5d0 x))
+           (half (* 0.5d0 lambda))
+           (k (floor half))
+           (a (+ (* 0.5d0 df) k))
+           (eps 1d-17)
+           ;; Poisson weight at the mode, and y^a e^-y / Gamma(a + 1).
+           (w0 (if (zerop half) 1d0 (poisson-density (float k 1d0) half)))
+           (t0 (poisson-density a y)))
+      (declare (double-float y half a w0 t0) (fixnum k))
+      (multiple-value-bind (p0 q0) (regularized-gamma a y)
+        (declare (double-float p0 q0))
+        (let ((p-sum (* w0 p0)) (q-sum (* w0 q0)))
+          (declare (double-float p-sum q-sum))
+          ;; Forward from the mode: weights fall, P falls, Q rises to 1.
+          (let ((w w0) (p p0) (q q0) (term t0))
+            (declare (double-float w p q term))
+            ;; The Poisson weights spread over about sqrt(lambda/2) terms.
+            (iter (for i from 1 to (+ 10000 (ceiling (* 60 (sqrt half)))))
+                  (setf w (/ (* w half) (+ k i)))
+                  ;; P - term cancels when the term is a sizeable part of
+                  ;; P (Y well below the shape): evaluate P afresh there.
+                  (if (> term (* 0.05d0 p))
+                      (multiple-value-setq (p q) (regularized-gamma (+ a i) y))
+                      (setf p (- p term) q (+ q term)))
+                  (setf term (/ (* term y) (+ a i)))
+                  (incf p-sum (* w p))
+                  (incf q-sum (* w q))
+                  ;; The weights beyond i fall faster than a geometric
+                  ;; series of ratio R, which bounds both remainders.
+                  (let* ((r (/ half (+ k i 1)))
+                         (tail (/ (* w r) (- 1d0 r))))
+                    (when (and (<= (* tail p) (* eps p-sum))
+                               (<= tail (* eps q-sum)))
+                      (finish)))))
+          ;; Backward from the mode to k = 0: P rises, Q falls.
+          (let ((w w0) (p p0) (q q0)
+                (term (/ (* t0 a) y)))  ; y^(a-1) e^-y / Gamma(a)
+            (declare (double-float w p q term))
+            (iter (for j from k above 0)
+                  (for aj = (- a (- k j)))  ; shape at index j
+                  (setf w (/ (* w j) half))
+                  ;; Likewise Q - term, when Y is well above the shape;
+                  ;; and when P or the term underflowed, far in the lower
+                  ;; tail.
+                  (if (or (> term (* 0.05d0 q)) (zerop p) (zerop term))
+                      (progn
+                        (multiple-value-setq (p q) (regularized-gamma (- aj 1d0) y))
+                        (setf term (if (> aj 2d0) (poisson-density (- aj 2d0) y) 0d0)))
+                      (setf p (+ p term) q (- q term)
+                            term (/ (* term (- aj 1d0)) y)))
+                  (incf p-sum (* w p))
+                  (incf q-sum (* w q))
+                  (let* ((r (/ (- j 1) half))
+                         (tail (/ (* w r) (- 1d0 r))))
+                    (when (and (<= tail (* eps p-sum)) (<= (* tail q) (* eps q-sum)))
+                      (finish)))))
+          (values (min 1d0 p-sum) (min 1d0 q-sum)))))))

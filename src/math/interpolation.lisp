@@ -55,10 +55,10 @@ Made by MAKE-INTERPOLATOR."))
   (declare (type double-vector xs) (double-float x) (optimize (speed 3) (safety 0)))
   (let ((lo 0) (hi (1- (length xs))))
     (declare (fixnum lo hi))
-    (loop while (> (- hi lo) 1)
-          do (let ((mid (ash (+ lo hi) -1)))
-               (declare (fixnum mid))
-               (if (< x (aref xs mid)) (setf hi mid) (setf lo mid))))
+    (iter (while (> (- hi lo) 1))
+          (let ((mid (ash (+ lo hi) -1)))
+            (declare (fixnum mid))
+            (if (< x (aref xs mid)) (setf hi mid) (setf lo mid))))
     lo))
 
 (defun as-double-vector (sequence)
@@ -100,7 +100,7 @@ cubics) or :error (signals EXTRAPOLATION-ERROR).
       (signal-invalid-argument 'ys ys 'sequence
                                (format nil "one value per knot, at least two (~D knots)"
                                        (length xs))))
-    (unless (loop for i from 1 below (length xs) always (< (aref xs (1- i)) (aref xs i)))
+    (unless (iter (for i from 1 below (length xs)) (always (< (aref xs (1- i)) (aref xs i))))
       (signal-invalid-argument 'xs xs 'sequence "strictly increasing knots"))
     (when (and (eq method :log-linear) (notevery #'plusp ys))
       (signal-invalid-argument 'ys ys 'sequence "positive values, for :LOG-LINEAR"))
@@ -262,10 +262,10 @@ adjacent secant; zero at local extrema)."
     (if (= n 2)
         (setf (aref d 0) (aref delta 0) (aref d 1) (aref delta 0))
         (progn
-          (loop for i from 1 below (1- n)
-                do (setf (aref d i) (/ (+ (* (aref h i) (aref delta (1- i)))
-                                          (* (aref h (1- i)) (aref delta i)))
-                                       (+ (aref h (1- i)) (aref h i)))))
+          (iter (for i from 1 below (1- n))
+                (setf (aref d i) (/ (+ (* (aref h i) (aref delta (1- i)))
+                                       (* (aref h (1- i)) (aref delta i)))
+                                    (+ (aref h (1- i)) (aref h i)))))
           (setf (aref d 0) (/ (- (* (+ (* 2 (aref h 0)) (aref h 1)) (aref delta 0))
                                  (* (aref h 0) (aref delta 1)))
                               (+ (aref h 0) (aref h 1)))
@@ -365,7 +365,7 @@ EXTRAPOLATION is :flat (clamp to the knot rectangle) or :error.
     (check-input extrapolation (member :flat :error) ":FLAT or :ERROR")
     (dolist (knots (list xs ys))
       (unless (and (>= (length knots) 2)
-                   (loop for i from 1 below (length knots) always (< (aref knots (1- i)) (aref knots i))))
+                   (iter (for i from 1 below (length knots)) (always (< (aref knots (1- i)) (aref knots i)))))
         (signal-invalid-argument 'knots knots 'sequence "at least two strictly increasing knots")))
     (flet ((clamp (v knots)
              (let ((lo (aref knots 0)) (hi (aref knots (1- (length knots)))))
@@ -374,9 +374,9 @@ EXTRAPOLATION is :flat (clamp to the knot rectangle) or :error.
                       (error 'extrapolation-error :x v :lo lo :hi hi))
                      (t (max lo (min hi v)))))))
       (let* ((rows (and (eq method :bicubic)
-                        (loop for i below nx
-                              collect (make-interpolator :natural-cubic ys
-                                                         (loop for j below ny collect (aref zs i j))))))
+                        (iter (for i below nx)
+                              (collect (make-interpolator :natural-cubic ys
+                                                          (iter (for j below ny) (collect (aref zs i j))))))))
              (function
                (ecase method
                  (:bilinear
@@ -396,3 +396,281 @@ EXTRAPOLATION is :flat (clamp to the knot rectangle) or :error.
         (let ((interpolator (make-instance 'interpolator-2d :method method :xs xs :ys ys)))
           (c2mop:set-funcallable-instance-function interpolator function)
           interpolator)))))
+
+;;; --------------------------------------------------------------------
+;;; Monotone-convex forwards (Hagan and West)
+;;; --------------------------------------------------------------------
+;;;
+;;; P. Hagan and G. West, "Interpolation methods for curve construction",
+;;; Applied Mathematical Finance 13 (2006), as implemented by QuantLib's
+;;; ConvexMonotone (ql/math/interpolations/convexmonotoneinterpolation.hpp),
+;;; which this ports section by section so that bootstrapped curves agree
+;;; with QuantLib's. The inputs are period-average forwards: YS[i] for i >= 1
+;;; is the average over (XS[i-1], XS[i]] and YS[0] is ignored. The result is
+;;; an instantaneous forward and its integral from XS[0]; beyond the last
+;;; knot the forward is held at its value there.
+
+(defstruct (convex-section (:constructor convex-section (value primitive f-next)))
+  "One period of the interpolant: closures of x for the forward and for its
+integral from XS[0], and the forward at the period's right end."
+  (value nil :type function :read-only t)
+  (primitive nil :type function :read-only t)
+  (f-next 0d0 :type double-float :read-only t))
+
+(defun constant-section (value primitive x-prev)
+  (convex-section (lambda (x) (declare (ignore x)) value)
+                  (lambda (x) (+ primitive (* (- x x-prev) value)))
+                  value))
+
+(defun constant-gradient-section (f-prev primitive x-prev x-next f-next)
+  (let ((grad (/ (- f-next f-prev) (- x-next x-prev))))
+    (convex-section (lambda (x) (+ f-prev (* (- x x-prev) grad)))
+                    (lambda (x) (+ primitive (* (- x x-prev) (+ f-prev (* 0.5d0 (- x x-prev) grad)))))
+                    f-next)))
+
+(defun quadratic-section (x-prev x-next f-prev f-next f-average primitive)
+  (let ((a (- (+ (* 3 f-prev) (* 3 f-next)) (* 6 f-average)))
+        (b (- (- (+ (* 4 f-prev) (* 2 f-next)) (* 6 f-average))))
+        (c f-prev)
+        (scale (- x-next x-prev)))
+    (convex-section (lambda (x) (let ((u (/ (- x x-prev) scale))) (+ (* a u u) (* b u) c)))
+                    (lambda (x) (let ((u (/ (- x x-prev) scale)))
+                                  (+ primitive (* scale (+ (* (/ a 3) u u) (* (/ b 2) u) c) u))))
+                    f-next)))
+
+(defun quadratic-min-section (x1 x4 f-prev f-next f-average primitive1)
+  (let* ((a (- (+ (* 3 f-prev) (* 3 f-next)) (* 6 f-average)))
+         (b (- (- (+ (* 4 f-prev) (* 2 f-next)) (* 6 f-average))))
+         (c f-prev)
+         (scale (- x4 x1))
+         (split nil) (ratio 1d0) (x2 0d0) (x3 0d0) (primitive2 0d0))
+    (when (plusp (- (* b b) (* 4 a c)))
+      (let* ((a-av 36d0)
+             (b-av (* -24 (+ f-prev f-next)))
+             (c-av (* 4 (+ (* f-prev f-prev) (* f-prev f-next) (* f-next f-next))))
+             (d-av (- (* b-av b-av) (* 4 a-av c-av))))
+        (when (>= d-av 0d0)
+          (let ((root (/ (- (- b-av) (sqrt d-av)) (* 2 a-av))))
+            (setf split t
+                  ratio (/ f-average root)
+                  scale (* scale ratio)
+                  a (- (+ (* 3 f-prev) (* 3 f-next)) (* 6 root))
+                  b (- (- (+ (* 4 f-prev) (* 2 f-next)) (* 6 root)))
+                  c f-prev)
+            (let ((x-root (/ (- b) (* 2 a))))
+              (setf x2 (+ x1 (* ratio (- x4 x1) x-root))
+                    x3 (- x4 (* ratio (- x4 x1) (- 1 x-root)))
+                    primitive2 (+ primitive1 (* scale (+ (* (/ a 3) x-root x-root) (* (/ b 2) x-root) c)
+                                                x-root))))))))
+    (convex-section
+     (lambda (x)
+       (let ((u (/ (- x x1) (- x4 x1))))
+         (flet ((at (u) (+ c (* b u) (* a u u))))
+           (cond ((not split) (at u))
+                 ((<= x x2) (at (/ u ratio)))
+                 ((< x x3) 0d0)
+                 (t (at (- 1 (/ (- 1 u) ratio))))))))
+     (lambda (x)
+       (let ((u (/ (- x x1) (- x4 x1))))
+         (flet ((at (u) (+ primitive1 (* scale (+ (* (/ a 3) u u) (* (/ b 2) u) c) u))))
+           (cond ((not split) (at u))
+                 ((< x x2) (at (/ u ratio)))
+                 ((< x x3) primitive2)
+                 (t (at (- 1 (/ (- 1 u) ratio))))))))
+     f-next)))
+
+(defun convex-monotone-2-section (x-prev x-next g-prev g-next f-average eta primitive)
+  (let ((scale (- x-next x-prev)) (k (/ (- g-next g-prev) (expt (- 1 eta) 2))))
+    (convex-section
+     (lambda (x) (let ((u (/ (- x x-prev) scale)))
+                   (if (<= u eta)
+                       (+ f-average g-prev)
+                       (+ f-average g-prev (* k (- u eta) (- u eta))))))
+     (lambda (x) (let ((u (/ (- x x-prev) scale)))
+                   (if (<= u eta)
+                       (+ primitive (* scale (+ (* f-average u) (* g-prev u))))
+                       (+ primitive (* scale (+ (* f-average u) (* g-prev u)
+                                                (* k (+ (* 1/3 (- (* u u u) (* eta eta eta)))
+                                                        (- (* eta u u)) (* eta eta u)))))))))
+     (+ f-average g-next))))
+
+(defun convex-monotone-3-section (x-prev x-next g-prev g-next f-average eta primitive)
+  (let ((scale (- x-next x-prev)) (k (/ (- g-prev g-next) (* eta eta))))
+    (convex-section
+     (lambda (x) (let ((u (/ (- x x-prev) scale)))
+                   (if (<= u eta)
+                       (+ f-average g-next (* k (- eta u) (- eta u)))
+                       (+ f-average g-next))))
+     (lambda (x) (let ((u (/ (- x x-prev) scale)))
+                   (if (<= u eta)
+                       (+ primitive (* scale (+ (* f-average u) (* g-next u)
+                                                (* k (+ (* 1/3 u u u) (- (* eta u u)) (* eta eta u))))))
+                       (+ primitive (* scale (+ (* f-average u) (* g-next u)
+                                                (* k (* 1/3 eta eta eta))))))))
+     (+ f-average g-next))))
+
+(defun convex-monotone-4-section (x-prev x-next g-prev g-next f-average eta primitive force-positive)
+  "QuantLib's ConvexMonotone4Helper, or with FORCE-POSITIVE its Min variant,
+which splits the period around a zero forward when the minimum would be
+negative."
+  (let* ((scale (- x-next x-prev))
+         (a (* -0.5d0 (+ (* eta g-prev) (* (- 1 eta) g-next))))
+         (split nil) (ratio 1d0) (x2 0d0) (x3 0d0))
+    (when (and force-positive (<= (+ a f-average) 0d0))
+      (let* ((f-prev (+ g-prev f-average))
+             (f-next (+ g-next f-average))
+             (shift (- (/ (+ (* eta f-prev) (* (- 1 eta) f-next)) 3) f-average))
+             (period (/ (* shift scale) (+ f-average shift)))
+             (adjust (- scale period)))
+        (setf split t
+              ratio (/ adjust scale)
+              f-average (+ f-average shift)
+              g-next (- f-next f-average)
+              g-prev (- f-prev f-average)
+              a (- (/ (+ (* eta g-prev) (* (- 1 eta) g-next)) 2))
+              x2 (+ x-prev (* adjust eta))
+              x3 (- (+ x-prev scale) (* adjust (- 1 eta))))))
+    (flet ((left-value (u) (+ f-average a (/ (* (- g-prev a) (- eta u) (- eta u)) (* eta eta))))
+           (right-value (u) (+ f-average a (/ (* (- g-next a) (- u eta) (- u eta)) (expt (- 1 eta) 2))))
+           (left-primitive (u) (* (+ f-average a (* (/ (- g-prev a) (* eta eta))
+                                                    (+ (* eta eta) (- (* eta u)) (* 1/3 u u))))
+                                  u))
+           (right-primitive (u) (+ (* f-average u) (* a u) (* (- g-prev a) (* 1/3 eta))
+                                   (* (/ (- g-next a) (expt (- 1 eta) 2))
+                                      (+ (* 1/3 u u u) (- (* eta u u)) (* eta eta u) (* -1/3 eta eta eta))))))
+      (convex-section
+       (lambda (x)
+         (let ((u (/ (- x x-prev) scale)))
+           (cond ((not split) (if (<= u eta) (left-value u) (right-value u)))
+                 ((<= x x2) (left-value (/ u ratio)))
+                 ((< x x3) 0d0)
+                 (t (right-value (- 1 (/ (- 1 u) ratio)))))))
+       (lambda (x)
+         (let ((u (/ (- x x-prev) scale)))
+           (cond ((not split) (+ primitive (* scale (if (<= u eta) (left-primitive u) (right-primitive u)))))
+                 ((<= x x2) (+ primitive (* scale ratio (left-primitive (/ u ratio)))))
+                 ((<= x x3) (+ primitive (* scale ratio (left-primitive eta))))
+                 (t (+ primitive (* scale ratio (right-primitive (- 1 (/ (- 1 u) ratio)))))))))
+       (+ f-average g-next)))))
+
+(defun combo-section (quadratic convex quadraticity)
+  (convex-section
+   (lambda (x) (+ (* quadraticity (funcall (convex-section-value quadratic) x))
+                  (* (- 1 quadraticity) (funcall (convex-section-value convex) x))))
+   (lambda (x) (+ (* quadraticity (funcall (convex-section-primitive quadratic) x))
+                  (* (- 1 quadraticity) (funcall (convex-section-primitive convex) x))))
+   (+ (* quadraticity (convex-section-f-next quadratic))
+      (* (- 1 quadraticity) (convex-section-f-next convex)))))
+
+(defun make-monotone-convex (xs ys &key (quadraticity 0.3d0) (monotonicity 0.7d0) (force-positive t))
+  "(values forward integral): closures of x giving the monotone-convex
+instantaneous forward through the period averages YS (YS[0] ignored) at
+knots XS, and its integral from XS[0]. QUADRATICITY blends Hagan-West's
+monotone-convex sections with quadratics; MONOTONICITY bounds the sections'
+shape parameters; FORCE-POSITIVE keeps forwards non-negative. Defaults are
+QuantLib's.
+
+  (make-monotone-convex '(0 1 2 3) '(0.03 0.03 0.035 0.04))"
+  (let* ((xs (as-double-vector xs)) (ys (as-double-vector ys))
+         (n (length xs))
+         (sections (make-array n :initial-element nil))
+         (quadraticity (float quadraticity 1d0))
+         (monotonicity (float monotonicity 1d0))
+         (extrapolation nil))
+    (unless (and (>= n 2) (= n (length ys)))
+      (signal-invalid-argument 'xs xs 'sequence "at least two knots, one average per knot"))
+    (if (= n 2)
+        (setf extrapolation (constant-section (aref ys 1) 0d0 (aref xs 0))
+              (aref sections 1) extrapolation)
+        (let ((f (make-array n :element-type 'double-float :initial-element 0d0))
+              (primitive 0d0))
+          ;; Forwards at the knots: averages of the adjacent periods, weighted
+          ;; by the other period's length; the ends extrapolated.
+          (iter (for i from 1 below (1- n))
+                (for dx-prev = (- (aref xs i) (aref xs (1- i))))
+                (for dx = (- (aref xs (1+ i)) (aref xs i)))
+                (setf (aref f i) (+ (* (/ dx (+ dx dx-prev)) (aref ys i))
+                                    (* (/ dx-prev (+ dx dx-prev)) (aref ys (1+ i))))))
+          (setf (aref f 0) (- (* 1.5d0 (aref ys 1)) (* 0.5d0 (aref f 1)))
+                (aref f (1- n)) (- (* 1.5d0 (aref ys (1- n))) (* 0.5d0 (aref f (- n 2)))))
+          (when force-positive
+            (when (minusp (aref f 0)) (setf (aref f 0) 0d0))
+            (when (minusp (aref f (1- n))) (setf (aref f (1- n)) 0d0)))
+          (iter (for i from 1 below n)
+                (for x-prev = (aref xs (1- i)))
+                (for x-next = (aref xs i))
+                (for y = (aref ys i))
+                (for g-prev = (- (aref f (1- i)) y))
+                (for g-next = (- (aref f i) y))
+                (setf (aref sections i)
+                      (if (and (< (abs g-prev) 1d-14) (< (abs g-next) 1d-14))
+                          (constant-gradient-section (aref f (1- i)) primitive x-prev x-next (aref f i))
+                          (let ((q quadraticity) (quadratic nil) (convex nil))
+                            (when (plusp quadraticity)
+                              (setf quadratic
+                                    (if (and (>= g-prev (* -2 g-next)) (> g-prev (* -0.5d0 g-next))
+                                             force-positive)
+                                        (quadratic-min-section x-prev x-next (aref f (1- i)) (aref f i)
+                                                               y primitive)
+                                        (quadratic-section x-prev x-next (aref f (1- i)) (aref f i)
+                                                           y primitive))))
+                            (when (< quadraticity 1d0)
+                              (cond ((or (and (plusp g-prev) (>= (* -0.5d0 g-prev) g-next)
+                                              (>= g-next (* -2 g-prev)))
+                                         (and (minusp g-prev) (<= (* -0.5d0 g-prev) g-next)
+                                              (<= g-next (* -2 g-prev))))
+                                     (setf q 1d0)
+                                     (when (zerop quadraticity)
+                                       (setf quadratic
+                                             (if force-positive
+                                                 (quadratic-min-section x-prev x-next (aref f (1- i))
+                                                                        (aref f i) y primitive)
+                                                 (quadratic-section x-prev x-next (aref f (1- i))
+                                                                    (aref f i) y primitive)))))
+                                    ((or (and (minusp g-prev) (> g-next (* -2 g-prev)))
+                                         (and (plusp g-prev) (< g-next (* -2 g-prev))))
+                                     (let ((eta (/ (+ g-next (* 2 g-prev)) (- g-next g-prev)))
+                                           (b2 (/ (+ 1 monotonicity) 2)))
+                                       (setf convex
+                                             (if (< eta b2)
+                                                 (convex-monotone-2-section x-prev x-next g-prev g-next
+                                                                            y eta primitive)
+                                                 (convex-monotone-4-section x-prev x-next g-prev g-next
+                                                                            y b2 primitive
+                                                                            force-positive)))))
+                                    ((or (and (plusp g-prev) (minusp g-next) (> g-next (* -0.5d0 g-prev)))
+                                         (and (minusp g-prev) (plusp g-next) (< g-next (* -0.5d0 g-prev))))
+                                     (let ((eta (* 3 (/ g-next (- g-next g-prev))))
+                                           (b3 (/ (- 1 monotonicity) 2)))
+                                       (setf convex
+                                             (if (> eta b3)
+                                                 (convex-monotone-3-section x-prev x-next g-prev g-next
+                                                                            y eta primitive)
+                                                 (convex-monotone-4-section x-prev x-next g-prev g-next
+                                                                            y b3 primitive
+                                                                            force-positive)))))
+                                    (t
+                                     (let ((eta (/ g-next (+ g-prev g-next)))
+                                           (b2 (/ (+ 1 monotonicity) 2))
+                                           (b3 (/ (- 1 monotonicity) 2)))
+                                       (setf eta (max b3 (min b2 eta)))
+                                       (setf convex (convex-monotone-4-section x-prev x-next g-prev g-next
+                                                                               y eta primitive
+                                                                               force-positive))))))
+                            (cond ((= q 1d0) quadratic)
+                                  ((= q 0d0) convex)
+                                  (t (combo-section quadratic convex q))))))
+                (incf primitive (* y (- x-next x-prev))))
+          (setf extrapolation (constant-section (funcall (convex-section-value (aref sections (1- n)))
+                                                         (aref xs (1- n)))
+                                                primitive (aref xs (1- n))))))
+    (let ((last (aref xs (1- n))))
+      (flet ((section (x)
+               ;; The first knot strictly above X (std::map::upper_bound).
+               (if (>= x last)
+                   extrapolation
+                   (aref sections (1+ (knot-segment xs (max x (aref xs 0))))))))
+        (values (lambda (x) (let ((x (float x 1d0)))
+                              (funcall (convex-section-value (section x)) x)))
+                (lambda (x) (let ((x (float x 1d0)))
+                              (funcall (convex-section-primitive (section x)) x))))))))

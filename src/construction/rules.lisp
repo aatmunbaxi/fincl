@@ -62,9 +62,9 @@ inputs least likely to be derivable first.
                      (progn (setf missing `(,input)) (return)))))
              (if missing
                  (values nil nil missing)
-                 (let* ((optional (loop for (input default) in (fact-rule-optional rule)
-                                        collect (multiple-value-bind (value found) (fact input)
-                                                  (if found value (funcall default)))))
+                 (let* ((optional (iter (for (input default) in (fact-rule-optional rule))
+                                        (collect (multiple-value-bind (value found) (fact input)
+                                                   (if found value (funcall default))))))
                         (provenance (make-provenance `(:rule ,fact)))
                         (value (check-fact-value fact (apply (fact-rule-function rule)
                                                              `(,@arguments ,@optional))

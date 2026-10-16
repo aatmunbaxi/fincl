@@ -20,7 +20,7 @@
                          ((:put 95) (:expires #D"2027-03-10"))
                          ((:put 110) (:american) (:expires #D"2027-09-24"))
                          ((:call 90) (:american) (:expires #D"2028-01-15"))))
-        (let ((o (make-option clauses)))
+        (let ((o (make-option-from-clauses clauses)))
           (dolist (e engines)
             (unless (and (typep e 'black-scholes-engine)
                          (typep (option-exercise o) 'american-exercise))
@@ -51,19 +51,19 @@
       (dolist (e (list bs baw (mc :n-paths 1000)))
         (check (format nil "at expiry, ~(~A~) returns the payoff" (class-name (class-of e)))
                10d0
-               (price (option (put 110) (american) (expires *today*)) e m)
+               (price (make-option (put 110) (american) (expires *today*)) e m)
                0))
-      (let ((expired (option (put 110) (expires #D"2026-09-23"))))
+      (let ((expired (make-option (put 110) (expires #D"2026-09-23"))))
         (check-error "past expiry" (price expired bs m) option-expired)
         (check-that "option-expired report names both dates"
                     (let ((msg (error-message (lambda () (price expired bs m)))))
                       (and (search "2026-09-23" msg) (search "2026-09-24" msg))))))
 
     (format t "~&Expiries are dates~%")
-    (check-error "bare-number expiry" (option (call 100) (expires 1)))
+    (check-error "bare-number expiry" (make-option (call 100) (expires 1)))
     (check-that "bare-number expiry error explains dates"
                 (search "not a date" (error-message
-                                      (lambda () (option (call 100) (expires 1))))))
+                                      (lambda () (make-option (call 100) (expires 1))))))
     (check-error "bare-number expiry, make-vanilla-option"
                  (make-vanilla-option :call 100 0.5d0))
 
@@ -72,27 +72,27 @@
       (let ((m (make-bs-market :valuation-date *today* :spot 100 :rate 0.05d0 :vol 0.2d0))
             (weekends (make-instance 'weekends-only)))
         (check-equal "1Y from 2026-09-24 is stored as a date" #D"2027-09-24"
-                     (expiry-of (option (call 100) (american) (expires #T"1Y" :from *today*)))
+                     (expiry-of (make-option (call 100) (american) (expires #T"1Y" :from *today*)))
                      :test (lambda (e a) (and (typep a 'date) (date= e a))))
-        (check-error "tenor without :from" (option (call 100) (expires #T"1Y")))
+        (check-error "tenor without :from" (make-option (call 100) (expires #T"1Y")))
         (check-that "tenor without :from error asks for a start date"
                     (search ":FROM" (error-message
-                                     (lambda () (option (call 100) (expires #T"1Y"))))))
+                                     (lambda () (make-option (call 100) (expires #T"1Y"))))))
         ;; 2026-09-26 is a Saturday, so 1Y later is Sunday 2027-09-26.
         (check-equal "unadjusted without a calendar" #D"2027-09-26"
-                     (expiry-of (option (call 100) (expires #T"1Y" :from #D"2026-09-26")))
+                     (expiry-of (make-option (call 100) (expires #T"1Y" :from #D"2026-09-26")))
                      :test #'date=)
         (check-equal "calendar, following" #D"2027-09-27"
-                     (expiry-of (option (call 100) (expires #T"1Y" :from #D"2026-09-26"
+                     (expiry-of (make-option (call 100) (expires #T"1Y" :from #D"2026-09-26"
                                                                         :calendar weekends)))
                      :test #'date=)
         (check-equal "calendar, preceding" #D"2027-09-24"
-                     (expiry-of (option (call 100) (expires #T"1Y" :from #D"2026-09-26"
+                     (expiry-of (make-option (call 100) (expires #T"1Y" :from #D"2026-09-26"
                                                                         :calendar weekends
                                                                         :roll-convention :preceding)))
                      :test #'date=)
         (check-equal "end of month" #D"2027-03-31"
-                     (expiry-of (option (call 100) (expires #T"1M" :from #D"2027-02-28"
+                     (expiry-of (make-option (call 100) (expires #T"1M" :from #D"2027-02-28"
                                                                         :end-of-month t)))
                      :test #'date=)
         (check-equal "make-vanilla-option with a tenor" #D"2027-03-24"
@@ -100,18 +100,18 @@
                                                      :exercise :american))
                      :test #'date=)
         (check "tenor-built option prices like the date-built one"
-               (price (option (call 100) (expires #D"2027-09-24")) bs m)
-               (price (option (call 100) (expires #T"1Y" :from *today*)) bs m)
+               (price (make-option (call 100) (expires #D"2027-09-24")) bs m)
+               (price (make-option (call 100) (expires #T"1Y" :from *today*)) bs m)
                0)
-        (let ((o (option (call 100) (expires #T"1Y" :from *today*))))
+        (let ((o (make-option (call 100) (expires #T"1Y" :from *today*))))
           (check-that "expiry does not move when the market ages"
                       (and (date= (expiry-of o) #D"2027-09-24")
                            (price o bs (derive-market m :valuation-date #D"2027-03-24"))
                            (date= (expiry-of o) #D"2027-09-24"))))
         (check-equal "a strike ladder from one tenor" 101
-                     (length (loop :for strike :from 50 :upto 150
-                                   :collect (option (call strike) (american)
-                                                    (expires #T"1Y" :from *today*)))))))
+                     (length (iter (for strike from 50 to 150)
+                                   (collect (make-option (call strike) (american)
+                                                     (expires #T"1Y" :from *today*))))))))
 
     (format t "~&Exercise~%")
     (let ((b (make-instance 'bermudan-exercise
@@ -161,12 +161,12 @@ payoff with no kind and no strike works through the generic code."))
     (check-equal "vanilla options print as their clauses"
                  "#<OPTION (put 40.0d0) (american) (expires #D\"2027-09-24\")>"
                  (let ((*package* (find-package '#:fincl)))
-                   (prin1-to-string (option (put 40) (american) (expires #D"2027-09-24"))))
+                   (prin1-to-string (make-option (put 40) (american) (expires #D"2027-09-24"))))
                  :test #'string=)
     (check-that "a vanilla payoff is a call-put payoff"
-                (typep (option-payoff (option (put 40) (expires #D"2027-09-24")))
+                (typep (option-payoff (make-option (put 40) (expires #D"2027-09-24")))
                        'call-put-payoff))
-    (let ((c (handler-case (price (option (call 100) (expires #D"2027-09-24")) bs
+    (let ((c (handler-case (price (make-option (call 100) (expires #D"2027-09-24")) bs
                                   (make-bs-market :valuation-date *today* :spot 100
                                                   :rate 0.05d0 :vol 0d0))
                (error (c) c))))
@@ -218,7 +218,7 @@ full call with the callee's name."
     (check-that "the vanilla kernel calls neither KIND nor STRIKE"
                 (not (calls-slot-readers-p kernel))))
   (let* ((state (sb-ext:seed-random-state 7))
-         (spots (loop repeat 1000 collect (random 250d0 state))))
+         (spots (iter (repeat 1000) (collect (random 250d0 state)))))
     (dolist (kind '(:call :put))
       (let* ((p (make-instance 'capped-call :kind kind :strike 100d0 :cap 30d0))
              (kernel (payoff-kernel p))
@@ -230,10 +230,10 @@ full call with the callee's name."
                            spots)))))
   (check-that "a capped call prices below the vanilla by Monte Carlo"
               (let ((m (make-bs-market :valuation-date *today* :spot 100 :rate 0.05d0 :vol 0.2d0))
-                    (capped (option (capped-call :kind :call :strike 100 :cap 10)
+                    (capped (make-option (capped-call :kind :call :strike 100 :cap 10)
                                     (expires #D"2027-09-24"))))
                 (< (price capped (mc :n-paths 20000) m)
-                   (price (option (call 100) (expires #D"2027-09-24")) (mc :n-paths 20000) m))))
+                   (price (make-option (call 100) (expires #D"2027-09-24")) (mc :n-paths 20000) m))))
   (check-error "a define-payoff slot without an initform is required"
                (make-instance 'capped-call :kind :call :strike 100d0))
   (let ((m (make-bs-market :valuation-date *today* :spot 100 :rate 0.05d0 :vol 0.2d0))

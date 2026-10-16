@@ -53,9 +53,9 @@ DEFINE-SLOT-OPTION) and inherit them option by option."))
                                      &rest initargs &key &allow-other-keys)
   (declare (ignore slot-names))
   (setf (slot-annotations slot)
-        (loop for (key value) on initargs by #'cddr
-              when (member key *slot-options*)
-                nconc `(,key ,value))))
+        (iter (for (key value) in-plist initargs)
+              (when (member key *slot-options*)
+                (nconcing `(,key ,value))))))
 
 (defmethod c2mop:direct-slot-definition-class ((class annotated-class) &rest initargs)
   (declare (ignore initargs))
@@ -73,8 +73,8 @@ DEFINE-SLOT-OPTION) and inherit them option by option."))
     ;; that more specific classes overwrite.
     (dolist (direct (reverse direct-slots))
       (when (typep direct 'annotated-slot-definition)
-        (loop for (key value) on (slot-annotations direct) by #'cddr
-              do (setf (getf annotations key) value))))
+        (iter (for (key value) in-plist (slot-annotations direct))
+              (setf (getf annotations key) value))))
     (setf (slot-annotations effective) annotations)
     effective))
 

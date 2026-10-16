@@ -129,7 +129,7 @@ instrument's with (underlying ...) or :UNDERLYING."
   (:documentation "An instrument or a view needs an entry the market does not
 hold: an underlying, a curve, a vol structure."))
 
-(define-condition currency-mismatch (pricing-error)
+(define-condition unsupported-quanto (pricing-error)
   ((underlying :initarg :underlying :reader error-underlying)
    (underlying-currency :initarg :underlying-currency :reader error-underlying-currency)
    (currency :initarg :currency :reader error-currency))
@@ -137,7 +137,10 @@ hold: an underlying, a curve, a vol structure."))
              (format s "The instrument pays in ~S, but ~S trades in ~S: that is a quanto, ~
 which needs an FX vol and correlation fincl does not model. Price it in ~S."
                      (error-currency c) (error-underlying c) (error-underlying-currency c)
-                     (error-underlying-currency c)))))
+                     (error-underlying-currency c))))
+  (:documentation "An instrument paying in a currency other than its
+underlying's: pricing it needs an FX vol and correlation fincl does not
+model."))
 
 (defclass composite-market (market)
   ((valuation-date :initarg :valuation-date :reader valuation-date :type date
@@ -153,7 +156,10 @@ which needs an FX vol and correlation fincl does not model. Price it in ~S."
    (underlying-currency :initarg :underlying-currency :reader market-underlying-currency
                         :type hash-table)
    (discount-curve-for :initarg :discount-curve-for :reader market-discount-curve-for
-                       :type hash-table))
+                       :type hash-table)
+   (fixings :initarg :fixings :reader market-fixings :type hash-table
+            :initform (make-hash-table :test 'equal)
+            :documentation "Index id -> EQUALP table of fixing date -> rate."))
   (:documentation "Named term structures observed on one valuation date: a spot,
 dividend curve, vol structure and currency per underlying, yield curves by
 id, and the curve each currency discounts on. The tables are EQUAL hash
@@ -168,12 +174,9 @@ instrument's underlying."))
         value
         (error 'missing-market-data :what what :key key :known known))))
 
-(defun table-keys (table)
-  (sort (loop for key being the hash-keys of table collect key) #'string<))
-
 (defun alist-table (alist)
   (let ((table (make-hash-table :test 'equal)))
-    (loop for (key . value) in alist do (setf (gethash key table) value))
+    (iter (for (key . value) in alist) (setf (gethash key table) value))
     table))
 
 (defun as-structure (value class initarg)
@@ -183,7 +186,7 @@ instrument's underlying."))
       (make-instance class initarg value)))
 
 (defun make-market (&key valuation-date (day-counter +actual-365-fixed+)
-                         underlyings curves discounting)
+                         underlyings curves discounting fixings)
   "A COMPOSITE-MARKET observed on VALUATION-DATE. The arguments are lists:
 
   UNDERLYINGS  ((name :spot s [:currency c] [:dividend q] [:vol v]) ...)
@@ -196,6 +199,8 @@ instrument's underlying."))
   DISCOUNTING  ((currency . curve-id) ...): the curve each currency discounts
                on. If omitted and there is one curve, every currency
                discounts on it.
+  FIXINGS      ((index-id (date rate) ...) ...): past fixings of interest-rate
+               indexes, DATE a date or a \"YYYY-MM-DD\" string.
 
 Reals are coerced to double-float.
 
@@ -216,20 +221,23 @@ Reals are coerced to double-float.
         (push (cons name (as-structure dividend 'flat-dividend-curve :rate)) dividends)
         (when vol
           (push (cons name (as-structure vol 'flat-black-vol :vol)) vols))))
-    (let* ((curve-alist (loop for (id &key rate curve) in curves
-                              do (check-input id keyword "a keyword naming the curve")
-                              collect (cons id (or curve (as-structure rate 'flat-yield-curve
-                                                                       :rate)))))
+    (let* ((curve-alist (iter (for spec in curves)
+                              (collect (destructuring-bind (id &key rate curve &allow-other-keys) spec
+                                         (check-input id keyword "a keyword naming the curve")
+                                         (cons id (or curve (as-structure rate 'flat-yield-curve
+                                                                          :rate)))))))
            (discounting (or discounting
                             (and (= 1 (length curve-alist))
-                                 (loop for currency in (remove-duplicates
-                                                        (mapcar #'cdr currencies))
-                                       collect (cons currency (car (first curve-alist))))))))
-      (loop for (currency . id) in discounting
-            unless (assoc id curve-alist)
-              do (signal-invalid-argument 'discounting discounting 'list
-                                          (format nil "currencies mapped to curves the market ~
-holds (~{~S~^, ~})" (mapcar #'car curve-alist))))
+                                 (let ((id (car (first curve-alist))))
+                                   (->> currencies
+                                        (mapcar #'cdr)
+                                        remove-duplicates
+                                        (mapcar (lambda (currency) `(,currency . ,id)))))))))
+      (iter (for (nil . id) in discounting)
+            (unless (assoc id curve-alist)
+              (signal-invalid-argument 'discounting discounting 'list
+                                       (format nil "currencies mapped to curves the market ~
+holds (~{~S~^, ~})" (mapcar #'car curve-alist)))))
       (make-instance 'composite-market
                      :valuation-date (or valuation-date (a:required-argument :valuation-date))
                      :day-counter day-counter
@@ -239,7 +247,23 @@ holds (~{~S~^, ~})" (mapcar #'car curve-alist))))
                      :dividend-curves (alist-table dividends)
                      :vol-structures (alist-table vols)
                      :underlying-currency (alist-table currencies)
-                     :discount-curve-for (alist-table discounting)))))
+                     :discount-curve-for (alist-table discounting)
+                     :fixings (fixings-table fixings)))))
+
+(defun fixings-table (fixings)
+  "An EQUAL table of index id -> EQUALP table of date -> rate, from
+((index-id (date rate) ...) ...)."
+  (let ((table (make-hash-table :test 'equal)))
+    (iter (for (id . pairs) in fixings)
+          (check-input id keyword "a keyword naming the index")
+          (let ((dates (make-hash-table :test 'equalp)))
+            (iter (for (date rate) in pairs)
+                  (let ((date (if (stringp date) (parse-date date) date)))
+                    (check-input date date "a date or a \"YYYY-MM-DD\" string")
+                    (check-input rate real "a real fixing")
+                    (setf (gethash date dates) (float rate 1d0))))
+            (setf (gethash id table) dates)))
+    table))
 
 (defun make-bs-market (&key valuation-date (day-counter +actual-365-fixed+)
                             spot rate (dividend 0d0) vol)
@@ -271,7 +295,26 @@ are coerced to double-float; pass double-float or rational literals, since
              :dividend-curves ,(copy (market-dividend-curves m))
              :vol-structures ,(copy (market-vol-structures m))
              :underlying-currency ,(copy (market-underlying-currency m))
-             :discount-curve-for ,(copy (market-discount-curve-for m))))))
+             :discount-curve-for ,(copy (market-discount-curve-for m))
+             :fixings ,(copy (market-fixings m))))))
+
+(defun market-table (market table)
+  "MARKET's hash table named by the keyword TABLE: :SPOTS, :YIELD-CURVES,
+:DIVIDEND-CURVES or :VOL-STRUCTURES."
+  (ecase table
+    (:spots (market-spots market))
+    (:yield-curves (market-yield-curves market))
+    (:dividend-curves (market-dividend-curves market))
+    (:vol-structures (market-vol-structures market))))
+
+(defun market-with (market table key value)
+  "A copy of the composite MARKET whose TABLE (see MARKET-TABLE) maps KEY to
+VALUE; MARKET is unchanged.
+
+  (market-with m :vol-structures :spx (make-instance 'flat-black-vol :vol 0.2d0))"
+  (let ((new (copy-composite-market market)))
+    (setf (gethash key (market-table new table)) value)
+    new))
 
 (defgeneric derive-market (market &key &allow-other-keys)
   (:documentation "A new market equal to MARKET but observed on another
@@ -290,11 +333,11 @@ not modified. Move market data with BUMP.
 
 (defun find-yield-curve (market id)
   (market-entry (market-yield-curves market) id "yield curve"
-                (table-keys (market-yield-curves market))))
+                (sorted-keys (market-yield-curves market))))
 
 (defun discount-curve-id (market currency)
   (market-entry (market-discount-curve-for market) currency "discount curve for currency"
-                (table-keys (market-discount-curve-for market))))
+                (sorted-keys (market-discount-curve-for market))))
 
 (defun resolve-underlying (market underlying)
   "UNDERLYING, checked against MARKET; NIL means the market's only one."
@@ -309,31 +352,36 @@ not modified. Move market data with BUMP.
 
 (defun bump (market factor shift)
   "A new market with the risk FACTOR moved by SHIFT; MARKET is unchanged.
-FACTOR is (:spot u), (:vol u), (:dividend u) for underlying U, or (:curve
-id) for a yield curve. SHIFT is (:relative x), multiplying by 1 + x, or
-(:absolute x), adding x: to the spot, the vol, or the rate.
+FACTOR is (:spot u), (:vol u), (:dividend u) for underlying U, (:curve
+id) for a yield curve, or (:quote id selector) for one input quote of a
+bootstrapped curve, chosen by its helper's tenor or index, the curve then
+rebootstrapped. SHIFT is (:relative x), multiplying by 1 + x, or (:absolute
+x), adding x: to the spot, the vol, the rate or the quoted rate.
 
   (bump m '(:spot :spx) '(:relative 1/100))     ; SPX spot up 1%
-  (bump m '(:curve :usd-ois) '(:absolute 1/10000)) ; rates up 1bp"
+  (bump m '(:curve :usd-ois) '(:absolute 1/10000)) ; rates up 1bp
+  (bump m `(:quote :usd-sofr ,#T\"5Y\") '(:absolute 1/10000)) ; the 5Y quote up 1bp"
   (check-input market composite-market "a composite market (bump the market a view was taken from)")
-  (check-input factor (cons (member :spot :vol :dividend :curve) (cons keyword null))
-               "(:spot u), (:vol u), (:dividend u) or (:curve id)")
+  (check-input factor (or (cons (member :spot :vol :dividend :curve) (cons keyword null))
+                          (cons (eql :quote) (cons keyword (cons (or integer tenor) null))))
+               "(:spot u), (:vol u), (:dividend u), (:curve id) or (:quote id tenor-or-index)")
   (check-input shift shift "(:relative x) or (:absolute x)")
+  (when (eq (first factor) :quote)
+    (destructuring-bind (id selector) (rest factor)
+      (return-from bump
+        (->> (bump-structure-quote (find-yield-curve market id) selector shift)
+             (market-with market :yield-curves id)))))
   (destructuring-bind (kind key) factor
-    (let ((new (copy-composite-market market)))
-      (flet ((bump-entry (table what known)
-               (setf (gethash key table)
-                     (let ((old (market-entry table key what known)))
-                       (if (realp old) (apply-shift old shift) (bump-structure old shift))))))
+    (multiple-value-bind (table what known)
         (ecase kind
-          (:spot (bump-entry (market-spots new) "underlying" (market-underlyings new)))
-          (:vol (bump-entry (market-vol-structures new) "vol structure for"
-                            (table-keys (market-vol-structures new))))
-          (:dividend (bump-entry (market-dividend-curves new) "dividend curve for"
-                                 (market-underlyings new)))
-          (:curve (bump-entry (market-yield-curves new) "yield curve"
-                              (table-keys (market-yield-curves new))))))
-      new)))
+          (:spot (values :spots "underlying" (market-underlyings market)))
+          (:vol (values :vol-structures "vol structure for"
+                        (sorted-keys (market-vol-structures market))))
+          (:dividend (values :dividend-curves "dividend curve for" (market-underlyings market)))
+          (:curve (values :yield-curves "yield curve" (sorted-keys (market-yield-curves market)))))
+      (let ((old (market-entry (market-table market table) key what known)))
+        (->> (if (realp old) (apply-shift old shift) (bump-structure old shift))
+             (market-with market table key))))))
 
 (defmethod print-object ((m composite-market) stream)
   (print-unreadable-object (m stream :type t)
@@ -343,7 +391,7 @@ id) for a yield curve. SHIFT is (:relative x), multiplying by 1 + x, or
               (gethash u (market-underlying-currency m))
               (gethash u (market-dividend-curves m))
               (or (gethash u (market-vol-structures m)) "no vol")))
-    (dolist (id (table-keys (market-yield-curves m)))
+    (dolist (id (sorted-keys (market-yield-curves m)))
       (format stream " | ~S ~A" id (gethash id (market-yield-curves m))))))
 
 ;;; --------------------------------------------------------------------
@@ -381,15 +429,15 @@ currency, which always sets the forward).
     (make-instance 'market-view
                    :market market :underlying underlying :discount-curve curve-id
                    :spot (underlying-spot market underlying)
-                   :yield-curve (find-yield-curve market curve-id)
-                   :forecast-curve (find-yield-curve market forecast-id)
+                   :yield-curve (curve-in-market (find-yield-curve market curve-id) market)
+                   :forecast-curve (curve-in-market (find-yield-curve market forecast-id) market)
                    :dividend-curve (gethash underlying (market-dividend-curves market))
                    :vol-structure (gethash underlying (market-vol-structures market)))))
 
 (defun view-vol (view)
   (or (view-vol-structure view)
       (error 'missing-market-data :what "vol structure for" :key (view-underlying view)
-                                  :known (table-keys (market-vol-structures (view-market view))))))
+                                  :known (sorted-keys (market-vol-structures (view-market view))))))
 
 (defmethod valuation-date ((v market-view)) (valuation-date (view-market v)))
 (defmethod market-day-counter ((v market-view)) (market-day-counter (view-market v)))

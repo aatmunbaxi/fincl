@@ -41,16 +41,16 @@ STORE-VALUE restart. EXPECTED, a string, describes valid values for the
 report; it defaults to the type.
 
   (check-input n (integer 1) \"a positive integer\")"
-  `(loop until (typep ,place ',type)
-         do (restart-case (error 'invalid-argument :place ',place :datum ,place
-                                                   :expected-type ',type
-                                                   :expected ,expected)
-              (store-value (value)
-                :report (lambda (s) (format s "Supply a new value for ~(~A~)." ',place))
-                :interactive (lambda ()
-                               (format *query-io* "~&New value for ~(~A~): " ',place)
-                               (list (eval (read *query-io*))))
-                (setf ,place value)))))
+  `(iter (until (typep ,place ',type))
+         (restart-case (error 'invalid-argument :place ',place :datum ,place
+                                                :expected-type ',type
+                                                :expected ,expected)
+           (store-value (value)
+             :report (lambda (s) (format s "Supply a new value for ~(~A~)." ',place))
+             :interactive (lambda ()
+                            (format *query-io* "~&New value for ~(~A~): " ',place)
+                            (list (eval (read *query-io*))))
+             (setf ,place value)))))
 
 (defun signal-invalid-argument (place datum expected-type &optional expected)
   "Signal INVALID-ARGUMENT: PLACE (a symbol or form naming the argument) is

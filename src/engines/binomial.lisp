@@ -87,19 +87,20 @@ NIL for steps the backward sweep does not compute (N-STEPS < 4 with SMOOTH,
           (dotimes (i (1+ n-steps))
             (setf (aref values i) (intrinsic n-steps i))))
       (let ((v-u nil) (v-d nil) (v-uu nil) (v-ud nil) (v-dd nil))
-        (loop for step fixnum from (if smooth (- n-steps 2) (1- n-steps)) downto 0
-              for p double-float = (aref probabilities step)
-              for disc double-float = (aref discounts step)
-              for early = (exercise-p step)
-              do (locally (declare (optimize (speed 3) (safety 0)))
-                   (dotimes (i (1+ step))
-                     (let ((hold (* disc (+ (* p (aref values i))
-                                            (* (- 1d0 p) (aref values (1+ i)))))))
-                       (setf (aref values i)
-                             (if early (max hold (intrinsic step i)) hold)))))
-                 (case step
-                   (2 (setf v-uu (aref values 0) v-ud (aref values 1) v-dd (aref values 2)))
-                   (1 (setf v-u (aref values 0) v-d (aref values 1)))))
+        (iter (declare (declare-variables))
+              (for (the fixnum step) from (if smooth (- n-steps 2) (1- n-steps)) downto 0)
+              (for (the double-float p) = (aref probabilities step))
+              (for (the double-float disc) = (aref discounts step))
+              (for early = (exercise-p step))
+              (locally (declare (optimize (speed 3) (safety 0)))
+                (dotimes (i (1+ step))
+                  (let ((hold (* disc (+ (* p (aref values i))
+                                         (* (- 1d0 p) (aref values (1+ i)))))))
+                    (setf (aref values i)
+                          (if early (max hold (intrinsic step i)) hold)))))
+              (case step
+                (2 (setf v-uu (aref values 0) v-ud (aref values 1) v-dd (aref values 2)))
+                (1 (setf v-u (aref values 0) v-d (aref values 1)))))
         (values (aref values 0) v-u v-d v-uu v-ud v-dd)))))
 
 ;;; A lattice needs only a mask per tree: EXERCISE-MASK is the entire
@@ -137,3 +138,11 @@ N/2 steps, gets the mask for its own grid."
 (defmethod price-binomial ((x bermudan-exercise) (p vanilla-payoff) (f path-independent)
                            (process gbm) (e binomial-engine) market)
   (binomial-early-exercise x p process e market))
+
+(defmethod engine-candidates append ((designator (eql :binomial)) (x american-exercise) (p vanilla-payoff)
+                                     (f path-independent) (process gbm))
+  '((10 :binomial)))
+
+(defmethod engine-candidates append ((designator (eql :binomial)) (x bermudan-exercise) (p vanilla-payoff)
+                                     (f path-independent) (process gbm))
+  '((10 :binomial)))

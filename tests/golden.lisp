@@ -25,10 +25,10 @@
          (ls (make-bs-market :valuation-date *today* :spot 36 :rate 0.06d0 :vol 0.2d0))
          (heston (make-instance 'heston :xi 0.5d0 :rho -0.7d0))
          (cev (make-instance 'cev :beta 0.7d0))
-         (call (option (call 100) (expires #D"2027-09-24")))
-         (aput (option (put 40) (american) (expires #D"2027-09-24")))
-         (aput-110 (option (put 110) (american) (expires #D"2027-09-24")))
-         (acall-90 (option (call 90) (american) (expires #D"2027-09-24")))
+         (call (make-option (call 100) (expires #D"2027-09-24")))
+         (aput (make-option (put 40) (american) (expires #D"2027-09-24")))
+         (aput-110 (make-option (put 110) (american) (expires #D"2027-09-24")))
+         (acall-90 (make-option (call 90) (american) (expires #D"2027-09-24")))
          (quarterly (make-instance 'option
                                    :payoff (make-instance 'vanilla-payoff :kind :put
                                                                           :strike 100d0)
@@ -37,8 +37,8 @@
                                               :dates (list #D"2026-12-24" #D"2027-03-24"
                                                            #D"2027-06-24" #D"2027-09-24")))))
     (macrolet ((case-list (&rest cases)
-                 `(list ,@(loop for (name form) in cases
-                                collect `(list ,name (lambda () ,form))))))
+                 `(list ,@(iter (for (name form) in cases)
+                                (collect `(list ,name (lambda () ,form)))))))
       (case-list
        ;; Monte Carlo: fixed seeds and chunking; the answers do not depend
        ;; on the worker count.
@@ -73,8 +73,8 @@
 
 (defun evaluate-golden-cases ()
   "(name price standard-error) for every case, in the current kernel."
-  (loop for (name thunk) in (golden-cases)
-        collect (multiple-value-bind (v se) (funcall thunk) (list name v se))))
+  (iter (for (name thunk) in (golden-cases))
+        (collect (multiple-value-bind (v se) (funcall thunk) (list name v se)))))
 
 (defun write-golden-fixture (&key (path (golden-path)) (workers 4))
   "Evaluate every case and overwrite PATH. Hand-added tolerances are lost."
@@ -94,9 +94,9 @@
 (defun read-golden-fixture ()
   (with-open-file (s (golden-path))
     (with-standard-io-syntax
-      (loop for entry = (read s nil s)
-            until (eq entry s)
-            collect entry))))
+      (iter (for entry = (read s nil s))
+            (until (eq entry s))
+            (collect entry)))))
 
 (defun golden-match-p (expected actual tolerance)
   (cond ((and (null expected) (null actual)) t)
@@ -109,19 +109,19 @@
   (format t "~&Golden values~@[ (~A)~]~%" label)
   (let ((fixture (read-golden-fixture))
         (actual (evaluate-golden-cases)))
-    (loop for (name price se . options) in fixture
-          for tolerance = (getf options :tolerance)
-          for found = (find name actual :key #'first :test #'string=)
-          do (cond ((null found)
-                    (incf *failures*)
-                    (format t "~&  FAIL ~A: in the fixture but no longer a case~%" name))
-                   ((and (golden-match-p price (second found) tolerance)
-                         (golden-match-p se (third found) tolerance))
-                    (format t "~&  ok   ~A~:[~; (tolerance ~:*~,1E)~]~%" name tolerance))
-                   (t
-                    (incf *failures*)
-                    (format t "~&  FAIL ~A: expected ~S ~S, got ~S ~S~%"
-                            name price se (second found) (third found)))))
+    (iter (for (name price se . options) in fixture)
+          (for tolerance = (getf options :tolerance))
+          (for found = (find name actual :key #'first :test #'string=))
+          (cond ((null found)
+                 (incf *failures*)
+                 (format t "~&  FAIL ~A: in the fixture but no longer a case~%" name))
+                ((and (golden-match-p price (second found) tolerance)
+                      (golden-match-p se (third found) tolerance))
+                 (format t "~&  ok   ~A~:[~; (tolerance ~:*~,1E)~]~%" name tolerance))
+                (t
+                 (incf *failures*)
+                 (format t "~&  FAIL ~A: expected ~S ~S, got ~S ~S~%"
+                         name price se (second found) (third found)))))
     (dolist (a actual)
       (unless (find (first a) fixture :key #'first :test #'string=)
         (incf *failures*)

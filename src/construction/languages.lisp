@@ -28,12 +28,12 @@ with every clause head checked now."
     (with-fact-table (:language language)
       (let ((*priority* :default)
             (*provenance* (make-provenance '(:default))))
-        (loop for (fact value) on (construction-language-defaults language) by #'cddr
-              do (publish fact value)))
+        (iter (for (fact value) in-plist (construction-language-defaults language))
+              (publish fact value)))
       (apply-clauses clauses)
       (let ((object (funcall (construction-language-assemble language))))
-        (loop for (fact scope provenance) in (unused-fact-entries)
-              do (warn 'unused-fact :fact fact :scope scope :provenance provenance))
+        (iter (for (fact scope provenance) in (unused-fact-entries))
+              (warn 'unused-fact :fact fact :scope scope :provenance provenance))
         object))))
 
 (defmacro define-construction-language (name &body options)
@@ -57,7 +57,7 @@ with every clause head checked now."
 Every language also gets the clause (convention name).
 
   (define-construction-language option
-    (:macro option) (:function make-option)
+    (:macro make-option) (:function make-option-from-clauses)
     (:defaults :exercise-style :european)
     (:assemble assemble-option))"
   (flet ((option (key) (rest (assoc key options))))

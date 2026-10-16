@@ -5,11 +5,11 @@
 ;;;; clauses, rules, how an option is assembled from facts, and how one
 ;;;; prints back as clauses.
 ;;;;
-;;;;   (option (call 100) (expires #D"2027-09-24"))                ; European
-;;;;   (option (put k) (american) (expires #T"1Y" :from *today*))
-;;;;   (option (put 95) (bermudan :dates (list d1 d2 d3)))         ; expiry = d3
-;;;;   (option (put 95) (bermudan :every #T"3M" :from *today*) (expires d))
-;;;;   (option (call 100) (capped-call :cap 30) (expires d))
+;;;;   (make-option (call 100) (expires #D"2027-09-24"))                ; European
+;;;;   (make-option (put k) (american) (expires #T"1Y" :from *today*))
+;;;;   (make-option (put 95) (bermudan :dates (list d1 d2 d3)))         ; expiry = d3
+;;;;   (make-option (put 95) (bermudan :every #T"3M" :from *today*) (expires d))
+;;;;   (make-option (call 100) (capped-call :cap 30) (expires d))
 ;;;;
 ;;;; With no exercise clause an option is European, with no payoff clause its
 ;;;; payoff is vanilla, and with no path clause it is path-independent: the
@@ -24,7 +24,7 @@
 ;;; --------------------------------------------------------------------
 
 (defun date-list-p (x) (and (listp x) x (every #'datep x)))
-(defun sorted-dates (x) (if (date-list-p x) (sort (copy-list x) #'date<) x))
+(defun sorted-dates (x) (if (date-list-p x) (-> x copy-list (sort #'date<)) x))
 (defun payoff-class-name-p (x)
   (and (symbolp x) (find-class x nil) (subtypep x 'payoff)))
 
@@ -53,8 +53,8 @@
 (defun resolve-payoff-clause (name)
   "A clause for the DEFINE-PAYOFF class called NAME, if there is one:
 (capped-call :kind :call :strike 100 :cap 30)."
-  (let ((classes (loop for class being the hash-keys of *formula-payoffs*
-                       when (string= (symbol-name class) name) collect class)))
+  (let ((classes (iter (for (class nil) in-hashtable *formula-payoffs*)
+                       (when (string= (symbol-name class) name) (collect class)))))
     (when (rest classes)
       (error 'ambiguous-clause :name name :language 'option :candidates classes))
     (let ((class (first classes)))
@@ -66,11 +66,14 @@
                                   (when initargs (publish :payoff-initargs initargs))))))))
 
 (define-construction-language option
-  (:documentation "Build an option from clauses: a kind and strike or a
-payoff, an expiry, and optionally exercise rights. With no payoff clause the
-payoff is vanilla; with no exercise clause the option is European.")
-  (:macro option)
-  (:function make-option)
+  (:documentation "Build an option from clauses: a kind (call/put) and strike or a
+payoff scheme, an expiry, and optionally exercise rights. With no payoff clause the
+payoff is vanilla; with no exercise clause the option is European.
+
+A vanilla European call K=110 with 1Y expiry
+(make-option (call 110) (expiry #T\"1Y\" :from +today+))")
+  (:macro make-option)
+  (:function make-option-from-clauses)
   (:defaults :exercise-style :european :payoff-class 'vanilla-payoff)
   (:assemble assemble-option)
   (:resolver resolve-payoff-clause (:payoff-class :payoff-initargs)
@@ -209,7 +212,7 @@ given, by ROLL-CONVENTION; the expiry stays as given."
 the expiry clause (expires EXPIRY :from FROM ...).
 
   (make-vanilla-option :put 40 #D\"2027-09-24\" :exercise :american)"
-  (make-option `((,kind ,strike) (,exercise)
+  (make-option-from-clauses `((,kind ,strike) (,exercise)
                  (:expires ,expiry :from ,from :calendar ,calendar
                            :roll-convention ,roll-convention :end-of-month ,end-of-month)
                  ,@(when underlying `((:underlying ,underlying))))))
@@ -220,11 +223,11 @@ the expiry clause (expires EXPIRY :from FROM ...).
 
 (defun slot-initargs (object)
   "Initargs that rebuild OBJECT's bound slots, in slot order."
-  (loop for slot in (c2mop:class-slots (class-of object))
-        for initarg = (first (c2mop:slot-definition-initargs slot))
-        for name = (c2mop:slot-definition-name slot)
-        when (and initarg (slot-boundp object name))
-          append `(,initarg ,(slot-value object name))))
+  (iter (for slot in (c2mop:class-slots (class-of object)))
+        (for initarg = (first (c2mop:slot-definition-initargs slot)))
+        (for name = (c2mop:slot-definition-name slot))
+        (when (and initarg (slot-boundp object name))
+          (appending `(,initarg ,(slot-value object name))))))
 
 (defgeneric option-component-clauses (component)
   (:documentation "The option-language clauses that rebuild COMPONENT.")

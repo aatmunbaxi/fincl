@@ -25,10 +25,10 @@ with Y = Phi/phi = sqrt(pi/2) erfcx(-X/sqrt 2) above.
       ;; the leading 1.
       (let* ((x2 (* x x)) (term (/ -1d0 x2)) (sum term))
         (declare (double-float x2 term sum))
-        (loop for k from 2 to 60
-              for next = (* term (/ (- (* 2 k) 1) x2) -1d0)
-              while (and (< (abs next) (abs term)) (> (abs next) (* 1d-17 (abs sum))))
-              do (setf term next) (incf sum next))
+        (iter (for k from 2 to 60)
+              (for next = (* term (/ (- (* 2 k) 1) x2) -1d0))
+              (while (and (< (abs next) (abs term)) (> (abs next) (* 1d-17 (abs sum)))))
+              (setf term next) (incf sum next))
         (/ (* (lbr-norm-pdf x) sum) (- x)))
       (* (/ (lbr-norm-pdf x) x)
          (+ 1d0 (* x +sqrt-pi-over-two+ (cody-calerf (* (- +one-over-sqrt-two+) x) 2))))))

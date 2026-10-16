@@ -43,17 +43,17 @@ instruments."
          (ndx-alone (make-bs-market :valuation-date *today* :spot 150 :rate 0.04d0 :vol 0.3d0))
          (d #D"2027-09-24"))
     ;; Each underlying of one market prices exactly as its own market.
-    (loop for (name alone strike) in `((:spx ,spx-alone 100) (:ndx ,ndx-alone 150))
-          do (dolist (style '(:european :american))
-               (dolist (engine (market-engines))
-                 (let ((named (make-option `((:call ,strike) (:underlying ,name) (,style)
-                                             (:expires ,d))))
-                       (plain (make-option `((:call ,strike) (,style) (:expires ,d)))))
-                   (handler-case
-                       (check (format nil "~(~A~) ~(~A~) call, ~(~A~): two-underlying market = ~
+    (iter (for (name alone strike) in `((:spx ,spx-alone 100) (:ndx ,ndx-alone 150)))
+          (dolist (style '(:european :american))
+            (dolist (engine (market-engines))
+              (let ((named (make-option-from-clauses `((:call ,strike) (:underlying ,name) (,style)
+                                          (:expires ,d))))
+                    (plain (make-option-from-clauses `((:call ,strike) (,style) (:expires ,d)))))
+                (handler-case
+                    (check (format nil "~(~A~) ~(~A~) call, ~(~A~): two-underlying market = ~
 its own market" name style (class-name (class-of engine)))
-                              (price plain engine alone) (price named engine m) 0)
-                     (unsupported-combination () nil))))))
+                           (price plain engine alone) (price named engine m) 0)
+                  (unsupported-combination () nil))))))
     (let ((view (market-view m :underlying :ndx)))
       (check-that "a view answers the single-underlying protocol"
                   (and (= 150d0 (spot view))
@@ -71,15 +71,15 @@ its own market" name style (class-name (class-of engine)))
       (check "pricing on that view: Black with the forward and the other discount factor"
              (fincl::black-formula 1d0 (forward spx-alone 1d0) 100d0 (exp -0.02d0)
                                    (black-variance spx-alone 100d0 1d0))
-             (price (option (call 100) (expires d)) (make-instance 'black-scholes-engine) view)
+             (price (make-option (call 100) (expires d)) (make-instance 'black-scholes-engine) view)
              0))
     (check-error "an option paying in another currency than its underlying's (a quanto)"
-                 (price (option (call 100) (underlying :spx) (currency :eur) (expires d))
+                 (price (make-option (call 100) (underlying :spx) (currency :eur) (expires d))
                         (make-instance 'black-scholes-engine) m)
-                 currency-mismatch)
+                 unsupported-quanto)
     (check "an option naming its underlying's own currency"
-           (price (option (call 100) (expires d)) (make-instance 'black-scholes-engine) spx-alone)
-           (price (option (call 100) (underlying :spx) (currency :usd) (expires d))
+           (price (make-option (call 100) (expires d)) (make-instance 'black-scholes-engine) spx-alone)
+           (price (make-option (call 100) (underlying :spx) (currency :usd) (expires d))
                   (make-instance 'black-scholes-engine) m)
            0)
     (check-that "aging copies the market and leaves the original unchanged"
@@ -108,20 +108,20 @@ its own market" name style (class-name (class-of engine)))
     (format t "~&Instruments name their underlyings~%")
     (let ((bs (make-instance 'black-scholes-engine)))
       (check-error "no underlying on a two-underlying market"
-                   (price (option (call 100) (expires d)) bs m)
+                   (price (make-option (call 100) (expires d)) bs m)
                    ambiguous-underlying)
-      (let ((c (handler-case (price (option (call 100) (underlying :dax) (expires d)) bs m)
+      (let ((c (handler-case (price (make-option (call 100) (underlying :dax) (expires d)) bs m)
                  (error (c) c))))
         (check-that "an unknown underlying names the known ones"
                     (and (typep c 'missing-market-data)
                          (search ":SPX, :NDX" (princ-to-string c)))))
       (check-that "SPX and NDX options from one market"
-                  (and (= (price (option (call 100) (expires d)) bs spx-alone)
-                          (price (option (call 100) (underlying :spx) (expires d)) bs m))
-                       (= (price (option (put 140) (expires d)) bs ndx-alone)
-                          (price (option (put 140) (underlying :ndx) (expires d)) bs m))))
+                  (and (= (price (make-option (call 100) (expires d)) bs spx-alone)
+                          (price (make-option (call 100) (underlying :spx) (expires d)) bs m))
+                       (= (price (make-option (put 140) (expires d)) bs ndx-alone)
+                          (price (make-option (put 140) (underlying :ndx) (expires d)) bs m))))
       (check-that "the underlying clause prints and round-trips"
-                  (let ((o (option (call 100) (underlying :spx) (expires d))))
+                  (let ((o (make-option (call 100) (underlying :spx) (expires d))))
                     (and (search "(underlying :spx)" (prin1-to-string o))
                          (round-trip-p 'option o))))
       (check-that "make-vanilla-option takes :underlying"
@@ -129,8 +129,8 @@ its own market" name style (class-name (class-of engine)))
 
     (format t "~&Bumps~%")
     (let* ((bs (make-instance 'black-scholes-engine))
-           (spx-call (option (call 100) (underlying :spx) (expires d)))
-           (ndx-call (option (call 150) (underlying :ndx) (expires d)))
+           (spx-call (make-option (call 100) (underlying :spx) (expires d)))
+           (ndx-call (make-option (call 150) (underlying :ndx) (expires d)))
            (up (bump m '(:spot :spx) '(:relative 1/100))))
       (check-that "a relative spot bump moves only that underlying's spot"
                   (and (= 101d0 (spot (market-view up :underlying :spx)))

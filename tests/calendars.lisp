@@ -5,7 +5,7 @@
 
 (defun calendar-fixture ()
   (with-open-file (s (asdf:system-relative-pathname "fincl" "tests/fixtures/calendars.sexp"))
-    (loop for entry = (read s nil s) until (eq entry s) collect entry)))
+    (iter (for entry = (read s nil s)) (until (eq entry s)) (collect entry))))
 
 ;;; A calendar defined here, outside fincl, exercising every rule form.
 (define-observance :saturday-to-friday-only (date)
@@ -22,16 +22,16 @@
   (:when (lambda (y m d) (declare (ignore y)) (and (= m 10) (= d 13))) :to 2028))
 
 (defun naive-business-days (calendar from to)
-  (loop for d = from then (date+ d 1) while (date< d to) count (business-day-p calendar d)))
+  (iter (for d in-dates from below to) (counting (business-day-p calendar d))))
 
 (defun calendar-checks ()
   (format t "~&Holiday calendars~%")
   (let ((fixture (calendar-fixture)))
     (check-that "Easter matches QuantLib's table for 1901-2199, and 1900 is April 15th"
                 (and (date= (easter 1900) #D"1900-04-15")
-                     (loop for (kind year date) in fixture
-                           always (or (not (eq kind :easter))
-                                      (date= (easter year) (parse-date date))))))
+                     (iter (for (kind year date) in fixture)
+                           (always (or (not (eq kind :easter))
+                                       (date= (easter year) (parse-date date)))))))
     (check-that "nth-weekday counts from the month's end for negative n"
                 (and (date= (nth-weekday -1 :monday 5 2027) #D"2027-05-31")
                      (date= (nth-weekday -2 :friday 6 2027) #D"2027-06-18")
@@ -62,12 +62,12 @@
                        (holiday-p* #D"2027-10-13") (not (holiday-p* #D"2031-10-13"))))) ; :to
     (let ((random (sb-ext:seed-random-state 3)) (calendars (list +nyse+ +target+ +toy-holiday-calendar+)))
       (check-that "count-business-days = the day-by-day count on 1000 random spans"
-                  (loop repeat 1000
-                        for calendar = (nth (random 3 random) calendars)
-                        for from = (date+ #D"1950-01-01" (random 40000 random))
-                        for to = (date+ from (random 9000 random))
-                        always (= (count-business-days calendar from to)
-                                  (naive-business-days calendar from to))))
+                  (iter (repeat 1000)
+                        (for calendar = (nth (random 3 random) calendars))
+                        (for from = (date+ #D"1950-01-01" (random 40000 random)))
+                        (for to = (date+ from (random 9000 random)))
+                        (always (= (count-business-days calendar from to)
+                                   (naive-business-days calendar from to)))))
       ;; June 7th-14th 2027 has no holiday; June 18th is Juneteenth observed.
       (check-that "business-days-between keeps its endpoint conventions"
                   (and (= 5 (business-days-between +nyse+ #D"2027-06-07" #D"2027-06-14"))
@@ -83,15 +83,15 @@
       (check-that (format nil "100 years of NYSE business days (~D) in ~,1F us (< 1 ms)" count micros)
                   (< micros 1000d0)))
     ;; Two fresh calendars, cold caches: one filled from 8 threads at once.
-    (let* ((days (loop for serial from (date-serial #D"1990-01-01") below (date-serial #D"2061-01-01")
-                       collect (fincl::%date serial)))
+    (let* ((days (iter (for serial from (date-serial #D"1990-01-01") below (date-serial #D"2061-01-01"))
+                       (collect (fincl::%date serial))))
            (single (let ((c (make-instance 'nyse))) (mapcar (lambda (d) (business-day-p c d)) days)))
            (shared (make-instance 'nyse))
-           (threads (loop for k below 8
-                          collect (let ((order (if (evenp k) days (reverse days))))
-                                    (bt:make-thread
-                                     (lambda () (mapcar (lambda (d) (cons d (business-day-p shared d)))
-                                                        order)))))))
+           (threads (iter (for k below 8)
+                          (collect (let ((order (if (evenp k) days (reverse days))))
+                                     (bt:make-thread
+                                      (lambda () (mapcar (lambda (d) (cons d (business-day-p shared d)))
+                                                         order))))))))
       (check-that "8 threads on a cold cache see what one thread sees"
                   (every (lambda (thread)
                            (let ((answers (bt:join-thread thread)))
@@ -101,20 +101,20 @@
                                                             single)))
                                     answers)))
                          threads)))
-    (loop for (kind name . dates) in fixture
-          when (eq kind :calendar)
-            do (let* ((calendar (symbol-value (find-symbol (format nil "+~:@(~A~)+" name) '#:fincl)))
-                      (expected (mapcar #'parse-date dates))
-                      (ours (loop for serial from (date-serial #D"1990-01-01")
-                                    to (date-serial #D"2060-12-31")
-                                  for d = (fincl::%date serial)
-                                  unless (or (weekend-p calendar d) (business-day-p calendar d))
-                                    collect d))
-                      (missing (set-difference expected ours :test #'date=))
-                      (extra (set-difference ours expected :test #'date=)))
-                 (check-that (format nil "~A matches QuantLib 1990-2060 (~D holidays~@[; missing ~A~]~@[; extra ~A~])"
-                                     name (length expected) missing extra)
-                             (and (null missing) (null extra)))))))
+    (iter (for (kind name . dates) in fixture)
+          (when (eq kind :calendar)
+            (let* ((calendar (symbol-value (find-symbol (format nil "+~:@(~A~)+" name) '#:fincl)))
+                   (expected (mapcar #'parse-date dates))
+                   (ours (iter (for serial from (date-serial #D"1990-01-01")
+                                  to (date-serial #D"2060-12-31"))
+                               (for d = (fincl::%date serial))
+                               (unless (or (weekend-p calendar d) (business-day-p calendar d))
+                                 (collect d))))
+                   (missing (set-difference expected ours :test #'date=))
+                   (extra (set-difference ours expected :test #'date=)))
+              (check-that (format nil "~A matches QuantLib 1990-2060 (~D holidays~@[; missing ~A~]~@[; extra ~A~])"
+                                  name (length expected) missing extra)
+                          (and (null missing) (null extra))))))))
 
 ;;; --------------------------------------------------------------------
 ;;; Schedules and ACT/ACT ICMA
@@ -123,7 +123,7 @@
 (defun schedule-fixture ()
   (with-open-file (s (asdf:system-relative-pathname "fincl" "tests/fixtures/schedules.sexp"))
     (let ((*read-default-float-format* 'double-float))
-      (loop for entry = (read s nil s) until (eq entry s) collect entry))))
+      (iter (for entry = (read s nil s)) (until (eq entry s)) (collect entry)))))
 
 (defun schedule-checks ()
   (format t "~&Schedules and ACT/ACT ICMA~%")
@@ -153,20 +153,20 @@
                          (mapcar (lambda (r) (if r 1 0)) regular))
             (incf bad-regular))
           (if icma
-              (loop for (a b) on ours while b
-                    for expected in icma
-                    do (incf icma-count)
-                       (setf worst-icma (max worst-icma (abs (- (year-fraction icma-counter a b) expected)))))
+              (iter (for (a b) on ours) (while b)
+                    (for expected in icma)
+                    (incf icma-count)
+                    (setf worst-icma (max worst-icma (abs (- (year-fraction icma-counter a b) expected)))))
               ;; QuantLib's result is not finite: fincl refuses.
               (unless (handler-case (progn (year-fraction icma-counter (first ours) (second ours)) nil)
                         (invalid-input () t))
                 (incf bad-refusals)))
-          (loop for (a b) on ours while b
-                for expected in icma-reference
-                do (setf worst-reference
-                         (max worst-reference
-                              (abs (- (year-fraction reference-counter a b :ref-start a :ref-end b)
-                                      expected))))))))
+          (iter (for (a b) on ours) (while b)
+                (for expected in icma-reference)
+                (setf worst-reference
+                      (max worst-reference
+                           (abs (- (year-fraction reference-counter a b :ref-start a :ref-end b)
+                                   expected))))))))
     (check-that (format nil "~D schedules: dates match QuantLib exactly~@[ (mismatches: ~S)~]"
                         cases (and bad-dates (subseq bad-dates 0 (min 3 (length bad-dates)))))
                 (null bad-dates))

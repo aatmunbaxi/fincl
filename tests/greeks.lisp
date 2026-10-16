@@ -10,7 +10,7 @@
                                              (vol 0.2d0))
   "Ridders' derivatives of the closed-form price in each input: the reference
 for every Greek method."
-  (let ((option (make-option `((,kind ,strike) (:expires #D"2027-09-24"))))
+  (let ((option (make-option-from-clauses `((,kind ,strike) (:expires #D"2027-09-24"))))
         (bs (make-instance 'black-scholes-engine)))
     (flet ((price-with (&key (s spot) (r rate) (q dividend) (v vol))
              (nth-value 0 (price option bs (greek-market :spot s :rate r :dividend q :vol v)))))
@@ -24,7 +24,7 @@ for every Greek method."
                             vol :h0 0.05d0)))))
 
 (defun greeks-agree-p (expected actual tolerance
-                       &key (keys (loop for k in expected by #'cddr collect k)) overrides)
+                       &key (keys (iter (for (k nil) in-plist expected) (collect k))) overrides)
   "Every key of EXPECTED within TOLERANCE x max(1, |expected|) in ACTUAL, or
 the key's own tolerance in the plist OVERRIDES; prints the offenders."
   (let ((ok t))
@@ -41,7 +41,7 @@ the key's own tolerance in the plist OVERRIDES; prints the offenders."
          (bs (make-instance 'black-scholes-engine))
          (d #D"2027-09-24"))
     (dolist (kind '(:call :put))
-      (let* ((o (make-option `((,kind 105) (:expires ,d))))
+      (let* ((o (make-option-from-clauses `((,kind 105) (:expires ,d))))
              (closed (greeks o bs m))
              (bumped (bump-greeks o bs m))
              (reference (bs-reference-greeks kind 105d0)))
@@ -54,7 +54,7 @@ the key's own tolerance in the plist OVERRIDES; prints the offenders."
 (volga to 5e-6 absolute, near its zero)" kind)
                     (greeks-agree-p closed bumped 1d-6 :overrides '(:volga 5d-6)))))
     ;; Theta: one calendar day of aging; compare with the instantaneous rate.
-    (let* ((call (option (call 100) (expires d)))
+    (let* ((call (make-option (call 100) (expires d)))
            (theta (getf (greeks call bs m :which '(:theta)) :theta))
            (s 100d0) (k 100d0) (r 0.05d0) (q 0.02d0) (vol 0.2d0) (tau 1d0)
            (d1 (/ (+ (log (/ s k)) (* (+ (- r q) (* 0.5d0 vol vol)) tau)) (* vol (sqrt tau))))
@@ -73,8 +73,8 @@ the key's own tolerance in the plist OVERRIDES; prints the offenders."
 
     (format t "~&Greeks from a binomial tree~%")
     (let* ((no-dividend (greek-market :dividend 0))
-           (acall (option (call 105) (american) (expires d)))
-           (european (option (call 105) (expires d)))
+           (acall (make-option (call 105) (american) (expires d)))
+           (european (make-option (call 105) (expires d)))
            (tree (binomial 2000))
            (from-tree (greeks acall tree no-dividend))
            (closed (greeks european bs no-dividend)))
@@ -83,7 +83,7 @@ the key's own tolerance in the plist OVERRIDES; prints the offenders."
                                   :keys '(:delta :gamma :vega :theta :rho :dividend-rho)))
       (check-that "the tree's default Greeks leave out vanna and volga"
                   (not (or (getf from-tree :vanna) (getf from-tree :volga)))))
-    (let* ((aput (option (put 105) (american) (expires d)))
+    (let* ((aput (make-option (put 105) (american) (expires d)))
            (tree (binomial 2000)))
       (check "American put: node delta = bumped-tree delta to 1e-4"
              (getf (bump-greeks aput tree m :which '(:delta)) :delta)
@@ -91,7 +91,7 @@ the key's own tolerance in the plist OVERRIDES; prints the offenders."
              1d-4))
 
     (format t "~&Greeks by Monte Carlo~%")
-    (let* ((call (option (call 100) (expires d)))
+    (let* ((call (make-option (call 100) (expires d)))
            (result (greeks call (mc :n-paths 200000) m :which '(:delta :vega)))
            (delta (getf result :delta))
            (se (getf (getf result :standard-errors) :delta))

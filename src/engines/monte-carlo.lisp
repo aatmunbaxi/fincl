@@ -46,8 +46,8 @@ the code, not the one that built it.")
 (defun chunk-ranges (n n-chunks)
   "Split [0, N) into contiguous (start . end) ranges."
   (let ((size (ceiling n (max 1 (min n n-chunks)))))
-    (loop for start from 0 below n by size
-          collect (cons start (min n (+ start size))))))
+    (iter (for start from 0 below n by size)
+          (collect (cons start (min n (+ start size)))))))
 
 ;;; --------------------------------------------------------------------
 ;;; Random numbers
@@ -78,8 +78,8 @@ RANDOM-STATE:RANDOM-BYTES exactly, so the stream is unchanged."
          (let ((random 0))
            ;; Upper bits first, then the lowermost word, spilling over
            ;; misaligned boundaries exactly as RANDOM-BYTES does.
-           (loop for i downfrom (- bits chunk) above 0 by chunk
-                 do (setf (ldb (byte chunk i) random) (funcall next generator)))
+           (iter (for i from (- bits chunk) above 0 by chunk)
+                 (setf (ldb (byte chunk i) random) (funcall next generator)))
            (setf (ldb (byte chunk 0) random) (funcall next generator))
            (scale-float (coerce random 'double-float) -53)))))))
 
@@ -216,14 +216,15 @@ doubles: the library maps a generic ADD over every sample."
   (declare (type (simple-array double-float (*)) samples))
   (let ((m 0d0) (s2 0d0) (w 0))
     (declare (double-float m s2) (fixnum w))
-    (loop for y double-float across samples
-          do (let* ((d (- y m))
-                    (next (1+ w))
-                    (d/w (/ d (float next 1d0))))
-               (declare (double-float d d/w) (fixnum next))
-               (incf m d/w)
-               (incf s2 (* (* d/w (float w 1d0)) d))
-               (setf w next)))
+    (iter (declare (declare-variables))
+          (for (the double-float y) in-vector samples)
+          (let* ((d (- y m))
+                 (next (1+ w))
+                 (d/w (/ d (float next 1d0))))
+            (declare (double-float d d/w) (fixnum next))
+            (incf m d/w)
+            (incf s2 (* (* d/w (float w 1d0)) d))
+            (setf w next)))
     ;; The constructor is internal to NU.STATISTICS; this is the only use.
     (sts::make-central-sample-moments :w w :m m :s2 s2 :s3 nil :s4 nil)))
 
@@ -288,7 +289,7 @@ Returns the FINISH values in chunk order, whatever the worker count.
   (map-paths e m 1d0 (lambda (chunk start end n-base)
                        (values (lambda (i j state) ...) (lambda () result))))"
   (let* ((n-steps (n-steps engine))
-         (p (resolve-process (process engine) market tau))
+         (p (-> engine process (resolve-process market tau)))
          (anti (antithetic engine))
          (n-base (if anti (/ (total-paths engine) 2) (total-paths engine)))
          (stepper (make-stepper p market (uniform-time-grid tau n-steps))) ; dispatch once
@@ -309,21 +310,23 @@ Returns the FINISH values in chunk order, whatever the worker count.
                        (anti-normals (make-array n-factors :element-type 'double-float)))
                    (declare (type (simple-array double-float (*))
                                   state mirror normals anti-normals))
-                   (loop for i fixnum from (car range) below (cdr range)
-                         for partner fixnum = (+ i n-base)
-                         do (funcall start-path i)
-                            (replace state template)
-                            (replace mirror template)
-                            (funcall visit i 0 state)
-                            (when anti (funcall visit partner 0 mirror))
-                            (loop for j fixnum from 1 to n-steps
-                                  do (fill-normals g normals)
-                                     (funcall stepper state normals (1- j))
-                                     (funcall visit i j state)
-                                     (when anti
-                                       (negate-into normals anti-normals)
-                                       (funcall stepper mirror anti-normals (1- j))
-                                       (funcall visit partner j mirror))))
+                   (iter (declare (declare-variables))
+                         (for (the fixnum i) from (car range) below (cdr range))
+                         (for (the fixnum partner) = (+ i n-base))
+                         (funcall start-path i)
+                         (replace state template)
+                         (replace mirror template)
+                         (funcall visit i 0 state)
+                         (when anti (funcall visit partner 0 mirror))
+                         (iter (declare (declare-variables))
+                               (for (the fixnum j) from 1 to n-steps)
+                               (fill-normals g normals)
+                               (funcall stepper state normals (1- j))
+                               (funcall visit i j state)
+                               (when anti
+                                 (negate-into normals anti-normals)
+                                 (funcall stepper mirror anti-normals (1- j))
+                                 (funcall visit partner j mirror))))
                    (funcall finish))))))
       (with-pricing-kernel ()
         (lp:pmap 'list #'run-chunk ranges (a:iota (length ranges)))))))
@@ -334,8 +337,8 @@ vector), in the same order: (total paths) x (N-STEPS + 1), antithetic
 partners in the second half. Works for any process: the engine only calls
 MAKE-STEPPER."
   (let* ((n-paths (total-paths engine))
-         (matrices (loop repeat (length components)
-                         collect (make-path-matrix n-paths (1+ (n-steps engine)))))
+         (matrices (iter (repeat (length components))
+                         (collect (make-path-matrix n-paths (1+ (n-steps engine))))))
          (datas (map 'simple-vector #'path-matrix-data matrices))
          (indices (coerce components '(simple-array fixnum (*)))))
     (declare (fixnum n-paths) (type (simple-array fixnum (*)) indices))
@@ -378,16 +381,17 @@ the chunking."
                (declare (type function start-path))
                (let ((normals (make-array n-factors :element-type 'double-float))
                      (anti-normals (make-array n-factors :element-type 'double-float)))
-                 (loop for i fixnum from (car range) below (cdr range)
-                       do (funcall start-path i)
-                          (fill-normals g normals)
-                          (let ((v (funcall kernel (funcall sampler normals))))
-                            (declare (double-float v))
-                            (when anti
-                              (negate-into normals anti-normals)
-                              (setf v (* 0.5d0 (+ v (funcall kernel
-                                                             (funcall sampler anti-normals))))))
-                            (setf (aref samples i) v)))))))
+                 (iter (declare (declare-variables))
+                       (for (the fixnum i) from (car range) below (cdr range))
+                       (funcall start-path i)
+                       (fill-normals g normals)
+                       (let ((v (funcall kernel (funcall sampler normals))))
+                         (declare (double-float v))
+                         (when anti
+                           (negate-into normals anti-normals)
+                           (setf v (* 0.5d0 (+ v (funcall kernel
+                                                          (funcall sampler anti-normals))))))
+                         (setf (aref samples i) v)))))))
       (with-pricing-kernel ()
         (lp:pmapc #'run-chunk ranges (a:iota (length ranges))))
       (summarize (moments samples) :discount (discount-factor market tau)))))
@@ -398,7 +402,7 @@ the chunking."
                      (f path-independent) (e monte-carlo-engine) market)
   (let* ((tau (time-to-expiry x market))
          (kernel (payoff-kernel p))
-         (sampler (terminal-sampler (resolve-process (process e) market tau) market tau)))
+         (sampler (-> e process (resolve-process market tau) (terminal-sampler market tau))))
     (if sampler
         (price-european-by-sampling sampler e market tau kernel)
         ;; No exact terminal law: step the paths, keeping only the terminal
@@ -447,11 +451,11 @@ exponents come first, highest first.
   (labels ((summing-to (n total)
              (if (= n 1)
                  (list (list total))
-                 (loop for a from total downto 0
-                       append (mapcar (lambda (rest) (cons a rest))
-                                      (summing-to (1- n) (- total a)))))))
-    (loop for total from 0 to degree
-          append (summing-to n-regressors total))))
+                 (iter (for a from total downto 0)
+                       (appending (mapcar (lambda (rest) (cons a rest))
+                                          (summing-to (1- n) (- total a))))))))
+    (iter (for total from 0 to degree)
+          (appending (summing-to n-regressors total)))))
 
 (defun make-basis-filler (kind exponents scales degree)
   "A closure (lambda (basis values)) that writes the basis functions of the
@@ -467,9 +471,9 @@ scratch tables: make one per thread."
              (type (simple-array fixnum (*)) offsets)
              (fixnum m width n-basis))
     ;; Index into TABLES of each regressor's factor in each basis function.
-    (loop for exps in exponents for i from 0
-          do (loop for e in exps for r from 0
-                   do (setf (aref offsets (+ (* i m) r)) (+ (* r width) e))))
+    (iter (for exps in exponents) (for i from 0)
+          (iter (for e in exps) (for r from 0)
+                (setf (aref offsets (+ (* i m) r)) (+ (* r width) e))))
     (lambda (basis values)
       (declare (type (simple-array double-float (*)) basis values)
                (optimize (speed 3) (safety 0)))
@@ -482,11 +486,12 @@ scratch tables: make one per thread."
                 (declare (double-float w l0 l1))
                 (setf (aref tables row) w)
                 (when (> width 1) (setf (aref tables (1+ row)) (* w l1)))
-                (loop for k fixnum from 1 below (1- width)
-                      do (let ((l2 (/ (- (* (- (+ (* 2 k) 1) x) l1) (* k l0)) (1+ k))))
-                           (declare (double-float l2))
-                           (setf (aref tables (+ row k 1)) (* w l2)
-                                 l0 l1 l1 l2))))
+                (iter (declare (declare-variables))
+                      (for (the fixnum k) from 1 below (1- width))
+                      (let ((l2 (/ (- (* (- (+ (* 2 k) 1) x) l1) (* k l0)) (1+ k))))
+                        (declare (double-float l2))
+                        (setf (aref tables (+ row k 1)) (* w l2)
+                              l0 l1 l1 l2))))
               (let ((b 1d0))
                 (declare (double-float b))
                 (dotimes (k width)
@@ -495,8 +500,9 @@ scratch tables: make one per thread."
       (dotimes (i n-basis basis)
         (let ((product (aref tables (aref offsets (* i m)))))
           (declare (double-float product))
-          (loop for r fixnum from 1 below m
-                do (setf product (* product (aref tables (aref offsets (+ (* i m) r))))))
+          (iter (declare (declare-variables))
+                (for (the fixnum r) from 1 below m)
+                (setf product (* product (aref tables (aref offsets (+ (* i m) r))))))
           (setf (aref basis i) product))))))
 
 (defun regress-continuation (datas cashflows col-offset kernel make-filler n-basis df ranges)
@@ -522,16 +528,17 @@ in-the-money-count)."
                    (basis (make-array n-basis :element-type 'double-float))
                    (values (make-array m :element-type 'double-float)))
                (declare (type function filler))
-               (loop for i fixnum from (car range) below (cdr range)
-                     for s double-float = (aref observable (+ col-offset i))
-                     do (setf (aref cashflows i) (* df (aref cashflows i)))
-                        (when (plusp (funcall kernel s))
-                          (dotimes (r m)
-                            (setf (aref values r)
-                                  (aref (the (simple-array double-float (*)) (svref datas r))
-                                        (+ col-offset i))))
-                          (funcall filler basis values)
-                          (qr-add-row! acc basis (aref cashflows i))))
+               (iter (declare (declare-variables))
+                     (for (the fixnum i) from (car range) below (cdr range))
+                     (for (the double-float s) = (aref observable (+ col-offset i)))
+                     (setf (aref cashflows i) (* df (aref cashflows i)))
+                     (when (plusp (funcall kernel s))
+                       (dotimes (r m)
+                         (setf (aref values r)
+                               (aref (the (simple-array double-float (*)) (svref datas r))
+                                     (+ col-offset i))))
+                       (funcall filler basis values)
+                       (qr-add-row! acc basis (aref cashflows i))))
                acc)))
       (let ((total (make-qr-accumulator n-basis)))
         (dolist (acc (lp:pmap 'list #'run-chunk ranges))
@@ -546,8 +553,8 @@ not depend on N-CHUNKS or on the worker count.")
 (defun regression-blocks (n-paths)
   "Contiguous (start . end) blocks of +REGRESSION-BLOCK+ paths covering
 [0, N-PATHS)."
-  (loop for start from 0 below n-paths by +regression-block+
-        collect (cons start (min n-paths (+ start +regression-block+)))))
+  (iter (for start from 0 below n-paths by +regression-block+)
+        (collect (cons start (min n-paths (+ start +regression-block+))))))
 
 (defgeneric regression-scale (payoff market)
   (:documentation "The level LSM divides the observable by before building
@@ -559,12 +566,23 @@ struck payoff, the spot otherwise.")
     (strike p)))
 
 ;;; Any payoff: LSM needs only the kernel (exercise value, and which paths
-;;; are in the money) and a scale for the regression basis.
+;;; are in the money) and a scale for the regression basis. Exercise rights
+;;; come from EXERCISE-MASK on the time grid, so the same sweep prices
+;;; American and Bermudan exercise (Bermudan dates snap to the nearest step).
 (defmethod price-mc ((x american-exercise) (p payoff)
                      (f path-independent) (e monte-carlo-engine) market)
+  (price-lsm x p e market))
+
+(defmethod price-mc ((x bermudan-exercise) (p payoff)
+                     (f path-independent) (e monte-carlo-engine) market)
+  (price-lsm x p e market))
+
+(defun price-lsm (x p e market)
+  "Longstaff-Schwartz: (values price standard-error) of payoff P with the
+exercise rights of X on E's time grid."
   (let* ((tau (time-to-expiry x market))
          (n-steps (n-steps e))
-         (process (resolve-process (process e) market tau))
+         (process (-> e process (resolve-process market tau)))
          (components (or (regressors e) (process-regressors process)))
          (matrices (progn
                      (unless (eql 0 (first components))
@@ -579,14 +597,11 @@ struck payoff, the spot otherwise.")
          ;; value at t = 0.
          (template (initial-state process market))
          (scales (coerce (cons (regression-scale p market)
-                               (loop for c in (rest components)
-                                     collect (let ((v (aref template c)))
-                                               (if (zerop v) 1d0 (float v 1d0)))))
+                               (iter (for c in (rest components))
+                                     (collect (let ((v (aref template c)))
+                                                (if (zerop v) 1d0 (float v 1d0))))))
                          '(simple-array double-float (*))))
-         (exponents (basis-exponents (length components) (basis-degree e)))
-         (n-basis (length exponents))
-         (make-filler (lambda () (make-basis-filler (basis e) exponents scales
-                                                    (basis-degree e))))
+         (regressions (make-hash-table :test 'equal))
          (discounts (step-discounts market tau n-steps))
          (mask (exercise-mask x market (uniform-time-grid tau n-steps)))
          (cashflows (make-array n-paths :element-type 'double-float))
@@ -594,56 +609,90 @@ struck payoff, the spot otherwise.")
     (declare (type (simple-array double-float (*)) data cashflows discounts)
              (type simple-bit-vector mask)
              (type (function (double-float) double-float) kernel)
-             (fixnum n-paths n-steps n-basis))
+             (fixnum n-paths n-steps))
+    (flet ((regression-setup (active)
+             ;; (values datas n-basis make-filler) for the regressor
+             ;; components ACTIVE, cached: one basis per set of regressors.
+             (or (gethash active regressions)
+                 (setf (gethash active regressions)
+                       (let* ((positions (mapcar (lambda (c) (position c components)) active))
+                              (exponents (basis-exponents (length active) (basis-degree e)))
+                              (scales (map '(simple-array double-float (*))
+                                           (lambda (i) (aref scales i)) positions)))
+                         (list (map 'simple-vector (lambda (i) (svref datas i)) positions)
+                               (length exponents)
+                               (lambda () (make-basis-filler (basis e) exponents scales
+                                                             (basis-degree e))))))))
+           (active-components (col-offset)
+             ;; The spot, and every latent component that varies across the
+             ;; in-the-money paths at this date: a constant one (Heston with
+             ;; xi = 0) would make the regression rank deficient.
+             (cons 0 (iter (for c in (rest components))
+                           (for column = (svref datas (position c components)))
+                           (when (let ((lo most-positive-double-float) (hi most-negative-double-float))
+                                   (declare (double-float lo hi))
+                                   (dotimes (i n-paths)
+                                     (when (plusp (funcall kernel (aref data (+ col-offset i))))
+                                       (let ((v (aref (the (simple-array double-float (*)) column)
+                                                      (+ col-offset i))))
+                                         (setf lo (min lo v) hi (max hi v)))))
+                                   (< lo hi))
+                             (collect c))))))
     (with-pricing-kernel ()
       ;; Terminal cash flows.
       (let ((terminal (* n-steps n-paths)))
         (dotimes (i n-paths)
           (setf (aref cashflows i) (funcall kernel (aref data (+ terminal i))))))
       ;; Backward induction. Steps the mask excludes only discount.
-      (loop for step from (1- n-steps) downto 1
-            for col-offset fixnum = (* step n-paths)
-            for df double-float = (aref discounts step)
-            do (if (zerop (sbit mask step))
-                   (dotimes (i n-paths)
-                     (setf (aref cashflows i) (* df (aref cashflows i))))
-                   (restart-case
-                       (multiple-value-bind (acc itm)
-                           (regress-continuation datas cashflows col-offset kernel make-filler
-                                                 n-basis df ranges)
-                         (when (> itm (* 2 n-basis))
-                           (let ((beta (handler-case (qr-solve acc)
-                                         (rank-deficient (c)
-                                           (error 'regression-failure :step step :cause c)))))
-                             (declare (type (simple-array double-float (*)) beta))
-                             ;; Exercise where intrinsic beats fitted continuation.
-                             (lp:pmapc
-                              (lambda (range)
-                                (let ((basis (make-array n-basis :element-type 'double-float))
-                                      (values (make-array (length datas)
-                                                          :element-type 'double-float))
-                                      (filler (funcall make-filler)))
-                                  (declare (type function filler))
-                                  (loop for i fixnum from (car range) below (cdr range)
-                                        for s double-float = (aref data (+ col-offset i))
-                                        for intrinsic double-float = (funcall kernel s)
-                                        when (plusp intrinsic)
-                                          do (dotimes (r (length datas))
-                                               (setf (aref values r)
-                                                     (aref (the (simple-array double-float (*))
-                                                                (svref datas r))
-                                                           (+ col-offset i))))
-                                             (funcall filler basis values)
-                                             (let ((cont 0d0))
-                                               (declare (double-float cont))
-                                               (dotimes (n n-basis)
-                                                 (incf cont (* (aref beta n) (aref basis n))))
-                                               (when (> intrinsic cont)
-                                                 (setf (aref cashflows i) intrinsic))))))
-                              ranges))))
-                     (skip-exercise-date ()
-                       :report "Skip early exercise at this date and continue."
-                       nil))))
+      (iter (declare (declare-variables))
+            (for step from (1- n-steps) downto 1)
+            (for (the fixnum col-offset) = (* step n-paths))
+            (for (the double-float df) = (aref discounts step))
+            (if (zerop (sbit mask step))
+                (dotimes (i n-paths)
+                  (setf (aref cashflows i) (* df (aref cashflows i))))
+                (restart-case
+                    (destructuring-bind (datas n-basis make-filler)
+                        (regression-setup (active-components col-offset))
+                      (declare (type simple-vector datas) (fixnum n-basis)
+                               (type function make-filler))
+                    (multiple-value-bind (acc itm)
+                        (regress-continuation datas cashflows col-offset kernel make-filler
+                                              n-basis df ranges)
+                      (when (> itm (* 2 n-basis))
+                        (let ((beta (handler-case (qr-solve acc)
+                                      (rank-deficient (c)
+                                        (error 'regression-failure :step step :cause c)))))
+                          (declare (type (simple-array double-float (*)) beta))
+                          ;; Exercise where intrinsic beats fitted continuation.
+                          (lp:pmapc
+                           (lambda (range)
+                             (let ((basis (make-array n-basis :element-type 'double-float))
+                                   (values (make-array (length datas)
+                                                       :element-type 'double-float))
+                                   (filler (funcall make-filler)))
+                               (declare (type function filler))
+                               (iter (declare (declare-variables))
+                                     (for (the fixnum i) from (car range) below (cdr range))
+                                     (for (the double-float s) = (aref data (+ col-offset i)))
+                                     (for (the double-float intrinsic) = (funcall kernel s))
+                                     (when (plusp intrinsic)
+                                       (dotimes (r (length datas))
+                                         (setf (aref values r)
+                                               (aref (the (simple-array double-float (*))
+                                                          (svref datas r))
+                                                     (+ col-offset i))))
+                                       (funcall filler basis values)
+                                       (let ((cont 0d0))
+                                         (declare (double-float cont))
+                                         (dotimes (n n-basis)
+                                           (incf cont (* (aref beta n) (aref basis n))))
+                                         (when (> intrinsic cont)
+                                           (setf (aref cashflows i) intrinsic)))))))
+                           ranges)))))
+                  (skip-exercise-date ()
+                    :report "Skip early exercise at this date and continue."
+                    nil))))
       ;; Discount the first step, and exercise now if the mask allows it.
       ;; Under antithetics a sample is the mean of a pair (path i and its
       ;; partner i + n/2), so the standard error is that of the estimator.
@@ -653,4 +702,13 @@ struck payoff, the spot otherwise.")
         (values (if (= 1 (sbit mask 0))
                     (max mean (funcall kernel (spot market)))
                     mean)
-                se)))))
+                se))))))
+
+;;; Any payoff and process: the slow fallback, at 20,000 paths rather than
+;;; the engine's 100,000. For an American under Heston that is about 0.6 s
+;;; with a standard error near 0.7% of the price; (:fallback ...) in
+;;; WITH-ENGINES changes it.
+(defmethod engine-candidates append ((designator (eql :mc)) exercise payoff path
+                                     (process stochastic-process))
+  (declare (ignore exercise payoff path))
+  '((90 (:mc :n-paths 20000))))

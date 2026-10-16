@@ -13,20 +13,24 @@
                "trivia"
                "bordeaux-threads"
                "arrow-macros"
+               "iterate"
                "named-readtables"
                "closer-mop")
   :pathname "src/"
   :serial t
   :components ((:file "package")
                (:file "conditions")
+               (:file "iteration-helpers")
                (:module "math"
                 :serial t
                 :components ((:file "special-functions")
+                             (:file "distributions")
                              (:file "random")
                              (:file "lets-be-rational")
                              (:file "implied-normal")
                              (:file "fourier")
                              (:file "extrapolation")
+                             (:file "quadrature")
                              (:file "differentiation")
                              (:file "solvers")
                              (:file "linear-algebra")
@@ -44,6 +48,7 @@
                ;; Defines the #D / #T readtable; every file after this one
                ;; may use it via NAMED-READTABLES:IN-READTABLE.
                (:file "syntax")
+               (:file "currency")
                ;; The construction kernel: general, knows no instrument.
                (:module "construction"
                 :serial t
@@ -58,21 +63,33 @@
                              (:file "printing")))
                (:module "term-structures"
                 :serial t
-                :components ((:file "protocol")
-                             (:file "flat")))
+                :components ((:file "interest-rate")
+                             (:file "protocol")
+                             (:file "flat")
+                             (:file "yield-curves")))
                (:file "market")
                (:module "instruments"
                 :serial t
                 :components ((:file "instrument")
                              (:file "options")
-                             (:file "option-language")))
+                             (:file "option-language")
+                             (:file "indexes")
+                             (:file "cashflows")
+                             (:file "rate-helpers")))
                (:module "processes"
                 :serial t
                 :components ((:file "parameters")
                              (:file "process")
                              (:file "gbm")
+                             (:file "levy")
+                             (:file "merton")
+                             (:file "kou")
+                             (:file "variance-gamma")
+                             (:file "nig")
+                             (:file "cgmy")
                              (:file "cev")
                              (:file "heston")
+                             (:file "bates")
                              (:file "garch")))
                (:module "engines"
                 :serial t
@@ -80,7 +97,8 @@
                              (:file "analytic")
                              (:file "monte-carlo")
                              (:file "binomial")
-                             (:file "cos")))
+                             (:file "cos")
+                             (:file "selection")))
                ;; Composite markets are priced through views; needs PRICE.
                (:file "pricing")
                (:file "implied-volatility")
@@ -89,7 +107,7 @@
 
 (defsystem "fincl/tests"
   :description "Tests for fincl"
-  :depends-on ("fincl" "lparallel" "closer-mop" "magicl" "bordeaux-threads")
+  :depends-on ("fincl" "lparallel" "closer-mop" "magicl" "bordeaux-threads" "iterate")
   :pathname "tests/"
   :serial t
   :components ((:file "package")
@@ -99,6 +117,7 @@
                (:file "numerics")
                (:file "time")
                (:file "calendars")
+               (:file "rates")
                (:file "syntax")
                (:file "market")
                (:file "instruments")
@@ -107,6 +126,8 @@
                (:file "binomial")
                (:file "mc")
                (:file "processes")
+               (:file "levy")
+               (:file "selection")
                (:file "errors")
                (:file "implied-volatility")
                (:file "greeks")

@@ -5,11 +5,12 @@
 ;;;; *FAILURES*.
 
 (defpackage #:fincl/tests
-  (:use #:cl #:fincl)
+  (:use #:cl #:fincl #:iterate)
+  (:shadowing-import-from #:fincl #:minimize)
   (:local-nicknames (#:a #:alexandria) (#:lp #:lparallel))
   (:export #:run-tests #:run-time-tests #:run-syntax-tests #:run-cos-tests
            #:run-binomial-tests #:run-math-tests #:run-invariant-tests
-           #:run-golden-tests #:run-fast-tests))
+           #:run-golden-tests #:run-fast-tests #:run-levy-tests #:run-rates-tests #:run-selection-tests))
 
 (in-package #:fincl/tests)
 (named-readtables:in-readtable fincl:syntax)
@@ -54,6 +55,15 @@
   (apply #'make-instance 'binomial-engine :n-steps n-steps args))
 
 
+(defun read-fixture (name)
+  "The forms of tests/fixtures/NAME, read with double-float defaults."
+  (let ((*read-default-float-format* 'double-float))
+    (with-open-file (in (asdf:system-relative-pathname "fincl" (format nil "tests/fixtures/~A" name)))
+      (iter (for form = (read in nil in)) (until (eq form in)) (collect form)))))
+
+(defun relative-difference (expected actual)
+  (if (zerop expected) (abs actual) (abs (/ (- actual expected) expected))))
+
 (defun error-message (thunk)
   "The report string of the error THUNK signals, or NIL."
   (handler-case (progn (funcall thunk) nil)
@@ -70,8 +80,8 @@ market, S=36, r=6%), BS and BAW engines, CALL and PUT (K=100, expiring
                                 :spot 36 :rate 0.06d0 :vol 0.2d0))
           (bs (make-instance 'black-scholes-engine))
           (baw (make-instance 'barone-adesi-whaley-engine))
-          (call (option (call 100) (expires #D"2027-09-24")))
-          (put (option (put 100) (expires #D"2027-09-24")))
-          (aput (option (put 40) (american) (expires #D"2027-09-24"))))
+          (call (make-option (call 100) (expires #D"2027-09-24")))
+          (put (make-option (put 100) (expires #D"2027-09-24")))
+          (aput (make-option (put 40) (american) (expires #D"2027-09-24"))))
      (declare (ignorable mkt mkt2 bs baw call put aput))
      ,@body))

@@ -118,13 +118,13 @@ is allowed only for a slot with a market default."))
   (print-unreadable-object (object stream :type t)
     (let ((*read-default-float-format* 'double-float))
       (format stream "~{~(~A~)=~A~^ ~}"
-              (loop for slot in (managed-slots (class-of object))
-                    for name = (c2mop:slot-definition-name slot)
-                    for value = (slot-value object name)
-                    collect name
-                    collect (if (and (null value) (slot-default-function slot))
-                                "market"
-                                value))))))
+              (iter (for slot in (managed-slots (class-of object)))
+                    (for name = (c2mop:slot-definition-name slot))
+                    (for value = (slot-value object name))
+                    (collect name)
+                    (collect (if (and (null value) (slot-default-function slot))
+                                 "market"
+                                 value)))))))
 
 ;;; --------------------------------------------------------------------
 ;;; Introspection
@@ -187,13 +187,13 @@ default, evaluated on MARKET at HORIZON (market time).
   (parameter-vector (make-instance 'heston) m) => #(0.04d0 2d0 0.04d0 0.3d0 -0.7d0)"
   (let* ((slots (parameter-slots (class-of process)))
          (v (make-array (length slots) :element-type 'double-float)))
-    (loop for slot in slots
-          for i from 0
-          for value = (slot-value process (c2mop:slot-definition-name slot))
-          do (setf (aref v i)
-                   (float (or value (funcall (slot-default-function slot)
-                                             process market horizon))
-                          1d0)))
+    (iter (for slot in slots)
+          (for i from 0)
+          (for value = (slot-value process (c2mop:slot-definition-name slot)))
+          (setf (aref v i)
+                (float (or value (funcall (slot-default-function slot)
+                                          process market horizon))
+                       1d0)))
     v))
 
 (defun with-parameter-vector (process vector)

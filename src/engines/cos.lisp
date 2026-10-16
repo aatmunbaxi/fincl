@@ -120,12 +120,12 @@ pi / (B - A), for m = -(N-1) .. 2N-1, stored at index m + N - 1."
   (let* ((theta (/ pi (- b a)))
          (offset (1- n))
          (table (make-array (+ offset (* 2 n)) :element-type '(complex double-float))))
-    (loop for m from (- offset) below (* 2 n)
-          do (setf (aref table (+ m offset))
-                   (if (zerop m)
-                       (complex (- x2 x1) 0d0)
-                       (/ (- (cis (* m theta (- x2 a))) (cis (* m theta (- x1 a))))
-                          (complex 0d0 (* m theta))))))
+    (iter (for m from (- offset) below (* 2 n))
+          (setf (aref table (+ m offset))
+                (if (zerop m)
+                    (complex (- x2 x1) 0d0)
+                    (/ (- (cis (* m theta (- x2 a))) (cis (* m theta (- x1 a))))
+                       (complex 0d0 (* m theta))))))
     table))
 
 (defun cos-continuation-coefficients (cf-samples coeffs x1 x2 a b discount)
@@ -201,20 +201,20 @@ is the European price, and CF-FN is only called with t0 = 0."
          (coeffs (if (plusp phi)
                      (cos-payoff-coefficients phi strike n a b (max 0d0 a) b)
                      (cos-payoff-coefficients phi strike n a b a (min 0d0 b)))))
-    (loop for i from (- (length times) 2) downto 0
-          do (let* ((now (svref times i))
-                    (next (svref times (1+ i)))
-                    (cf (cos-cf-samples (funcall cf-fn now next) n theta))
-                    (discount (/ (funcall discount-fn next) (funcall discount-fn now)))
-                    (x* (cos-exercise-boundary phi strike cf coeffs a b discount)))
-               (setf coeffs
-                     (map '(simple-array double-float (*)) #'+
-                          (if (plusp phi)
-                              (cos-continuation-coefficients cf coeffs a x* a b discount)
-                              (cos-continuation-coefficients cf coeffs x* b a b discount))
-                          (if (plusp phi)
-                              (cos-payoff-coefficients phi strike n a b x* b)
-                              (cos-payoff-coefficients phi strike n a b a x*))))))
+    (iter (for i from (- (length times) 2) downto 0)
+          (let* ((now (svref times i))
+                 (next (svref times (1+ i)))
+                 (cf (cos-cf-samples (funcall cf-fn now next) n theta))
+                 (discount (/ (funcall discount-fn next) (funcall discount-fn now)))
+                 (x* (cos-exercise-boundary phi strike cf coeffs a b discount)))
+            (setf coeffs
+                  (map '(simple-array double-float (*)) #'+
+                       (if (plusp phi)
+                           (cos-continuation-coefficients cf coeffs a x* a b discount)
+                           (cos-continuation-coefficients cf coeffs x* b a b discount))
+                       (if (plusp phi)
+                           (cos-payoff-coefficients phi strike n a b x* b)
+                           (cos-payoff-coefficients phi strike n a b a x*))))))
     (let ((first (svref times 0)))
       (cos-value-at x0 (cos-cf-samples (funcall cf-fn 0d0 first) n theta) coeffs a theta
                     (funcall discount-fn first)))))
@@ -309,9 +309,9 @@ GBM call is its symmetric put."
 (defmethod price-cos ((x bermudan-exercise) (p vanilla-payoff) (f path-independent)
                       (process independent-increments) (e cos-engine) market)
   (let* ((today (valuation-date market))
-         (times (loop for date in (exercise-dates x)
-                      when (date< today date)
-                        collect (market-time market date)))
+         (times (iter (for date in (exercise-dates x))
+                      (when (date< today date)
+                        (collect (market-time market date)))))
          (tau (a:lastcar times))
          (process (resolve-process process market tau)))
     (multiple-value-bind (x0 k a b cf-fn discount-fn)
@@ -332,7 +332,7 @@ GBM call is its symmetric put."
         (early-exercise-put-inputs process e market tau (phi p) (strike p) x p f)
       (flet ((bermudan (dates)
                (cos-bermudan-value -1d0 k x0
-                                   (loop for i from 1 to dates collect (* i (/ tau dates)))
+                                   (iter (for i from 1 to dates) (collect (* i (/ tau dates))))
                                    discount-fn cf-fn (n-terms e) a b)))
         ;; Four-point Richardson extrapolation in the exercise interval,
         ;; with errors in dt, dt^2 and dt^3: Fang and Oosterlee (2009),
@@ -341,3 +341,17 @@ GBM call is its symmetric put."
                                (mapcar #'bermudan (list m (* 2 m) (* 4 m) (* 8 m)))
                                :exponents '(1 2 3)))))
           (values (max v (payoff-value p (spot market))) nil))))))
+
+;;; Europeans under any process with a characteristic function (the engine
+;;; declines the others); early exercise under independent increments.
+(defmethod engine-candidates append ((designator (eql :cos)) (x european-exercise) (p vanilla-payoff)
+                                     (f path-independent) (process stochastic-process))
+  '((20 :cos)))
+
+(defmethod engine-candidates append ((designator (eql :cos)) (x american-exercise) (p vanilla-payoff)
+                                     (f path-independent) (process independent-increments))
+  '((20 :cos)))
+
+(defmethod engine-candidates append ((designator (eql :cos)) (x bermudan-exercise) (p vanilla-payoff)
+                                     (f path-independent) (process independent-increments))
+  '((20 :cos)))

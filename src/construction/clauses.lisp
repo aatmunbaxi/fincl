@@ -49,8 +49,8 @@
     (or (gethash name *construction-languages*)
         (error 'unknown-language
                :name name
-               :known (loop for language being the hash-keys of *construction-languages*
-                            collect language))))
+               :known (iter (for (language nil) in-hashtable *construction-languages*)
+                            (collect language)))))
 
   (defun clause-key (name)
     "Clauses are keyed by symbol name."
@@ -82,21 +82,19 @@
   (defun edit-distance (a b)
     "Levenshtein distance between strings A and B, case-insensitively."
     (let* ((a (string-downcase a)) (b (string-downcase b))
-           (row (loop for j to (length b) collect j)))
-      (loop for i from 1 to (length a)
-            do (let ((new `(,i)))
-                 (loop for j from 1 to (length b)
-                       for cost = (if (char= (char a (1- i)) (char b (1- j))) 0 1)
-                       do (setf new `(,@new ,(min (1+ (nth j row))
-                                                  (1+ (nth (1- j) new))
-                                                  (+ (nth (1- j) row) cost)))))
-                 (setf row new)))
+           (row (iter (for j from 0 to (length b)) (collect j))))
+      (iter (for i from 1 to (length a))
+            (let ((new `(,i)))
+              (iter (for j from 1 to (length b))
+                    (for cost = (if (char= (char a (1- i)) (char b (1- j))) 0 1))
+                    (setf new `(,@new ,(min (1+ (nth j row))
+                                            (1+ (nth (1- j) new))
+                                            (+ (nth (1- j) row) cost)))))
+              (setf row new)))
       (nth (length b) row)))
 
   (defun clause-names (language)
-    (sort (loop for name being the hash-keys of (construction-language-clauses language)
-                collect name)
-          #'string<))
+    (sorted-keys (construction-language-clauses language)))
 
   (defun find-clause (language-name head)
     "The clause definition for HEAD in the language, trying the language's
@@ -107,8 +105,7 @@ resolver for clauses it creates on demand; signals UNKNOWN-CLAUSE."
           (let ((resolver (construction-language-resolver language)))
             (and resolver (fboundp resolver) (funcall resolver key)))
           (let* ((known (clause-names language))
-                 (best (first (sort (copy-list known) #'<
-                                    :key (lambda (k) (edit-distance key k))))))
+                 (best (iter (for k in known) (finding k minimizing (edit-distance key k)))))
             (error 'unknown-clause
                    :name key :language language-name :known known
                    :suggestion (and best
@@ -121,6 +118,14 @@ macroexpansion), its arguments evaluated at run time, its sub-clauses
 expanded in turn."
     (unless (and (consp form) (symbolp (first form)))
       (error 'malformed-clause :form form :expected "a list starting with the clause name"))
+    ;; (m '((head ...) ...)): clauses passed as data to the macro.
+    (when (member (symbol-name (first form)) '("QUOTE" "QUASIQUOTE") :test #'string=)
+      (error 'malformed-clause
+             :form form
+             :expected (format nil "clauses written directly, as (~(~A~) (head arg ...) ...); ~
+for clauses as data use ~(~A~)"
+                               (construction-language-macro (find-language language-name))
+                               (construction-language-function (find-language language-name)))))
     (let* ((definition (find-clause language-name (first form)))
            (head (a:make-keyword (clause-key (first form))))
            (args (rest form)))
@@ -144,12 +149,12 @@ it may set.
     \"The expiry: a date, or a tenor resolved from FROM.\"
     (publish :expiry (resolve-expiry when :from from :calendar calendar)))"
   (let ((publishes '()) (documentation nil) (forms body))
-    (loop while forms
-          do (cond ((and (stringp (first forms)) (rest forms) (null documentation))
-                    (setf documentation (pop forms)))
-                   ((and (consp (first forms)) (eq (first (first forms)) :publishes))
-                    (setf publishes (rest (pop forms))))
-                   (t (return))))
+    (iter (while forms)
+          (cond ((and (stringp (first forms)) (rest forms) (null documentation))
+                 (setf documentation (pop forms)))
+                ((and (consp (first forms)) (eq (first (first forms)) :publishes))
+                 (setf publishes (rest (pop forms))))
+                (t (return))))
     (multiple-value-bind (function-lambda-list required subclauses)
         (parse-clause-lambda-list lambda-list)
       `(eval-when (:compile-toplevel :load-toplevel :execute)
@@ -183,9 +188,9 @@ it may set.
 can publish FACT."
   (when *language*
     (let ((suppliers
-            (loop for definition being the hash-values of (construction-language-clauses *language*)
-                  when (member fact (clause-definition-publishes definition))
-                    collect (format nil "(~(~A~))" (clause-definition-name definition)))))
+            (iter (for (nil definition) in-hashtable (construction-language-clauses *language*))
+                  (when (member fact (clause-definition-publishes definition))
+                    (collect (format nil "(~(~A~))" (clause-definition-name definition)))))))
       (when (and (member fact (construction-language-resolver-publishes *language*))
                  (construction-language-resolver-description *language*))
         (setf suppliers `(,@suppliers ,(construction-language-resolver-description *language*))))

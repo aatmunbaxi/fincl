@@ -1,8 +1,9 @@
 ;;;; math.lisp --- special functions, root finders and extrapolation
 
 (in-package #:fincl/tests)
+(named-readtables:in-readtable fincl:syntax)
 
-(defun counting (f)
+(defun call-counter (f)
   "Return (values g counter): G calls F and counts its calls in (car COUNTER)."
   (let ((counter (list 0)))
     (values (lambda (x) (incf (car counter)) (funcall f x))
@@ -18,23 +19,23 @@
 
 (defun reference-expm1 (x)
   "e^X - 1 for rational X, as a rational accurate to 1e-50 relative."
-  (loop with sum = 0 and term = 1
-        for n from 1
-        do (setf term (/ (* term x) n))
-           (incf sum term)
-        until (and (> n (abs x)) (< (abs term) (* (expt 10 -55) (abs sum))))
-        finally (return sum)))
+  (iter (with sum = 0) (with term = 1)
+        (for n from 1)
+        (setf term (/ (* term x) n))
+        (incf sum term)
+        (until (and (> n (abs x)) (< (abs term) (* (expt 10 -55) (abs sum)))))
+        (finally (return sum))))
 
 (defun reference-log1p (x)
   "log(1 + X) for rational X > -1, as 2 atanh(X / (2 + X)), a rational
 accurate to 1e-50 relative."
   (let ((z (/ x (+ 2 x))))
-    (loop with sum = 0
-          for k from 0
-          for term = (/ (expt z (1+ (* 2 k))) (1+ (* 2 k)))
-          do (incf sum term)
-          until (< (abs term) (* (expt 10 -55) (abs sum)))
-          finally (return (* 2 sum)))))
+    (iter (with sum = 0)
+          (for k from 0)
+          (for term = (/ (expt z (1+ (* 2 k))) (1+ (* 2 k))))
+          (incf sum term)
+          (until (< (abs term) (* (expt 10 -55) (abs sum))))
+          (finally (return (* 2 sum))))))
 
 (defun relative-error (computed reference)
   "|COMPUTED - REFERENCE| / |REFERENCE|, in exact arithmetic."
@@ -49,42 +50,42 @@ accurate to 1e-50 relative."
 complements. Rounding x = q(u) to a double moves norm-cdf(x) by up to
 1/2 ulp(x) |x| phi(x) / Phi(x), about x^2 1e-16 in the tail, so the error is
 measured against max(1, x^2)."
-  (let ((us (loop for i below 10000
-                  collect (min 0.5d0 (expt 10d0 (- (* 300 (/ i 9999d0))))))))
+  (let ((us (iter (for i below 10000)
+                  (collect (min 0.5d0 (expt 10d0 (- (* 300 (/ i 9999d0)))))))))
     (flet ((worst (pairs)
              ;; PAIRS: (x . tail-probability) with x <= 0.
-             (loop for (x . p) in pairs
-                   maximize (/ (abs (- (/ (norm-cdf x) p) 1d0)) (max 1d0 (* x x))))))
-      (let ((lower (worst (loop for u in us collect (cons (norm-quantile u) u))))
-            (upper (worst (loop for u in us
-                                for v = (- 1d0 u)
+             (iter (for (x . p) in pairs)
+                   (maximize (/ (abs (- (/ (norm-cdf x) p) 1d0)) (max 1d0 (* x x)))))))
+      (let ((lower (worst (iter (for u in us) (collect (cons (norm-quantile u) u)))))
+            (upper (worst (iter (for u in us)
+                                (for v = (- 1d0 u))
                                 ;; The smaller tail of v is 1 - v, exact for v >= 1/2;
                                 ;; for u < 1.1e-16, v rounds to 1.
-                                when (< v 1d0)
-                                  collect (cons (- (norm-quantile v)) (- 1d0 v))))))
+                                (when (< v 1d0)
+                                  (collect (cons (- (norm-quantile v)) (- 1d0 v))))))))
         (check-that (format nil "|Phi(q(u))/u - 1| / max(1, q^2) < 1e-15 for u in [1e-300, 1/2] ~
                                  (worst ~,2E)" lower)
                     (< lower 1d-15))
         (check-that (format nil "the same on the complements 1 - u (worst ~,2E)" upper)
                     (< upper 1d-15))))
     (check-that "q(v) = -q(1 - v) exactly for v in [1/2, 1)"
-                (loop for u in us
-                      for v = (- 1d0 u)
-                      always (or (= v 1d0)
-                                 (= (norm-quantile v) (- (norm-quantile (- 1d0 v)))))))
+                (iter (for u in us)
+                      (for v = (- 1d0 u))
+                      (always (or (= v 1d0)
+                                  (= (norm-quantile v) (- (norm-quantile (- 1d0 v))))))))
     (check "q(0.975)" 1.959963984540054d0 (norm-quantile 0.975d0) 1d-15)
     (check-that "q(least positive normalized double) is finite"
                 (< -38d0 (norm-quantile least-positive-normalized-double-float) -37d0))))
 
 (defun math-checks ()
   (format t "~&Math: special functions~%")
-  (let ((worst (loop for x in *expm1-log1p-points*
-                     maximize (relative-error (expm1 x) (reference-expm1 (rational x))))))
+  (let ((worst (iter (for x in *expm1-log1p-points*)
+                     (maximize (relative-error (expm1 x) (reference-expm1 (rational x)))))))
     (check-that (format nil "expm1 within 2 ulps of 50-digit references (worst ~,2E)" worst)
                 (< worst 4.4d-16)))
-  (let ((worst (loop for x in *expm1-log1p-points*
-                     when (> x -1d0)
-                       maximize (relative-error (log1p x) (reference-log1p (rational x))))))
+  (let ((worst (iter (for x in *expm1-log1p-points*)
+                     (when (> x -1d0)
+                       (maximize (relative-error (log1p x) (reference-log1p (rational x))))))))
     (check-that (format nil "log1p within 2 ulps of 50-digit references (worst ~,2E)" worst)
                 (< worst 4.4d-16)))
   (check "norm-cdf 0" 0.5d0 (norm-cdf 0d0) 1d-16)
@@ -103,26 +104,26 @@ measured against max(1, x^2)."
                                                                 #x03707344 #xa4093822 #x299f31d0)))
                :test #'equal)
   (check-that "counter uniforms lie in the open interval (0, 1)"
-              (loop for path below 1000
-                    always (multiple-value-bind (u v) (fincl::counter-uniforms 42 path 0)
-                             (and (< 0d0 u 1d0) (< 0d0 v 1d0)))))
+              (iter (for path below 1000)
+                    (always (multiple-value-bind (u v) (fincl::counter-uniforms 42 path 0)
+                              (and (< 0d0 u 1d0) (< 0d0 v 1d0))))))
 
   (format t "~&Math: root finders~%")
-  (loop for (name f lo hi root) in *root-problems*
+  (iter (for (name f lo hi root) in *root-problems*)
         ;; A triple root is flat: bisection, which stops once |f| < 1e-12,
         ;; is then only accurate to 1e-4 in x. Newton is checked separately
         ;; below.
-        for triple = (search "triple" name)
-        do (multiple-value-bind (g calls) (counting f)
+        (for triple = (search "triple" name))
+        (multiple-value-bind (g calls) (call-counter f)
              (let ((x (solve-bisection g lo hi)))
                (check (format nil "bisection: ~A (~D calls)" name (car calls))
                       root x (if triple 1d-4 1d-11))))
-           (multiple-value-bind (g calls) (counting f)
+           (multiple-value-bind (g calls) (call-counter f)
              (let ((x (solve-brent g lo hi)))
                (check (format nil "Brent: ~A (~D calls)" name (car calls))
                       root x (if triple 1d-6 1d-11))))
            (unless triple
-             (multiple-value-bind (g calls) (counting f)
+             (multiple-value-bind (g calls) (call-counter f)
                (let ((x (solve-newton g (* 0.5d0 (+ lo hi)))))
                  (check (format nil "Newton: ~A (~D calls)" name (car calls))
                         root x 1d-11)))))
@@ -133,11 +134,11 @@ measured against max(1, x^2)."
                convergence-failure)
   (let ((f (second (first *root-problems*))))
     (check-that "Brent needs fewer evaluations than bisection"
-                (let ((brent (nth-value 1 (counting f)))
-                      (bisection (nth-value 1 (counting f))))
-                  (multiple-value-bind (g c) (counting f)
+                (let ((brent (nth-value 1 (call-counter f)))
+                      (bisection (nth-value 1 (call-counter f))))
+                  (multiple-value-bind (g c) (call-counter f)
                     (setf brent c) (solve-brent g 2d0 3d0))
-                  (multiple-value-bind (g c) (counting f)
+                  (multiple-value-bind (g c) (call-counter f)
                     (setf bisection c) (solve-bisection g 2d0 3d0))
                   (< (* 3 (car brent)) (car bisection)))))
 
@@ -213,14 +214,14 @@ measured against max(1, x^2)."
 (values p p' p'')."
   (flet ((horner (cs) (lambda (x) (reduce (lambda (c acc) (+ c (* x acc))) cs
                                           :from-end t :initial-value 0))))
-    (let* ((d1 (loop for c in (rest coefficients) for k from 1 collect (* k c)))
-           (d2 (loop for c in (rest d1) for k from 1 collect (* k c))))
+    (let* ((d1 (iter (for c in (rest coefficients)) (for k from 1) (collect (* k c))))
+           (d2 (iter (for c in (rest d1)) (for k from 1) (collect (* k c)))))
       (values (horner coefficients) (horner d1) (horner d2)))))
 
 (defun stencil-exact-p (offsets order degree)
   "Does the stencil on OFFSETS give the ORDER-th derivative of a random-ish
 polynomial of DEGREE exactly, in rationals?"
-  (multiple-value-bind (p d1 d2) (polynomial (loop for k to degree collect (- (* 3 k) 7/2)))
+  (multiple-value-bind (p d1 d2) (polynomial (iter (for k from 0 to degree) (collect (- (* 3 k) 7/2))))
     (let* ((x 3/2) (h 1/3)
            (estimate (apply-stencil (finite-difference-weights offsets order)
                                     (mapcar (lambda (k) (funcall p (+ x (* k h)))) offsets)
@@ -255,23 +256,23 @@ polynomial of DEGREE exactly, in rationals?"
                    (not (stencil-exact-p '(-1 1) 1 3))))
   (let ((state (sb-ext:seed-random-state 5)))
     (check-that "the central quotient is exactly (f(x+h) - f(x-h)) / 2h, as SOLVE-NEWTON had"
-                (loop for f in (list #'exp #'sin (lambda (x) (- (* x x x) (* 2 x) 5))
-                                     (lambda (x) (- (cos x) x)))
-                      always (loop repeat 200
-                                   for x = (- (random 6d0 state) 3d0)
-                                   for h = (* (random 1d0 state) 1d-4)
-                                   always (= (difference-quotient f x h)
-                                             (/ (- (funcall f (+ x h)) (funcall f (- x h)))
-                                                (* 2d0 h)))))))
-  (loop for (name f df points) in (list (list "exp" #'exp #'exp '(-2d0 -0.5d0 0d0 1d0 3d0))
-                                        (list "sin" #'sin #'cos '(-2d0 -0.5d0 0d0 1d0 3d0))
-                                        (list "log" #'log #'/ '(0.5d0 1d0 2d0 5d0 10d0)))
-        do (check-that (format nil "Ridders' derivative of ~A at five points to 1e-12, error estimate >= actual" name)
-                       (loop for x in points
-                             always (multiple-value-bind (estimate error) (derivative f x)
-                                      (let ((actual (abs (- estimate (funcall df x)))))
-                                        (and (< actual (* 1d-12 (max 1d0 (abs (funcall df x)))))
-                                             (>= error actual)))))))
+                (iter (for f in (list #'exp #'sin (lambda (x) (- (* x x x) (* 2 x) 5))
+                                     (lambda (x) (- (cos x) x))))
+                      (always (iter (repeat 200)
+                                    (for x = (- (random 6d0 state) 3d0))
+                                    (for h = (* (random 1d0 state) 1d-4))
+                                    (always (= (difference-quotient f x h)
+                                               (/ (- (funcall f (+ x h)) (funcall f (- x h)))
+                                                  (* 2d0 h)))))))))
+  (iter (for (name f df points) in (list (list "exp" #'exp #'exp '(-2d0 -0.5d0 0d0 1d0 3d0))
+                                         (list "sin" #'sin #'cos '(-2d0 -0.5d0 0d0 1d0 3d0))
+                                         (list "log" #'log #'/ '(0.5d0 1d0 2d0 5d0 10d0))))
+        (check-that (format nil "Ridders' derivative of ~A at five points to 1e-12, error estimate >= actual" name)
+                       (iter (for x in points)
+                             (always (multiple-value-bind (estimate error) (derivative f x)
+                                       (let ((actual (abs (- estimate (funcall df x)))))
+                                         (and (< actual (* 1d-12 (max 1d0 (abs (funcall df x)))))
+                                              (>= error actual))))))))
   (check "second derivative of sin at 1 by Ridders" (- (sin 1d0))
          (derivative #'sin 1d0 :order 2) 1d-10)
   (check-that "default step: central first derivative at 1 is eps^(1/3)"
@@ -281,26 +282,26 @@ polynomial of DEGREE exactly, in rationals?"
 (defun random-least-squares (m n state)
   "A random well-conditioned M x N least-squares problem: columns of
 independent uniforms plus a dominant diagonal band. Returns (values rows y)."
-  (let ((rows (loop for i below m
-                    collect (let ((row (make-array n :element-type 'double-float)))
-                              (dotimes (j n row)
-                                (setf (aref row j) (+ (random 1d0 state)
-                                                      (if (= j (mod i n)) 3d0 0d0)))))))
-        (y (loop repeat m collect (- (random 2d0 state) 1d0))))
+  (let ((rows (iter (for i below m)
+                    (collect (let ((row (make-array n :element-type 'double-float)))
+                               (dotimes (j n row)
+                                 (setf (aref row j) (+ (random 1d0 state)
+                                                       (if (= j (mod i n)) 3d0 0d0))))))))
+        (y (iter (repeat m) (collect (- (random 2d0 state) 1d0)))))
     (values rows y)))
 
 (defun qr-fit (rows y n)
   (let ((acc (fincl::make-qr-accumulator n)))
-    (loop for row in rows for yi in y
-          do (fincl::qr-add-row! acc (copy-seq row) yi))
+    (iter (for row in rows) (for yi in y)
+          (fincl::qr-add-row! acc (copy-seq row) yi))
     (fincl::qr-solve acc)))
 
 (defun normal-equations-fit (rows y n)
   "The oracle: (X'X) b = X'y solved by magicl/LAPACK."
   (let ((xtx (make-array (* n n) :element-type 'double-float :initial-element 0d0))
         (xty (make-array n :element-type 'double-float :initial-element 0d0)))
-    (loop for row in rows for yi in y
-          do (dotimes (r n)
+    (iter (for row in rows) (for yi in y)
+          (dotimes (r n)
                (incf (aref xty r) (* (aref row r) yi))
                (dotimes (c n)
                  (incf (aref xtx (+ (* r n) c)) (* (aref row r) (aref row c))))))
@@ -308,51 +309,93 @@ independent uniforms plus a dominant diagonal band. Returns (values rows y)."
                                           (magicl:from-array xty (list n))))))
 
 (defun max-relative-difference (a b)
-  (loop for x across a for y across b
-        maximize (/ (abs (- x y)) (max 1d0 (abs y)))))
+  (iter (for x in-vector a) (for y in-vector b)
+        (maximize (/ (abs (- x y)) (max 1d0 (abs y))))))
 
 (defun linear-algebra-checks ()
   (format t "~&Math: least squares by QR~%")
   (let ((state (sb-ext:seed-random-state 11)))
     (check-that "QR = normal equations (magicl) on 20 random well-conditioned problems"
-                (loop repeat 20
-                      always (multiple-value-bind (rows y) (random-least-squares 200 5 state)
-                               (< (max-relative-difference (qr-fit rows y 5)
-                                                           (normal-equations-fit rows y 5))
-                                  1d-12))))
+                (iter (repeat 20)
+                      (always (multiple-value-bind (rows y) (random-least-squares 200 5 state)
+                                (< (max-relative-difference (qr-fit rows y 5)
+                                                            (normal-equations-fit rows y 5))
+                                   1d-12)))))
     (multiple-value-bind (rows y) (random-least-squares 300 4 state)
       (check-that "four merged chunk accumulators = one accumulator over all rows"
                   (let ((total (fincl::make-qr-accumulator 4)))
-                    (loop for chunk below 4
-                          do (let ((acc (fincl::make-qr-accumulator 4)))
-                               (loop for row in (subseq rows (* chunk 75) (* (1+ chunk) 75))
-                                     for yi in (subseq y (* chunk 75) (* (1+ chunk) 75))
-                                     do (fincl::qr-add-row! acc (copy-seq row) yi))
-                               (fincl::qr-merge! total acc)))
+                    (iter (for chunk below 4)
+                          (let ((acc (fincl::make-qr-accumulator 4)))
+                            (iter (for row in (subseq rows (* chunk 75) (* (1+ chunk) 75)))
+                                  (for yi in (subseq y (* chunk 75) (* (1+ chunk) 75)))
+                                  (fincl::qr-add-row! acc (copy-seq row) yi))
+                            (fincl::qr-merge! total acc)))
                     (and (= 300 (fincl::qr-accumulator-rows total))
                          (< (max-relative-difference (fincl::qr-solve total) (qr-fit rows y 4))
                             1d-13))))))
   (let* ((beta #(1.5d0 -2d0 0.25d0))
-         (rows (loop for i below 50
-                     collect (let ((x (/ i 10d0)))
-                               (make-array 3 :element-type 'double-float
-                                             :initial-contents (list 1d0 x (* x x))))))
-         (y (mapcar (lambda (row) (loop for j below 3 sum (* (aref beta j) (aref row j)))) rows)))
+         (rows (iter (for i below 50)
+                     (collect (let ((x (/ i 10d0)))
+                                (make-array 3 :element-type 'double-float
+                                              :initial-contents (list 1d0 x (* x x)))))))
+         (y (mapcar (lambda (row) (iter (for j below 3) (sum (* (aref beta j) (aref row j))))) rows)))
     (check-that "an exact fit recovers its coefficients"
                 (< (max-relative-difference (qr-fit rows y 3) beta) 1d-12)))
   (check-error "a repeated column is rank deficient"
-               (qr-fit (loop for i below 10
-                             collect (make-array 2 :element-type 'double-float
-                                                   :initial-contents (list (float i 1d0)
-                                                                           (float i 1d0))))
-                       (loop for i below 10 collect (float i 1d0))
+               (qr-fit (iter (for i below 10)
+                             (collect (make-array 2 :element-type 'double-float
+                                                    :initial-contents (list (float i 1d0)
+                                                                            (float i 1d0)))))
+                       (iter (for i below 10) (collect (float i 1d0)))
                        2)
                fincl::rank-deficient))
+
+(defun iteration-helper-checks ()
+  (format t "~&Iteration helpers~%")
+  (check-equal "in-plist: each key with its value"
+               '((:a 1) (:b 2) (:c 3))
+               (iter (for (key value) in-plist '(:a 1 :b 2 :c 3)) (collect `(,key ,value))))
+  (let ((times (make-array 4 :element-type 'double-float :initial-contents '(0d0 0.25d0 0.75d0 1d0))))
+    (check-equal "in-intervals: consecutive grid times"
+                 '((0d0 0.25d0) (0.25d0 0.75d0) (0.75d0 1d0))
+                 (iter (for (t0 t1) in-intervals times) (collect `(,t0 ,t1))))
+    (let ((dt (iter (for (t0 t1) in-intervals times)
+                    (fincl::collect-double (- t1 t0) into dt length 3)
+                    (finally (return dt)))))
+      (check-that "collect-double: a (simple-array double-float (3)) of the values"
+                  (and (typep dt '(simple-array double-float (3)))
+                       (equalp dt (map 'vector #'- (subseq times 1) (subseq times 0 3)))))))
+  (let ((serials (lambda (dates) (mapcar #'date-serial dates))))
+    (check-equal "in-dates ... to: END included"
+                 (iter (for s from (date-serial #D"2026-12-30") to (date-serial #D"2027-01-02")) (collect s))
+                 (funcall serials (iter (for d in-dates #D"2026-12-30" to #D"2027-01-02") (collect d))))
+    (check-equal "in-dates ... below: END excluded"
+                 (iter (for s from (date-serial #D"2026-12-30") below (date-serial #D"2027-01-02")) (collect s))
+                 (funcall serials (iter (for d in-dates #D"2026-12-30" below #D"2027-01-02") (collect d))))
+    (check-equal "in-dates: an empty range" '()
+                 (iter (for d in-dates #D"2027-01-02" below #D"2027-01-02") (collect d)))
+    (check-equal "in-business-days = the business days among in-dates"
+                 (funcall serials (iter (for d in-dates #D"2026-12-20" to #D"2027-01-10")
+                                        (when (business-day-p +target+ d) (collect d))))
+                 (funcall serials (iter (for d in-business-days +target+ from #D"2026-12-20" to #D"2027-01-10")
+                                        (collect d))))
+    (check-equal "the date drivers under GENERATE"
+                 (funcall serials (list #D"2026-01-01" #D"2026-01-02"))
+                 (funcall serials (iter (generate d in-dates #D"2026-01-01" to #D"2026-01-05")
+                                        (repeat 2)
+                                        (collect (next d))))))
+  (check-error "in-dates without an end"
+               (macroexpand '(iter (for d in-dates #D"2026-01-01") (collect d)))
+               invalid-argument)
+  (let ((table (make-hash-table)))
+    (setf (gethash :b table) 1 (gethash :c table) 2 (gethash :a table) 3)
+    (check-equal "sorted-keys" '(:a :b :c) (fincl::sorted-keys table))))
 
 (defun run-math-tests ()
   "Run only the math checks, numerics.lisp's included. Returns T when all pass."
   (let ((*failures* 0))
     (math-checks)
+    (iteration-helper-checks)
     (interpolation-checks)
     (tridiagonal-checks)
     (optimizer-checks)

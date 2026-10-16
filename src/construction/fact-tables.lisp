@@ -100,10 +100,10 @@ be defined (DEFINE-FACT) and declared in the clause's :PUBLISHES.
 (defun find-fact-entry (fact)
   "The entry for FACT in the current scope or the nearest enclosing one."
   (let ((entries (fact-table-entries *fact-table*)))
-    (loop for scope = *scope* then (butlast scope)
-          for entry = (gethash (cons scope fact) entries)
-          when entry return entry
-          while scope)))
+    (iter (for scope first *scope* then (butlast scope))
+          (for entry = (gethash (cons scope fact) entries))
+          (when entry (return entry))
+          (while scope))))
 
 (defun fact (fact)
   "The value of FACT seen from the current scope, deriving it by rule if no
@@ -145,8 +145,8 @@ component that needed it, for the report."
                (error 'fact-rule-cycle :fact fact :scope *scope* :facts facts
                                        :class class :slot slot
                                        :suppliers (remove-duplicates
-                                                   (loop for f in facts
-                                                         append (fact-suppliers f))
+                                                   (iter (for f in facts)
+                                                         (appending (fact-suppliers f)))
                                                    :test #'string=))))
             (t (error 'missing-fact :fact fact :scope *scope*
                                     :class class :slot slot
@@ -155,8 +155,7 @@ component that needed it, for the report."
 
 (defun unused-fact-entries ()
   "(fact scope provenance) of explicit and convention facts nobody read."
-  (loop for (scope . fact) being the hash-keys of (fact-table-entries *fact-table*)
-          using (hash-value entry)
-        when (and (not (fact-entry-read entry))
-                  (member (fact-entry-priority entry) '(:explicit :convention)))
-          collect `(,fact ,scope ,(fact-entry-provenance entry))))
+  (iter (for ((scope . fact) entry) in-hashtable (fact-table-entries *fact-table*))
+        (when (and (not (fact-entry-read entry))
+                   (member (fact-entry-priority entry) '(:explicit :convention)))
+          (collect `(,fact ,scope ,(fact-entry-provenance entry))))))

@@ -25,17 +25,17 @@
   (philox4x32-10 0 0 0 0 0 0) => #x6627E8D5, #xE169C58D, #xBC57AC4C, #x9B00DBD8"
   (declare (type word32 c0 c1 c2 c3 k0 k1)
            (optimize speed (safety 0)))
-  (loop repeat 10
-        do (let ((p0 (* +philox-m0+ c0))
-                 (p1 (* +philox-m1+ c2)))
-             (declare (type (unsigned-byte 64) p0 p1))
-             ;; Each new word reads only words not yet overwritten.
-             (setf c0 (logxor (ash p1 -32) c1 k0)
-                   c1 (ldb (byte 32 0) p1)
-                   c2 (logxor (ash p0 -32) c3 k1)
-                   c3 (ldb (byte 32 0) p0)
-                   k0 (ldb (byte 32 0) (+ k0 +philox-w0+))
-                   k1 (ldb (byte 32 0) (+ k1 +philox-w1+)))))
+  (dotimes (round 10)
+    (let ((p0 (* +philox-m0+ c0))
+          (p1 (* +philox-m1+ c2)))
+      (declare (type (unsigned-byte 64) p0 p1))
+      ;; Each new word reads only words not yet overwritten.
+      (setf c0 (logxor (ash p1 -32) c1 k0)
+            c1 (ldb (byte 32 0) p1)
+            c2 (logxor (ash p0 -32) c3 k1)
+            c3 (ldb (byte 32 0) p0)
+            k0 (ldb (byte 32 0) (+ k0 +philox-w0+))
+            k1 (ldb (byte 32 0) (+ k1 +philox-w1+)))))
   (values c0 c1 c2 c3))
 
 (declaim (inline words-to-open-unit))
