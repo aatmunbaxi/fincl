@@ -141,6 +141,78 @@ EXPAND-HI and the restarts.
 ;;; Newton with a finite-difference derivative
 ;;; --------------------------------------------------------------------
 
+(defun ql-close-p (x y)
+  "QuantLib's close(x, y): equal within 42 ulps of both (of 0, within
+(42 eps)^2)."
+  (declare (double-float x y))
+  (or (= x y)
+      (let ((diff (abs (- x y)))
+            (tolerance (* 42 double-float-epsilon)))
+        (if (or (zerop x) (zerop y))
+            (< diff (* tolerance tolerance))
+            (and (<= diff (* tolerance (abs x))) (<= diff (* tolerance (abs y))))))))
+
+(defun solve-brent-from-guess (f lo hi guess &key (tolerance 1d-8) (max-evaluations 10000))
+  "Root of F on [LO, HI] by QuantLib's Brent solver started from GUESS
+inside the bracket, to within TOLERANCE in x: the same iterates as
+QuantLib's Brent::solve(f, accuracy, guess, xMin, xMax). Use it where a
+result must match QuantLib's at its accuracy (Jamshidian's critical rate);
+SOLVE-BRENT is the general solver.
+
+  (solve-brent-from-guess (lambda (x) (- (* x x) 2)) 0d0 2d0 1d0) => 1.4142135623730951d0"
+  (let* ((tolerance (max (float tolerance 1d0) double-float-epsilon))
+         (x-min (float lo 1d0)) (x-max (float hi 1d0))
+         (fx-min (float (funcall f x-min) 1d0)))
+    (when (ql-close-p fx-min 0d0) (return-from solve-brent-from-guess x-min))
+    (let ((fx-max (float (funcall f x-max) 1d0))
+          (evaluations 2))
+      (when (ql-close-p fx-max 0d0) (return-from solve-brent-from-guess x-max))
+      (unless (minusp (* fx-min fx-max))
+        (signal-convergence-failure "Brent's method: no sign change on [~,12F, ~,12F]" x-min x-max))
+      (unless (< x-min guess x-max)
+        (signal-invalid-argument 'guess guess 'real (format nil "a guess inside (~A, ~A)" lo hi)))
+      (let* ((root (float guess 1d0))
+             (froot (float (funcall f root) 1d0)))
+        (incf evaluations)
+        ;; Start with ROOT on one side and both ends on the other.
+        (if (minusp (* froot fx-min))
+            (setf x-max x-min fx-max fx-min)
+            (setf x-min x-max fx-min fx-max))
+        (let* ((d (- root x-max)) (e d))
+          (iter (while (<= evaluations max-evaluations))
+                (when (or (and (plusp froot) (plusp fx-max)) (and (minusp froot) (minusp fx-max)))
+                  (setf x-max x-min fx-max fx-min
+                        d (- root x-min) e d))
+                (when (< (abs fx-max) (abs froot))
+                  (setf x-min root root x-max x-max x-min
+                        fx-min froot froot fx-max fx-max fx-min))
+                (let ((acc (+ (* 2d0 double-float-epsilon (abs root)) (* 0.5d0 tolerance)))
+                      (mid (/ (- x-max root) 2d0)))
+                  (when (or (<= (abs mid) acc) (ql-close-p froot 0d0))
+                    (return-from solve-brent-from-guess root))
+                  (if (and (>= (abs e) acc) (> (abs fx-min) (abs froot)))
+                      (let ((s (/ froot fx-min)) (p 0d0) (q 0d0))
+                        (if (ql-close-p x-min x-max)
+                            (setf p (* 2d0 mid s)
+                                  q (- 1d0 s))
+                            (let ((qq (/ fx-min fx-max)) (r (/ froot fx-max)))
+                              (setf p (* s (- (* 2d0 mid qq (- qq r)) (* (- root x-min) (- r 1d0))))
+                                    q (* (- qq 1d0) (- r 1d0) (- s 1d0)))))
+                        (when (plusp p) (setf q (- q)))
+                        (setf p (abs p))
+                        (let ((min1 (- (* 3d0 mid q) (abs (* acc q))))
+                              (min2 (abs (* e q))))
+                          (if (< (* 2d0 p) (if (< min1 min2) min1 min2))
+                              (setf e d d (/ p q))
+                              (setf d mid e d))))
+                      (setf d mid e d))
+                  (setf x-min root fx-min froot)
+                  (incf root (if (> (abs d) acc) d (if (>= mid 0d0) (abs acc) (- (abs acc)))))
+                  (setf froot (float (funcall f root) 1d0))
+                  (incf evaluations)))
+          (signal-convergence-failure "Brent's method: no convergence in ~D evaluations near ~,12F"
+                                      max-evaluations root))))))
+
 (defun solve-newton (f x0 &key lo hi (tolerance 1d-12) (max-iterations 50)
                               (relative-step 1d-6))
   "Root of F by Newton's method from X0, with F' estimated by the central

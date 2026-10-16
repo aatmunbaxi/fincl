@@ -42,7 +42,8 @@
   "The engine designated by KEY (:black-scholes, :baw, :binomial, :cos, :mc,
 :merton-series, :cev, or any class's (:designator ...)) with SETTINGS, its
 initargs, evaluated. :PROCESS goes to engines that take one; an engine whose
-model is fixed (Black-Scholes, BAW) accepts a process only of its model.
+model is fixed (Black-Scholes, BAW) accepts a process only of its model, with
+no parameters set (it prices with the market's data).
 
   (make-engine :binomial :n-steps 4000)
   (make-engine :cos :process (make-heston :xi 0.5d0) :n-terms 512)"
@@ -58,6 +59,17 @@ model is fixed (Black-Scholes, BAW) accepts a process only of its model.
         (signal-invalid-argument :process process 'stochastic-process
                                  (format nil "a process ~S models (~{~(~A~)~^, ~})"
                                          (class-name class) (engine-class-models class))))
+      (let ((explicit (explicit-parameters process)))
+        (when explicit
+          (signal-invalid-argument
+           :process process 'stochastic-process
+           (format nil "a process with no parameters set (~(~{~A~^, ~}~) given), because ~(~A~) ~
+prices with the market's own data and would ignore them. To price with the ~(~{~A~^, ~}~) given, ~
+use an engine that takes a process: (make-engine :cos :process ~A), or :binomial or :mc. ~
+To change the market's vol instead, bump it, (bump market '(:vol underlying) '(:absolute x)), ~
+or build the market with that :vol"
+                   explicit (class-name class) explicit
+                   (write-to-string (process-form process) :pretty nil :case :downcase)))))
       (setf settings (a:remove-from-plist settings :process)))
     (iter (for (initarg nil) in-plist settings)
           (unless (member initarg initargs)

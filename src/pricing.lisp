@@ -3,7 +3,8 @@
 ;;;; Engines implement PRICE against the single-underlying market protocol.
 ;;;; On a COMPOSITE-MARKET, this :AROUND method narrows the market to a
 ;;;; MARKET-VIEW for the instrument (its underlying, discounting on its
-;;;; currency's curve) and prices again on the view.
+;;;; currency's curve) and prices again on the view. Interest-rate
+;;;; instruments have no underlying: they price on the composite market itself.
 ;;;;
 ;;;; It must run before every other :AROUND method, in particular the
 ;;;; option's (expiry checks, validation, restarts), which reads the market
@@ -15,11 +16,17 @@
 
 (in-package #:fincl)
 
-(defun instrument-view (market instrument)
-  "The MARKET-VIEW of MARKET that INSTRUMENT is priced on: its underlying
-(or the market's only one), discounting on the curve of the underlying's
-currency. An instrument paying in another currency is a quanto and signals
-UNSUPPORTED-QUANTO."
+(defgeneric instrument-view (market instrument)
+  (:documentation "The market INSTRUMENT is priced on: for most instruments
+the MARKET-VIEW of the composite MARKET for its underlying (or the market's
+only one), discounting on the curve of the underlying's currency (an
+instrument paying in another currency is a quanto and signals
+UNSUPPORTED-QUANTO); for interest-rate instruments MARKET itself."))
+
+(defmethod instrument-view (market (instrument rates-instrument))
+  market)
+
+(defmethod instrument-view (market (instrument instrument))
   (let* ((underlying (resolve-underlying market (instrument-underlying instrument)))
          (underlying-currency (gethash underlying (market-underlying-currency market)))
          (currency (instrument-currency instrument)))
@@ -29,7 +36,10 @@ UNSUPPORTED-QUANTO."
     (market-view market :underlying underlying)))
 
 (defmethod price :around ((instrument instrument) engine (market composite-market))
-  (price instrument engine (instrument-view market instrument)))
+  (let ((view (instrument-view market instrument)))
+    (if (eq view market)
+        (call-next-method)
+        (price instrument engine view))))
 
 (defun pricing-market (market instrument)
   "The market INSTRUMENT is priced on: its view of MARKET if MARKET is
