@@ -10,7 +10,8 @@
   (:local-nicknames (#:a #:alexandria) (#:lp #:lparallel))
   (:export #:run-tests #:run-time-tests #:run-syntax-tests #:run-cos-tests
            #:run-binomial-tests #:run-math-tests #:run-invariant-tests
-           #:run-golden-tests #:run-fast-tests #:run-levy-tests #:run-rates-tests #:run-selection-tests))
+           #:run-golden-tests #:run-fast-tests #:run-levy-tests #:run-rates-tests #:run-selection-tests
+           #:run-readme-check #:run-rates-instrument-tests))
 
 (in-package #:fincl/tests)
 (named-readtables:in-readtable fincl:syntax)

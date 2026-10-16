@@ -48,10 +48,13 @@ engine does not take a process and PROCESS is not the one its model fixes
   (make-instance 'cos-engine :process process))
 
 (defun engine-classes ()
-  "Every subclass of ENGINE, found by walking the class graph."
+  "Every subclass of ENGINE that prices options on an underlying, found by
+walking the class graph. Interest-rate engines (RATES-ENGINE) are checked in
+tests/rates-instruments.lisp."
   (labels ((walk (class)
              (cons class (mapcan #'walk (closer-mop:class-direct-subclasses class)))))
-    (remove-duplicates (rest (walk (find-class 'engine))))))
+    (remove-if (lambda (class) (subtypep class 'rates-engine))
+               (remove-duplicates (rest (walk (find-class 'engine)))))))
 
 (defun has-test-instance-p (class)
   (find-method #'test-engine-instance '()

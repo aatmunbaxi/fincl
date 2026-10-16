@@ -238,16 +238,31 @@ full call with the callee's name."
                (make-instance 'capped-call :kind :call :strike 100d0))
   (let ((m (make-bs-market :valuation-date *today* :spot 100 :rate 0.05d0 :vol 0.2d0))
         (expiry (make-instance 'european-exercise :expiry #D"2027-09-24")))
-    (check-error "a closed-form engine refuses a non-vanilla struck payoff"
-                 (price (make-instance 'option :exercise expiry
-                                               :payoff (make-instance 'capped-call :kind :call
-                                                                                   :strike 100 :cap 1))
-                        (make-instance 'black-scholes-engine) m)
-                 unsupported-combination)
-    (check-that "subclassing a payoff with its own formula warns at compile time"
-                (handler-case
-                    (progn (macroexpand-1 '(define-payoff bad (vanilla-payoff) () (s) s)) nil)
-                  (formula-payoff-superclass () t)))
+    (let ((capped (make-instance 'capped-call :kind :call :strike 100 :cap 1)))
+      (iter (for (style engine) in `((european-exercise :black-scholes)
+                                     (american-exercise :baw)
+                                     (american-exercise :binomial)
+                                     (european-exercise :cos)
+                                     (american-exercise :cos)
+                                     (european-exercise ,(make-engine :merton-series
+                                                                      :process (make-merton-jump)))
+                                     (european-exercise ,(make-engine :cev :process (make-cev)))))
+            (check-error (format nil "~(~A~) refuses a capped call (~(~A~))"
+                                 (if (keywordp engine) engine (type-of engine)) style)
+                         (price (make-instance 'option :payoff capped
+                                                       :exercise (make-instance style
+                                                                                :expiry #D"2027-09-24"))
+                                engine m)
+                         unsupported-combination)))
+    (check-error "subclassing a payoff with its own formula is an error at macroexpansion"
+                 (macroexpand-1 '(define-payoff bad (vanilla-payoff) () (s) s))
+                 formula-payoff-superclass)
+    (check-that "... an invalid-input naming both classes"
+                (handler-case (progn (macroexpand-1 '(define-payoff bad (vanilla-payoff) () (s) s)) nil)
+                  (formula-payoff-superclass (c)
+                    (and (typep c 'invalid-input)
+                         (search "BAD" (princ-to-string c))
+                         (search "VANILLA-PAYOFF" (princ-to-string c))))))
     ;; Cash-or-nothing: pays 1 if S_T is beyond the strike. Closed form
     ;; D N(phi d2) checks the generic Monte Carlo path.
     (dolist (kind '(:call :put))

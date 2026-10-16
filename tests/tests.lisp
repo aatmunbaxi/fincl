@@ -32,7 +32,7 @@ when every check passed."
   "Checks that take seconds, not minutes.")
 
 (defparameter *slow-checks*
-  (list 'mc-checks 'counter-stream-checks 'antithetic-se-checks 'process-checks 'levy-checks 'selection-test-checks 'term-structure-checks 'clarke-parrott-checks
+  (list 'rates-instrument-checks 'mc-checks 'counter-stream-checks 'antithetic-se-checks 'process-checks 'levy-checks 'selection-test-checks 'term-structure-checks 'clarke-parrott-checks
         'greeks-checks 'invariant-checks 'option-round-trip-checks 'golden-checks)
   "Monte Carlo-heavy checks, the invariant sweep and the golden values.")
 

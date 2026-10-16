@@ -184,7 +184,43 @@
                             (class-name (class-of process)) v (first gbm) se)
                     (< (abs (- v (first gbm))) (* 3 (sqrt (+ (* se se) (expt (second gbm) 2))))))))))
 
+(defun explicit-parameter-checks ()
+  (format t "~&Explicit process parameters and fixed-model engines~%")
+  (let* ((m (make-bs-market :valuation-date *today* :spot 100 :rate 0.05d0 :vol 0.2d0))
+         (m40 (make-bs-market :valuation-date *today* :spot 100 :rate 0.05d0 :vol 0.4d0))
+         (gbm40 (make-gbm :vol 0.4d0))
+         (call (make-option (call 100) (expires #D"2027-09-24")))
+         (put (make-option (put 100) (american) (expires #D"2027-09-24"))))
+    (dolist (key '(:black-scholes :baw))
+      (check-error (format nil "~(~A~) refuses a GBM with its own vol" key)
+                   (make-engine key :process gbm40)
+                   invalid-argument))
+    (let ((message (error-message (lambda () (make-engine :black-scholes :process gbm40)))))
+      (check-that "... and the report names the vol, an engine that takes it, and BUMP"
+                  (and message (search "vol" message) (search "(make-engine :cos :process (make-gbm"
+                                                              message)
+                       (search "bump" message))))
+    (check-that "a GBM left to the market is still accepted"
+                (typep (make-engine :black-scholes :process (make-gbm)) 'black-scholes-engine))
+    (multiple-value-bind (v se engine) (auto-price call gbm40 m)
+      (declare (ignore se))
+      (check-that (format nil "a European under GBM vol 40% is priced at 40% (~,6F), not by Black-Scholes"
+                          v)
+                  (and (not (eq (engine-key engine) :black-scholes))
+                       (< (abs (- v (price call :black-scholes m40))) 1d-8))))
+    (multiple-value-bind (v se engine) (auto-price put gbm40 m)
+      (declare (ignore se))
+      (check-that (format nil "an American under GBM vol 40% is priced at 40% (~,6F), not by BAW" v)
+                  (and (not (eq (engine-key engine) :baw))
+                       (< (abs (- v (price put :binomial m40))) 1d-3))))
+    (check-that "a GBM left to the market still selects Black-Scholes and BAW"
+                (and (eq (engine-key (nth-value 2 (price call (make-gbm) m))) :black-scholes)
+                     (eq (engine-key (nth-value 2 (with-engines ((:american :baw))
+                                                    (price put (make-gbm) m))))
+                         :baw)))))
+
 (defun selection-test-checks ()
+  (explicit-parameter-checks)
   (constructor-checks)
   (option-name-checks)
   (designator-checks)

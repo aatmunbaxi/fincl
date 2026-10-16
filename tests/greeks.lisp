@@ -37,6 +37,12 @@ the key's own tolerance in the plist OVERRIDES; prints the offenders."
 
 (defun greeks-checks ()
   (format t "~&Greeks~%")
+  ;; 10^9 paths: a simulation started before the check would not finish.
+  (check-error "Monte Carlo Greeks with one batch signal before simulating"
+               (greeks (make-option (call 100) (expires #D"2027-09-24"))
+                       (make-engine :mc :n-paths 1000000000) (greek-market)
+                       :which '(:delta) :batches 1)
+               invalid-argument)
   (let* ((m (greek-market))
          (bs (make-instance 'black-scholes-engine))
          (d #D"2027-09-24"))
