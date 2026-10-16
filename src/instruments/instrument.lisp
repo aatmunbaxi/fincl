@@ -204,7 +204,15 @@ formula for the class or a subclass may refer to.")
   (defvar *formula-payoffs* (make-hash-table :test 'eq)
     "Names of payoff classes defined by DEFINE-PAYOFF, i.e. with a formula.")
 
-  (define-condition formula-payoff-superclass (style-warning simple-condition) ()
+  (define-condition formula-payoff-superclass (invalid-input)
+    ((payoff :initarg :payoff :reader formula-payoff-name)
+     (superclass :initarg :superclass :reader formula-payoff-superclass-name))
+    (:report (lambda (c s)
+               (format s "~S inherits from ~S, which has its own formula: engines with a ~
+closed form for ~S would price ~S with it. Inherit from a data class such as ~
+CALL-PUT-PAYOFF or STRIKE-PAYOFF instead."
+                       (formula-payoff-name c) (formula-payoff-superclass-name c)
+                       (formula-payoff-superclass-name c) (formula-payoff-name c))))
     (:documentation "DEFINE-PAYOFF was given a payoff with its own formula as
 a superclass. Engines with closed forms for that superclass would apply them
 to the subclass and return the superclass's price."))
@@ -239,7 +247,8 @@ closure makes no generic call per evaluation.
 
 Inherit from data classes such as CALL-PUT-PAYOFF or STRIKE-PAYOFF, not from
 a payoff with its own formula: engines with a closed form for the parent
-would price the subclass with it. Doing so signals a style warning.
+would price the subclass with it. Doing so signals FORMULA-PAYOFF-SUPERCLASS
+at macroexpansion.
 
   (define-payoff digital (call-put-payoff)
       ((level double-float :doc \"Pays 1 beyond this level.\"))
@@ -247,11 +256,7 @@ would price the subclass with it. Doing so signals a style warning.
     (if (plusp (* phi (- s level))) 1d0 0d0))"
   (dolist (super superclasses)
     (when (gethash super *formula-payoffs*)
-      (warn 'formula-payoff-superclass
-            :format-control "~S inherits from ~S, which has its own formula. Engines ~
-with a closed form for ~S would price ~S with it. Inherit from a data class ~
-such as STRIKE-PAYOFF instead."
-            :format-arguments (list name super super name))))
+      (error 'formula-payoff-superclass :payoff name :superclass super)))
   (let* ((documentation (when (and (stringp (first body)) (rest body)) (first body)))
          (body (if documentation (rest body) body))
          (own (iter (for (slot type . options) in slots)
