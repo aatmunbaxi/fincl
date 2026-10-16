@@ -3,80 +3,115 @@ Currently, this library implements pricing of a handful of path-independent opti
 
 Addition of other instruments such as bonds, swaps, CDs, etc. is planned.
 * Examples
+The blocks below form one session, run in order in a fresh image (=run-readme-check= in =tests/readme.lisp= does exactly that). Run Lisp inside the Nix dev shell (=nix develop=), which provides SBCL, the native libraries and the ASDF source registry.
+** Setting up
+#+begin_src lisp
+(ql:quickload :fincl)
+
+(defpackage #:fincl-session (:use #:cl #:fincl))
+(in-package #:fincl-session)
+
+;;; #D"2027-06-15" (dates) and #T"3M" (tenors) live in this named readtable.
+(named-readtables:in-readtable fincl:syntax)
+
+;;; Monte Carlo and parallel calibration run on an lparallel kernel.
+(setf lparallel:*kernel* (lparallel:make-kernel 4))
+#+end_src
 ** Pricing Options
 Like QuantLib, pricing options in =fincl= requires 3 components: an option, a market (an observation of spot price and date), and a choice of pricing engine.
 Depending on the type of option, the pricing engines can be analytic or approximations thereof. Any and all analytic pricing engines assume the stochastic dynamics of the underlying asset under which they were derived (e.g. geometric Brownian motion for Black-Scholes, any process with characteristic function for Fourier cosine).
 
+Rates, vols and dividends are decimals (=0.2d0= is 20%), times are years in the market's day count (ACT/365F by default), and =price= returns =(values npv standard-error engine)=; the standard error is NIL for deterministic engines.
 #+begin_src lisp
 (defparameter *today* #D"2026-10-01")
 
-(defparameter *euro-call* (option (call 110) (expires #T"1Y" :from *today)))
-(defparameter *amer-put* (option (put 80) (expires #T"1Y" :from *today)))
+(defparameter *market*
+  (make-market :valuation-date *today*
+               :underlyings '((:foo :spot 100 :vol 0.2d0 :dividend 0.012d0 :currency :usd))
+               :curves '((:usd-ois :rate 0.0425d0))))
 
-(defparameter *mkt* (make-market :valuation-date *today*
-                                :underlyings '((:foo :spot 100 :vol 0.2
-                                                     :dividend 0.012))
-                                :curves '((:rates :rate 0.0425))))
-
-(defparameter *black-scholes-formula* (make-instance 'black-scholes-engine)))
-(defparameter *BAW-engine* (make-instance 'barone-adesi-whaley-engine)))
-
-;;; Generic pricer with assumed Heston dynamics
-(defparameter *monte-carlo*
-  (make-instance 'monte-carlo-engine :engine (make-instance 'heston)))
+(defparameter *euro-call* (make-option (call 110) (expires #T"1Y" :from *today*)))
+(defparameter *amer-put* (make-option (put 80) (american) (expires #T"1Y" :from *today*)))
 
 ;;; Classical Black-Scholes formula
-(price *euro-call* *black-scholes-formula* *spot*)
+(price *euro-call* :black-scholes *market*)
 
-;;; Barone-Adesi & Whaley approximation of Americans
-(price *amer-put* *BAW-engine* *spot*)
+;;; Let fincl choose: the closed form for a European under GBM
+(price *euro-call* :auto *market*)
 
-;;; Generic Monte Carlo pricing with Heston dynamics
-(price *euro-call* *monte-carlo* *spot*)
-(price *euro-call* *amer-put* *spot*)
+;;; Barone-Adesi & Whaley approximation of Americans, and the binomial tree
+;;; that automatic selection prefers
+(price *amer-put* :baw *market*)
+(price *amer-put* :auto *market*)
+
+;;; Monte Carlo with Heston dynamics; parameters left out come from the market
+(price *euro-call*
+       (make-engine :mc
+                    :process (make-heston :xi 0.5d0)
+                    :n-paths 50000)
+       ,*market*)
+
+;;; Greeks (vega per unit vol, theta per calendar day) and Black implied vol
+(greeks *euro-call*
+        :black-scholes *market*
+        :which '(:delta :gamma :vega :theta))
+(implied-volatility *euro-call* 5d0 :black-scholes *market*)
+#+end_src
+
+Black-Scholes and Barone-Adesi-Whaley price with the market's own vol. To price with another vol, give it to a model through an engine that takes a process, or move the market's vol:
+#+begin_src lisp
+;;; Pricing via Fourier-cosine
+(price *euro-call* (make-engine :cos :process (make-gbm :vol 0.3d0)) *market*)
+;;; Price via BS with +0.1 volatility of underlying
+(price *euro-call* :black-scholes (bump *market* '(:vol :foo) '(:absolute 0.1d0)))
 #+end_src
 ** Lispy-ness and Extensibility
 =fincl= offers high level DSLs for creation of certain objects. One such example is options.
-To create an option, you can call =option= and pass various clauses specifying different properties of the option.
+To create an option, you can call =make-option= and pass various clauses specifying different properties of the option.
 #+begin_src lisp
-(defparameter *today* (make-date 2026 10 01))
-
 ;;; Vanilla European call K = 110. Explicit expiry
-(option (call 110) (expires #D"2027-10-01"))
+(make-option (call 110) (expires #D"2027-10-01"))
 
-;;; Vanilla American put K = 110. Tenor expiry
-(option (american) (put 95) (expires #T"1Y" :from *today*))
+;;; Vanilla American put K = 95. Tenor expiry
+(make-option (american) (put 95) (expires #T"1Y" :from *today*))
 
-;;; Bermudan (planned implementation). Expiry automatically added as exercise date
-(option (bermudan :dates (*today* #D"2027-01-01") (expires #T"6M" :from *today*)))
+;;; Bermudan. The last exercise date is the expiry
+(make-option (put 95) (bermudan :dates (list #D"2027-01-04" #D"2027-04-01" #D"2027-07-01")))
 #+end_src
 
 =fincl= attempts to offer the extensibility of common lisp to the user with macros.
-Currently, a user can define arbitrary path-independent payoff schemes for an instrument, which will automatically register a method for pricing with the Monte Carlo engine. 
+Currently, a user can define arbitrary path-independent payoff schemes for an instrument, which the Monte Carlo engine can price under any of its processes.
 
-For example, suppose we wanted to make a toy option payoff scheme that pays 1 unit of currency if the price of the underlying is above the price 80 at time of exercise (conversely for a put).
-The function =define-payoff= can be used to define such a payoff scheme:
+For example, suppose we wanted to make a toy option payoff scheme that pays 1 unit of currency if the price of the underlying is beyond the strike at time of exercise (above it for a call, below it for a put). This of course is just a binary option.
+The macro =define-payoff= can be used to define such a payoff scheme. It builds on =strike-payoff=, a payoff with a kind (call or put, which sets =phi=, a call-put adjusting coefficient) and a strike, but no payoff formula of its own.
+The user supplies the payoff function at definition:
 #+begin_src lisp
-(define-payoff plus80-payoff (strike-payoff)
+(define-payoff binary (strike-payoff)
     nil
     ;;; data needed for payoff kernel
     (spot)
-  ;;; logic in payoff: pays max(spot - 80, 0)
-  (if (plusp (* phi (- spot 80))) 1d0 0d0))
+  ;;; logic in payoff: pays 1 beyond the strike
+  (if (plusp (* phi (- spot strike))) 1d0 0d0))
 
-(defparameter *plus80-payoff* (make-instance 'plus80-payoff :kind :call :strike 110))
+;;; Every payoff defined this way is also a clause of MAKE-OPTION
+(defparameter *binary* (make-option (call 110) (binary) (expires #T"1Y" :from *today*)))
 #+end_src
 
-Pricing Europeans and Americans with Monte Carlo (respectively, Longstaff-Schwarz) with arbitrary underlying stochastic dynamics is now automatic:
+Pricing Europeans and Americans with Monte Carlo (respectively, Longstaff-Schwartz) with arbitrary underlying stochastic dynamics is now automatic:
 #+begin_src lisp
-(dolist (ex '(european-exercise american-exercise))
-  (price (make-instance 'option
-                        :payoff (option-payoff op)
-                        :exercise (make-instance ex
-                                                 :expiry (make-date 2027 10 01)))
-         ,*mc* *underlying*)
+(price *binary* (make-engine :mc :n-paths 100000) *market*)
+(price (make-option
+        (call 110)
+        (binary)
+        (american)
+        (expires #T"1Y" :from *today*))
+       (make-engine :mc :n-paths 50000 :process (make-heston :xi 0.5d0))
+       ,*market*)
 #+end_src
-Of course, no analytic methods can be made available given the information =fincl= knows.
+Of course, no analytic methods can be made available given the information =fincl= knows: the closed forms decline the payoff, and automatic selection falls back to Monte Carlo with an =engine-fallback= warning.
+#+begin_src lisp
+(handler-case (price *binary* :black-scholes *market*)
+  (unsupported-combination (c) (princ-to-string c)))
+#+end_src
 
 Addition of path-dependent payoffs (such as those that resemble Asian options) is planned.
-
