@@ -144,6 +144,14 @@ are excluded.
   (process-parameters 'heston) => (V0 KAPPA THETA XI RHO)"
   (mapcar #'c2mop:slot-definition-name (parameter-slots (class-designator process-or-class))))
 
+(defun explicit-parameters (process)
+  "Names of PROCESS's model parameters that hold a value, rather than NIL (the
+market default).
+
+  (explicit-parameters (make-gbm :vol 0.4d0)) => (VOL)
+  (explicit-parameters (make-gbm))            => NIL"
+  (remove-if-not (lambda (name) (slot-value process name)) (process-parameters process)))
+
 (defun find-managed-slot (object-or-class name)
   "The managed slot called NAME, matched by symbol name, so :RHO, 'RHO and
 FINCL::RHO all find the same slot."
