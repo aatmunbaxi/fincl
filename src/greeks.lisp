@@ -141,6 +141,7 @@ because the fitted exercise boundary moves discontinuously with the bumps.
   "Bump Greeks on BATCHES independent engines of N-PATHS / BATCHES paths each
 (seeds derived from the engine's), averaged; the standard errors are those
 of the batch means."
+  (check-input batches (integer 2) "an integer of at least 2 (the standard errors need two batches)")
   (let* ((per-batch (ceiling (n-paths e) batches))
          (estimates (iter (for b below batches)
                           (collect (bump-greeks instrument
