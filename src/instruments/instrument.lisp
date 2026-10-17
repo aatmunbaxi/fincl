@@ -113,11 +113,12 @@ or LSM engine.")
 (defgeneric exercise-mask (exercise market times)
   (:documentation "A SIMPLE-BIT-VECTOR as long as TIMES, with 1 at the grid
 indices where EXERCISE allows exercise. TIMES are the grid times in MARKET
-time: evenly spaced, from 0 at the valuation date to the expiry. Lattice and
-LSM engines read this instead of dispatching on the exercise class
-themselves. Bermudan dates on or before the valuation date are dropped,
-except that index 0 is set when exercise is allowed today; the others snap to
-the nearest grid index, clamped to the last one.
+time, from 0 at the valuation date to the expiry. Lattice and LSM engines
+read this instead of dispatching on the exercise class themselves. Bermudan
+dates on or before the valuation date are dropped, except that index 0 is
+set when exercise is allowed today; a date whose time is on the grid takes
+its index (MAKE-TIME-GRID puts every date there), and the others snap to the
+nearest index of an evenly spaced grid, clamped to the last one.
 
   (exercise-mask (make-instance 'american-exercise :expiry d) m times) ; all ones")
   (:method ((x european-exercise) market times)
@@ -135,8 +136,11 @@ the nearest grid index, clamped to the last one.
            (mask (make-array (1+ n) :element-type 'bit :initial-element 0)))
       (dolist (date (exercise-dates x))
         (when (date< today date)
-          ;; Nearest index of an evenly spaced grid.
-          (setf (sbit mask (min n (round (* n (market-time market date)) tau))) 1)))
+          (let ((time (market-time market date)))
+            (setf (sbit mask (or (position time times :test #'=)
+                                 ;; Nearest index of an evenly spaced grid.
+                                 (min n (round (* n time) tau))))
+                  1))))
       (when (exercise-allowed-p x today)
         (setf (sbit mask 0) 1))
       mask)))
@@ -164,7 +168,20 @@ market's day counter."
 
 (defclass path-feature () ())
 (defclass path-independent (path-feature) ())
-;; Barrier, Asian and lookback subclasses go here; engines dispatch on them.
+;; Barrier, Asian and lookback subclasses are in path-features.lisp; engines
+;; dispatch on them.
+
+;;; Mandatory dates: what a path simulation's time grid must contain exactly.
+
+(defgeneric exercise-mandatory-dates (exercise)
+  (:documentation "The dates an exercise needs on a time grid: its expiry,
+or every Bermudan date.")
+  (:method ((x exercise)) `(,(expiry x)))
+  (:method ((x bermudan-exercise)) (exercise-dates x)))
+
+(defgeneric path-mandatory-dates (path-feature)
+  (:documentation "The observation dates a path feature needs on a time grid.")
+  (:method ((f path-independent)) '()))
 
 ;;; --------------------------------------------------------------------
 ;;; Payoff protocol
@@ -225,7 +242,37 @@ package can say PHI without FINCL exporting it."
                              (appending (iter (for (variable . rest) in (gethash class *payoff-variables*))
                                               (collect (cons (intern (symbol-name variable))
                                                              rest)))))
-                       :key #'first :from-end t)))
+                       :key #'first :from-end t))
+
+  (defun payoff-class-forms (name superclasses slots documentation)
+    "The DEFCLASS of a DEFINE-PAYOFF or DEFINE-PATH-PAYOFF class NAME, with
+SLOTS as (slot-name type &key initform reader doc fact), and an
+INITIALIZE-INSTANCE method coercing reals into its double-float slots."
+    (let ((payoff (gensym "PAYOFF"))
+          (floats (iter (for (slot type) in slots)
+                        (when (eq type 'double-float) (collect slot)))))
+      `((defclass ,name ,superclasses
+          ,(iter (for (slot type . options) in slots)
+                 (collect `(,slot :initarg ,(a:make-keyword slot)
+                                  :reader ,(getf options :reader slot)
+                                  :type ,type
+                                  :initform ,(if (member :initform options)
+                                                 (getf options :initform)
+                                                 `(a:required-argument ,(a:make-keyword slot)))
+                                  ,@(when (getf options :fact)
+                                      `(:fact ,(getf options :fact)))
+                                  ,@(when (getf options :doc)
+                                      `(:documentation ,(getf options :doc))))))
+          (:metaclass component-class)
+          ,@(when documentation `((:documentation ,documentation))))
+        ;; Accept any real for a double-float slot, as MAKE-BS-MARKET does.
+        ,@(when floats
+            `((defmethod initialize-instance :after ((,payoff ,name) &key)
+                ,@(iter (for slot in floats)
+                        (collect `(let ((value (slot-value ,payoff ',slot)))
+                                    (check-input value real ,(format nil "a real ~(~A~)" slot))
+                                    (setf (slot-value ,payoff ',slot)
+                                          (float value 1d0))))))))))))
 
 (defmacro declare-payoff-variables (class &rest variables)
   "Record VARIABLES, each (variable reader type), as usable in DEFINE-PAYOFF
@@ -275,30 +322,7 @@ at macroexpansion.
          (eval-when (:compile-toplevel :load-toplevel :execute)
            (setf (gethash ',name *payoff-variables*) ',variables
                  (gethash ',name *formula-payoffs*) t))
-         (defclass ,name ,superclasses
-           ,(iter (for (slot type . options) in slots)
-                  (collect `(,slot :initarg ,(a:make-keyword slot)
-                                   :reader ,(getf options :reader slot)
-                                   :type ,type
-                                   :initform ,(if (member :initform options)
-                                                  (getf options :initform)
-                                                  `(a:required-argument ,(a:make-keyword slot)))
-                                   ,@(when (getf options :fact)
-                                       `(:fact ,(getf options :fact)))
-                                   ,@(when (getf options :doc)
-                                       `(:documentation ,(getf options :doc))))))
-           (:metaclass component-class)
-           ,@(when documentation `((:documentation ,documentation))))
-         ,@(let ((floats (iter (for (slot type) in slots)
-                               (when (eq type 'double-float) (collect slot)))))
-             ;; Accept any real for a double-float slot, as MAKE-BS-MARKET does.
-             (when floats
-               `((defmethod initialize-instance :after ((,payoff ,name) &key)
-                   ,@(iter (for slot in floats)
-                           (collect `(let ((value (slot-value ,payoff ',slot)))
-                                       (check-input value real ,(format nil "a real ~(~A~)" slot))
-                                       (setf (slot-value ,payoff ',slot)
-                                             (float value 1d0)))))))))
+         ,@(payoff-class-forms name superclasses slots documentation)
          (defmethod payoff-value ((,payoff ,name) ,observable)
            (let ((,observable (float ,observable 1d0)) ,@(bindings))
              (declare (double-float ,observable) ,@(declarations))

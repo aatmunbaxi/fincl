@@ -21,7 +21,8 @@
   (:export #:*display* #:*output-directory*
            #:simulate #:state-component #:engine-paths #:instantaneous-vol
            #:plot-paths #:plot-engine-paths #:plot-terminal
-           #:plot-log-returns #:plot-convergence #:close-all))
+           #:plot-log-returns #:plot-convergence #:close-all
+           #:plot-series #:plot-panels))
 
 (in-package #:fincl-viz)
 
@@ -96,6 +97,48 @@ Returns the PNG pathname for :FILE, NIL for :WINDOW."
 (defun close-all ()
   "Close every open matplotlib figure."
   (plt "close" "all"))
+
+;;; --------------------------------------------------------------------
+;;; Generic line plots, for any Lisp data
+;;; --------------------------------------------------------------------
+
+(defun draw-series (xs series)
+  "Draw SERIES on the current axes: each element is (label ys) or
+(label ys :style plist), YS a list or vector as long as XS."
+  (dolist (s series)
+    (destructuring-bind (label ys &key style) s
+      (apply #'plt "plot" (coerce xs 'list) (coerce ys 'list) :label label style))))
+
+(defun plot-series (name xs series &key title xlabel ylabel)
+  "One chart of SERIES against XS (see DRAW-SERIES), saved as NAME.png.
+
+  (plot-series "prices" spots `(("call" ,calls) ("put" ,puts)) :xlabel "spot")"
+  (begin-figure)
+  (draw-series xs series)
+  (finish-figure name :title title :xlabel xlabel :ylabel ylabel :legend t))
+
+(defun plot-panels (name panels &key title (columns 2))
+  "A grid of charts saved as NAME.png. Each of PANELS is a plist (:xs xs
+:series series :title title :xlabel x :ylabel y), SERIES as in DRAW-SERIES.
+
+  (plot-panels "greeks" `((:xs ,spots :series (("delta" ,deltas)) :title "Delta")
+                          (:xs ,spots :series (("gamma" ,gammas)) :title "Gamma")))"
+  (let ((rows (ceiling (length panels) columns)))
+    (begin-figure :size (list (* 6 columns) (* 4 rows)))
+    (let ((i 0))
+      (dolist (panel panels)
+        (destructuring-bind (&key xs series title xlabel ylabel) panel
+          (plt "subplot" rows columns (incf i))
+          (draw-series xs series)
+          (when title (plt "title" title))
+          (when xlabel (plt "xlabel" xlabel))
+          (when ylabel (plt "ylabel" ylabel))
+          (plt "grid" :alpha 0.3)
+          (when (rest series) (plt "legend" :fontsize 8)))))
+    ;; Leave the top strip for the figure's title.
+    (when title (plt "suptitle" title :fontsize 13))
+    (plt "tight_layout" :rect '(0 0 1 0.95))
+    (finish-figure name)))
 
 ;;; --------------------------------------------------------------------
 ;;; Simulation

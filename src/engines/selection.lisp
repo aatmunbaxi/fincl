@@ -69,7 +69,9 @@ use an engine that takes a process: (make-engine :cos :process ~A), or :binomial
 To change the market's vol instead, bump it, (bump market '(:vol underlying) '(:absolute x)), ~
 or build the market with that :vol"
                    explicit (class-name class) explicit
-                   (write-to-string (process-form process) :pretty nil :case :downcase)))))
+                   ;; Unqualified, whatever package the caller is in.
+                   (let ((*package* (find-package '#:fincl)))
+                     (write-to-string (process-form process) :pretty nil :case :downcase))))))
       (setf settings (a:remove-from-plist settings :process)))
     (iter (for (initarg nil) in-plist settings)
           (unless (member initarg initargs)
@@ -299,3 +301,16 @@ automatic selection runs once, on MARKET."
     (engine designator)
     ((or stochastic-process (eql :auto)) (nth-value 2 (price instrument designator market)))
     (t (ensure-engine designator))))
+
+;;; Monte Carlo control variates are priced by automatic selection
+;;; (monte-carlo.lisp's RESOLVE-CONTROL-VARIATES).
+(defun control-variate-price (x payoff path pricer e market)
+  "The price on MARKET of the variate (X PAYOFF PATH): by PRICER, a function
+of (option market) or an engine designator, or with NIL by automatic
+selection for E's process, Monte Carlo excluded."
+  (let ((option (make-instance 'option :payoff payoff :exercise x :path path)))
+    (float (cond ((functionp pricer) (funcall pricer option market))
+                 (pricer (values (price option pricer market)))
+                 (t (with-engines ((:fallback nil))
+                      (values (price option (process e) market)))))
+           1d0)))

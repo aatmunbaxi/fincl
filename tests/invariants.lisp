@@ -287,6 +287,48 @@ and negative rates, and a market with rate, dividend and vol term structure."
                  (invariant engine label `((1 ,(getf g :gamma))) 0 (format nil "~A: gamma >= 0" where))
                  (invariant engine label `((1 ,(getf g :vega))) 0 (format nil "~A: vega >= 0" where)))))))))
 
+;;; Path features: monthly-monitored barriers (so every process can be
+;;; simulated) and monthly arithmetic Asians.
+(defparameter *invariant-monitoring*
+  (iter (for month from 1 to 12)
+        (collect (add-tenor #D"2026-09-24" (make-tenor month :months)))))
+
+(defun path-feature-option (kind strike &rest feature)
+  (make-option-from-clauses `((,kind ,strike) ,@(when feature `(,feature))
+                              (:expires ,*invariant-expiry*))))
+
+(defun check-path-feature-invariants (engine market label gbm)
+  "Barrier parity, knock-in + knock-out = European (no rebate), for down
+barriers at 85 and up barriers at 120, at the money; and, under GBM, arithmetic Asian call
+<= European call."
+  (dolist (kind '(:call :put))
+    ;; One strike: the stepped Lévy processes make these the sweep's
+    ;; slowest prices.
+    (dolist (k '(100))
+      (let ((european (price-or-status (path-feature-option kind k) engine market))
+            (where (format nil "~(~A~) K=~D" kind k)))
+        (dolist (barrier '((:down 85) (:up 120)))
+          (destructuring-bind (direction level) barrier
+            (flet ((knock (knock)
+                     (price-or-status
+                      (path-feature-option kind k :barrier
+                                           (a:format-symbol :keyword "~A-AND-~A" direction knock)
+                                           level :monitoring *invariant-monitoring*)
+                      engine market)))
+              (let ((in (knock :in)) (out (knock :out)))
+                (invariant engine label `((1 ,in) (1 ,out) (-1 ,european)) 0
+                           (format nil "~A: ~(~A~) in + out >= European" where direction))
+                (invariant engine label `((-1 ,in) (-1 ,out) (1 ,european)) 0
+                           (format nil "~A: ~(~A~) in + out <= European" where direction))))))
+        (when (and gbm (eq kind :call))
+          (invariant engine label
+                     `((1 ,european)
+                       (-1 ,(price-or-status
+                             (path-feature-option kind k :average :arithmetic
+                                                  :dates *invariant-monitoring*)
+                             engine market)))
+                     0 (format nil "~A: Asian <= European" where)))))))
+
 (defun invariant-sweep (market market-label processes)
   "Check every tested engine on MARKET; return the coverage rows."
   (let ((rows '()))
@@ -311,6 +353,8 @@ and negative rates, and a market with rate, dividend and vol term structure."
                             (check-invariants engine grid market style where)
                             (setf (gethash (list style label) cells)
                                   (cell-status grid style *cell-failed*))))
+                        (let ((*cell-failed* nil))
+                          (check-path-feature-invariants engine market where (gbm-p process)))
                         ;; Bump Greeks need named factors: composite markets only.
                         (when (typep market 'composite-market)
                           (let ((*cell-failed* nil))

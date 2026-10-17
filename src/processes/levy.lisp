@@ -124,7 +124,9 @@ MAKE-STEPPER and TERMINAL-SAMPLER are built on it.")
     (lambda (state normals j)
       (declare (type (simple-array double-float (*)) state normals) (fixnum j))
       (setf (aref state 0)
-            (* (aref state 0) (exp (the double-float (funcall increment normals j))))))))
+            (* (aref state 0) (exp (the double-float (funcall increment normals j)))))
+      ;; Steppers return nothing: a double-float result would be boxed.
+      nil)))
 
 (defmethod terminal-sampler ((p exponential-levy) market time)
   (let ((increment (log-increment-sampler

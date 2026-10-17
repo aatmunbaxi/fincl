@@ -26,6 +26,7 @@
                 :components ((:file "special-functions")
                              (:file "distributions")
                              (:file "random")
+                             (:static-file "sobol-directions.sexp")
                              (:file "lets-be-rational")
                              (:file "implied-normal")
                              (:file "fourier")
@@ -74,6 +75,7 @@
                 :components ((:file "instrument")
                              (:file "options")
                              (:file "option-language")
+                             (:file "path-features")
                              (:file "indexes")
                              (:file "cashflows")
                              (:file "rate-helpers")
@@ -97,8 +99,10 @@
                (:module "engines"
                 :serial t
                 :components ((:file "engine")
+                             (:file "paths")
                              (:file "analytic")
                              (:file "monte-carlo")
+                             (:file "path-payoffs")
                              (:file "binomial")
                              (:file "cos")
                              (:file "selection")
@@ -108,7 +112,8 @@
                ;; Composite markets are priced through views; needs PRICE.
                (:file "pricing")
                (:file "implied-volatility")
-               (:file "greeks"))
+               (:file "greeks")
+               (:file "mc-greeks"))
   :in-order-to ((test-op (test-op "fincl/tests"))))
 
 (defsystem "fincl/tests"
@@ -141,6 +146,7 @@
                (:file "option-language")
                (:file "golden")
                (:file "rates-instruments")
+               (:file "paths")
                (:file "readme")
                ;; The runners call the checks above; keep them last.
                (:file "tests"))

@@ -66,7 +66,21 @@ market's total variance falls."
                (optimize (speed 3) (safety 0)))
       (setf (aref state 0)
             (* (aref state 0) (exp (+ (aref drift j)
-                                      (* (aref diffusion j) (aref normals 0)))))))))
+                                      (* (aref diffusion j) (aref normals 0))))))
+      ;; Steppers return nothing: a double-float result would be boxed.
+      nil)))
+
+(defmethod bridge-variance ((p gbm) market times)
+  (declare (type (simple-array double-float (*)) times))
+  (let ((variances (iter (with n = (1- (length times)))
+                         (for (t0 t1) in-intervals times)
+                         (collect-double (gbm-forward-variance p market t0 t1) into v length n)
+                         (finally (return v)))))
+    (declare (type (simple-array double-float (*)) variances))
+    (lambda (state j acc slot)
+      (declare (ignore state) (fixnum j slot) (type (simple-array double-float (*)) acc))
+      (setf (aref acc slot) (aref variances j))
+      nil)))
 
 (defmethod increment-characteristic-function ((p gbm) market t0 t1)
   (let* ((variance (gbm-forward-variance p market t0 t1))

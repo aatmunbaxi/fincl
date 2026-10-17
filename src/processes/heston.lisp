@@ -52,7 +52,8 @@ martingale correction) or :FULL-TRUNCATION (Euler)."))
 expiry first; the one-year fallback serves direct callers such as plots."
   (or (v0 process) (heston-default-v0 process market horizon)))
 
-(defmethod process-regressors ((p heston)) '(0 1))   ; spot and variance
+(defmethod process-regressors ((p heston)) '(0 1))
+(defmethod process-state-names ((p heston)) '(:spot :variance))   ; spot and variance
 
 (defmethod initial-state ((p heston) market)
   (let ((state (make-array 2 :element-type 'double-float)))
@@ -66,6 +67,18 @@ expiry first; the one-year fallback serves direct callers such as plots."
     (ecase (scheme p)
       (:quadratic-exponential (heston-qe-stepper p market times))
       (:full-truncation (heston-full-truncation-stepper p market times)))))
+
+;;; Given the variance at the start of a step, ln S is Gaussian over it with
+;;; variance v+ dt (both schemes freeze or integrate v; this is the
+;;; first-order bridge variance).
+(defmethod bridge-variance ((p heston) market times)
+  (declare (ignore market))
+  (let ((dt (interval-lengths times)))
+    (declare (type (simple-array double-float (*)) dt))
+    (lambda (state j acc slot)
+      (declare (type (simple-array double-float (*)) state acc) (fixnum j slot))
+      (setf (aref acc slot) (* (max 0d0 (aref state 1)) (aref dt j)))
+      nil)))
 
 (defun heston-full-truncation-stepper (p market times)
   (declare (type (simple-array double-float (*)) times))
@@ -99,7 +112,9 @@ expiry first; the one-year fallback serves direct callers such as plots."
               (aref state 1)
               (+ v
                  (* kappa (- theta v+) dt)
-                 (* xi sqrt-v sqrt-dt z2)))))))
+                 (* xi sqrt-v sqrt-dt z2))))
+      ;; Steppers return nothing: a double-float result would be boxed.
+      nil)))
 
 (defconstant +qe-psi-critical+ 1.5d0
   "Andersen's switching level psi_c between the quadratic and exponential
@@ -191,7 +206,9 @@ the log spot given the variance path."
                            (- log-m) (* -0.5d0 k3 v)   ; K0* + K1 V
                            (* k2 v-next)
                            (* (sqrt (* k3 (+ v v-next))) (aref normals 1)))))
-              (aref state 1) v-next)))))
+              (aref state 1) v-next))
+      ;; Steppers return nothing: a double-float result would be boxed.
+      nil)))
 
 ;;; --------------------------------------------------------------------
 ;;; Characteristic function (for Fourier engines)

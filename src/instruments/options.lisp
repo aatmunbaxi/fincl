@@ -73,7 +73,37 @@ to a subclass and return the vanilla price.
   ;; Options are built rarely, so check them once here.
   (check-input (slot-value o 'payoff) payoff)
   (check-input (slot-value o 'exercise) exercise)
-  (check-input (slot-value o 'path) path-feature))
+  (check-input (slot-value o 'path) path-feature)
+  (check-path-feature (slot-value o 'path) (slot-value o 'payoff) (slot-value o 'exercise)))
+
+(defgeneric check-path-feature (path payoff exercise)
+  (:documentation "Signal an INVALID-INPUT if PATH cannot be combined with
+PAYOFF and EXERCISE. Called when an option is made; the default accepts.")
+  (:method (path payoff exercise) (declare (ignore path payoff exercise)) nil))
+
+(defgeneric validate-path-feature (path market)
+  (:documentation "Signal a PRICING-ERROR if PATH cannot be priced on MARKET.
+Called once per PRICE; the default accepts.")
+  (:method (path market) (declare (ignore path market)) nil))
+
+(defgeneric payoff-mandatory-dates (payoff)
+  (:documentation "The dates a payoff with its own path logic (DEFINE-PATH-PAYOFF)
+needs on a time grid.")
+  (:method ((p payoff)) '()))
+
+(defgeneric instrument-mandatory-dates (instrument)
+  (:documentation "Every date a path simulation of INSTRUMENT must hit
+exactly: exercise dates, the expiry, observation and payment dates. Sorted,
+without duplicates.
+
+  (instrument-mandatory-dates (make-option (put 100) (bermudan :dates ds))) => DS"))
+
+(defmethod instrument-mandatory-dates ((o option))
+  (remove-duplicates (sort (append (exercise-mandatory-dates (option-exercise o))
+                                   (path-mandatory-dates (option-path o))
+                                   (payoff-mandatory-dates (option-payoff o)))
+                           #'date<)
+                     :test #'date=))
 
 ;;; Options are built with the option construction language
 ;;; (option-language.lisp): (make-option (put 40) (american) (expires #D"...")).

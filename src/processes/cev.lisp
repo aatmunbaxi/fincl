@@ -63,8 +63,26 @@ ATM-forward Black vol to T.")
                 (let ((next (+ (* s (aref growth j))
                                (* sigma (expt s beta) (aref sqrt-dt j) (aref normals 0)))))
                   (declare (double-float next))
-                  (setf (aref state 0) (max 0d0 next)))))))
+                  (setf (aref state 0) (max 0d0 next)))))
+            ;; Steppers return nothing: a double-float result would be boxed.
+            nil))
         (cev-log-euler-stepper sigma exponent sqrt-dt mu))))
+
+;;; The log-Euler step is Gaussian in ln S with the local vol frozen at the
+;;; start of the step; the absorbing scheme is not a diffusion in ln S.
+(defmethod bridge-variance ((p cev) market times)
+  (when (eq (scheme p) :log-euler)
+    (let* ((p (resolve-process p market (aref times (1- (length times)))))
+           (sigma (sigma p))
+           (exponent (- (beta p) 1d0))
+           (dt (interval-lengths times)))
+      (declare (double-float sigma exponent) (type (simple-array double-float (*)) dt))
+      (lambda (state j acc slot)
+        (declare (type (simple-array double-float (*)) state acc) (fixnum j slot))
+        (let ((s (aref state 0)))
+          (setf (aref acc slot)
+                (if (plusp s) (* (expt (* sigma (expt s exponent)) 2) (aref dt j)) 0d0)))
+        nil))))
 
 (defun cev-log-euler-stepper (sigma exponent sqrt-dt mu)
   (declare (double-float sigma exponent)
@@ -86,4 +104,6 @@ ATM-forward Black vol to T.")
                     ;; exp(-deviation^2 / 2 + ...) underflows: the step lands at 0.
                     0d0
                     (* s (exp (+ (- (aref mu j) (* 0.5d0 deviation deviation))
-                                 (* deviation (aref normals 0))))))))))))
+                                 (* deviation (aref normals 0))))))))))
+    ;; Steppers return nothing: a double-float result would be boxed.
+    nil))

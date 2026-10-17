@@ -44,6 +44,9 @@
 (define-fact :payoff-class (satisfies payoff-class-name-p) "The payoff's class name.")
 (define-fact :payoff-initargs list "Initargs for the payoff, beside its :FACT slots.")
 (define-fact :underlying keyword "The market underlying an instrument refers to.")
+(define-fact :path-kind (member :independent :asian :barrier :lookback)
+  "What the payoff depends on beside the terminal value: nothing, an average,
+a barrier, or the path's extremum.")
 (define-fact :currency keyword "The currency an instrument pays in.")
 
 ;;; --------------------------------------------------------------------
@@ -74,7 +77,7 @@ A vanilla European call K=110 with 1Y expiry
 (make-option (call 110) (expiry #T\"1Y\" :from +today+))")
   (:macro make-option)
   (:function make-option-from-clauses)
-  (:defaults :exercise-style :european :payoff-class 'vanilla-payoff)
+  (:defaults :exercise-style :european :payoff-class 'vanilla-payoff :path-kind :independent)
   (:assemble assemble-option)
   (:resolver resolve-payoff-clause (:payoff-class :payoff-initargs)
    "(class :initarg value ...) for a payoff class defined with DEFINE-PAYOFF"))
@@ -195,6 +198,11 @@ given, by ROLL-CONVENTION; the expiry stays as given."
                  (not (date= (a:lastcar (fact :exercise-dates)) (fact :expiry))))
         (error 'conflicting-clauses :fact :expiry :earlier dates-source :later expiry-source)))))
 
+(defgeneric assemble-path-feature (kind)
+  (:documentation "The path feature of kind KIND (the :PATH-KIND fact), built
+from the facts in scope.")
+  (:method ((kind (eql :independent))) (make-instance 'path-independent)))
+
 (defun assemble-option ()
   (let* ((payoff (apply #'make-from-facts (require-fact :payoff-class)
                         (values (fact :payoff-initargs))))
@@ -203,7 +211,8 @@ given, by ROLL-CONVENTION; the expiry stays as given."
                      (:american (make-from-facts 'american-exercise))
                      (:bermudan (check-bermudan-expiry)
                                 (make-from-facts 'bermudan-exercise)))))
-    (make-from-facts 'option :payoff payoff :exercise exercise)))
+    (make-from-facts 'option :payoff payoff :exercise exercise
+                             :path (assemble-path-feature (require-fact :path-kind)))))
 
 (defun make-vanilla-option (kind strike expiry &key (exercise :european) from calendar
                                                     (roll-convention :following) end-of-month

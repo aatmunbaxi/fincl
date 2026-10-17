@@ -136,13 +136,28 @@ because the fitted exercise boundary moves discontinuously with the bumps.
 ;;; Monte Carlo: independent batches for standard errors
 ;;; --------------------------------------------------------------------
 
+(defparameter *estimator-greeks*
+  '((:pathwise :delta :vega) (:likelihood-ratio :delta))
+  "The Greeks each Monte Carlo estimator (mc-greeks.lisp) gives.")
+
+(declaim (ftype function estimator-greeks))
+
 (defmethod greeks (instrument (e monte-carlo-engine) market
-                   &key (which *greek-keys*) bumps (batches 10))
-  "Bump Greeks on BATCHES independent engines of N-PATHS / BATCHES paths each
-(seeds derived from the engine's), averaged; the standard errors are those
-of the batch means."
+                   &key which bumps (batches 10) (method :bump))
+  "With METHOD :BUMP (the default), bump Greeks on BATCHES independent
+engines of N-PATHS / BATCHES paths each (seeds derived from the engine's),
+averaged; the standard errors are those of the batch means. METHOD
+:PATHWISE gives :delta and :vega, :LIKELIHOOD-RATIO :delta, from one
+simulation under GBM (mc-greeks.lisp).
+
+  (greeks asian (make-engine :mc) m :method :pathwise)"
+  (unless (eq method :bump)
+    (return-from greeks
+      (estimator-greeks instrument e market method
+                        (or which (rest (assoc method *estimator-greeks*))))))
   (check-input batches (integer 2) "an integer of at least 2 (the standard errors need two batches)")
-  (let* ((per-batch (ceiling (n-paths e) batches))
+  (let* ((which (or which *greek-keys*))
+         (per-batch (ceiling (n-paths e) batches))
          (estimates (iter (for b below batches)
                           (collect (bump-greeks instrument
                                                 (derive-engine e :n-paths per-batch

@@ -175,7 +175,119 @@ path i's normals from the first."
               (lambda (i)
                 (setf path i block 0 has-spare nil))))))
 
-(defun make-normal-filler (engine chunk-index)
+;;; Randomized quasi-Monte Carlo. Base path i is point (mod i per) of
+;;; randomization (floor i per), PER = ceiling(n / 16), each randomization
+;;; an independently scrambled and shifted Sobol' sequence. A path's
+;;; dimensions are its Brownian-bridge coordinates, terminal value first,
+;;; factor by factor: dimension k F + f is bridge coordinate k of factor f,
+;;; so the best-distributed dimensions decide each factor's terminal value.
+;;; The bridge maps the point's normals to the same number of independent
+;;; standard normals (each step's increment over its standard deviation),
+;;; which the stepper consumes as usual.
+
+(defconstant +rqmc-randomizations+ 16
+  "Independent randomizations of the Sobol' points; the standard error is
+that of their means.")
+
+(defun points-per-randomization (n)
+  (max 1 (ceiling n +rqmc-randomizations+)))
+
+(defstruct (sobol-plan (:constructor %make-sobol-plan))
+  "Everything a :SOBOL filler shares across chunks: per-randomization
+direction tables and shifts, and the Brownian-bridge construction over the
+grid. Read-only."
+  (directions nil :type simple-vector :read-only t)
+  (shifts nil :type simple-vector :read-only t)
+  (per 1 :type fixnum :read-only t)
+  (n-factors 1 :type fixnum :read-only t)
+  ;; Bridge: W[n] = sqrt(t_n) z_0, then for k = 1 .. n - 1, W[mid_k] =
+  ;; a_k W[left_k] + b_k W[right_k] + c_k z_k.
+  (left nil :type (simple-array fixnum (*)) :read-only t)
+  (mid nil :type (simple-array fixnum (*)) :read-only t)
+  (right nil :type (simple-array fixnum (*)) :read-only t)
+  (a nil :type double-vector :read-only t)
+  (b nil :type double-vector :read-only t)
+  (c nil :type double-vector :read-only t)
+  (terminal-sd 0d0 :type double-float :read-only t)
+  (step-sd nil :type double-vector :read-only t))
+
+(defun make-sampling-plan (engine times n-factors n-base)
+  "The SOBOL-PLAN for paths on TIMES with N-FACTORS normals per step and
+N-BASE base paths, or NIL unless ENGINE's rng is :SOBOL."
+  (when (eq (rng engine) :sobol)
+    (let* ((n (1- (length times)))
+           (key (ldb (byte 64 0) (seed engine)))
+           (tables (iter (for r below +rqmc-randomizations+)
+                         (collect (multiple-value-list
+                                   (sobol-tables (* n n-factors) :key key :randomization r)))))
+           (left '()) (mid '()) (right '()) (a '()) (b '()) (c '()))
+      ;; Breadth-first bisection of [0, n], so coarse points come first.
+      (iter (with queue = `((0 . ,n)))
+            (while queue)
+            (for (l . r) = (pop queue))
+            (when (> (- r l) 1)
+              (let* ((m (floor (+ l r) 2))
+                     (tl (aref times l)) (tm (aref times m)) (tr (aref times r)))
+                (push l left) (push m mid) (push r right)
+                (push (/ (- tr tm) (- tr tl)) a)
+                (push (/ (- tm tl) (- tr tl)) b)
+                (push (sqrt (/ (* (- tm tl) (- tr tm)) (- tr tl))) c)
+                (setf queue (append queue `((,l . ,m) (,m . ,r)))))))
+      (flet ((fixnums (list) (coerce (reverse list) '(simple-array fixnum (*))))
+             (doubles (list) (coerce (reverse list) 'double-vector)))
+        (%make-sobol-plan :directions (map 'simple-vector #'first tables)
+                          :shifts (map 'simple-vector #'second tables)
+                          :per (points-per-randomization n-base)
+                          :n-factors n-factors
+                          :left (fixnums left) :mid (fixnums mid) :right (fixnums right)
+                          :a (doubles a) :b (doubles b) :c (doubles c)
+                          :terminal-sd (sqrt (aref times n))
+                          :step-sd (map 'double-vector #'sqrt (interval-lengths times)))))))
+
+(defun make-sobol-normal-filler (plan)
+  "(values fill start-path) for the :SOBOL rng from PLAN. START-PATH computes
+the path's point (from the previous one when it is the next point of the same
+randomization) and its normals for every step; each FILL copies the next
+step's N-FACTORS normals."
+  (let* ((n-factors (sobol-plan-n-factors plan))
+         (step-sd (sobol-plan-step-sd plan))
+         (n (length step-sd))
+         (per (sobol-plan-per plan))
+         (point (make-array (* n n-factors) :element-type 'word64))
+         (w (make-array (1+ n) :element-type 'double-float :initial-element 0d0))
+         (normals (make-array (* n n-factors) :element-type 'double-float))
+         (randomization -1) (index -1) (cursor 0))
+    (declare (fixnum n n-factors per randomization index cursor)
+             (type double-vector step-sd w normals))
+    (values (lambda (vec)
+              (declare (type (simple-array double-float (*)) vec))
+              (replace vec normals :start2 cursor)
+              (incf cursor n-factors)
+              vec)
+            (lambda (i)
+              (declare (fixnum i))
+              (multiple-value-bind (r p) (floor i per)
+                (let ((directions (svref (sobol-plan-directions plan) r)))
+                  (if (and (= r randomization) (= p (1+ index)))
+                      (sobol-next! point directions index)
+                      (sobol-point! point directions (svref (sobol-plan-shifts plan) r) p))
+                  (setf randomization r index p cursor 0)))
+              (let ((left (sobol-plan-left plan)) (mid (sobol-plan-mid plan))
+                    (right (sobol-plan-right plan))
+                    (a (sobol-plan-a plan)) (b (sobol-plan-b plan)) (c (sobol-plan-c plan)))
+                (dotimes (f n-factors)
+                  (flet ((z (k) (norm-quantile (word64-to-open-unit (aref point (+ (* k n-factors) f))))))
+                    (setf (aref w n) (* (sobol-plan-terminal-sd plan) (z 0)))
+                    (dotimes (k (length mid))
+                      (setf (aref w (aref mid k))
+                            (+ (* (aref a k) (aref w (aref left k)))
+                               (* (aref b k) (aref w (aref right k)))
+                               (* (aref c k) (z (1+ k))))))
+                    (dotimes (j n)
+                      (setf (aref normals (+ (* j n-factors) f))
+                            (/ (- (aref w (1+ j)) (aref w j)) (aref step-sd j)))))))))))
+
+(defun make-normal-filler (engine chunk-index &optional plan)
   "Normals for work unit CHUNK-INDEX, as (values fill start-path). FILL is a
 closure (lambda (vec)) that fills VEC, a (SIMPLE-ARRAY DOUBLE-FLOAT (*)),
 with standard normals; call (funcall start-path i) before the normals of path
@@ -184,12 +296,14 @@ generic call and no sampler test per draw, and fills a vector rather than
 returning one normal, so no double-float is boxed on the way out.
 
 Under the :COUNTER rng a path's normals depend only on the seed and the path
-index (START-PATH selects them), so results do not depend on the chunking.
-Under a stream rng the chunk has one stream and START-PATH does nothing."
-  (if (eq (rng engine) :counter)
-      (make-counter-normal-filler engine)
-      (values (make-stream-normal-filler engine chunk-index)
-              (lambda (i) (declare (ignore i))))))
+index (START-PATH selects them), so results do not depend on the chunking;
+so under :SOBOL, whose PLAN (MAKE-SAMPLING-PLAN) fixes the grid. Under a
+stream rng the chunk has one stream and START-PATH does nothing."
+  (case (rng engine)
+    (:counter (make-counter-normal-filler engine))
+    (:sobol (make-sobol-normal-filler plan))
+    (t (values (make-stream-normal-filler engine chunk-index)
+               (lambda (i) (declare (ignore i)))))))
 
 (declaim (inline fill-normals negate-into))
 
@@ -243,6 +357,24 @@ partners of the first: element i is (SAMPLES[i] + SAMPLES[i + n/2]) / 2."
     (values (* discount (sts:mean accumulator))
             (* discount (sqrt (/ (sts:variance accumulator) n))))))
 
+(defun summarize-samples (engine samples &key (discount 1d0))
+  "Mean and standard error of the per-path SAMPLES (in base-path order).
+Under :SOBOL the samples of each randomization are averaged first, and the
+standard error is that of the randomization means."
+  (declare (type double-vector samples))
+  (if (eq (rng engine) :sobol)
+      (let* ((n (length samples))
+             (per (points-per-randomization n)))
+        (summarize (moments (iter (for start from 0 below n by per)
+                                  (for end = (min n (+ start per)))
+                                  (collect-double (/ (iter (for i from start below end)
+                                                           (sum (aref samples i)))
+                                                     (- end start))
+                                                  into means length (ceiling n per))
+                                  (finally (return means))))
+                   :discount discount))
+      (summarize (moments samples) :discount discount)))
+
 ;;; --------------------------------------------------------------------
 ;;; Path generation
 ;;; --------------------------------------------------------------------
@@ -259,41 +391,34 @@ each time slice is contiguous, which is what the LSM backward sweep reads."
   (%make-path-matrix n-paths n-times
                      (make-array (* n-paths n-times) :element-type 'double-float)))
 
-(defun step-discounts (market tau n-steps)
-  "Discount factors between consecutive grid times, from the market protocol
-rather than a single flat rate: DF(t_{j+1}) / DF(t_j)."
-  (let ((v (make-array n-steps :element-type 'double-float))
-        (dt (/ tau n-steps)))
-    (dotimes (j n-steps v)
-      (setf (aref v j) (/ (discount-factor market (* (1+ j) dt))
-                          (discount-factor market (* j dt)))))))
-
 (defun total-paths (engine)
   "Paths the engine simulates: N-PATHS, rounded up to even under antithetics."
   (if (antithetic engine) (* 2 (ceiling (n-paths engine) 2)) (n-paths engine)))
 
-(defun map-paths (engine market tau make-visitor)
-  "Step every path of ENGINE's process, resolved at TAU, over a uniform grid
-on [0, TAU] of N-STEPS steps and show each state to a visitor, without
-storing paths. Work is split into N-CHUNKS chunks run in parallel. Under the
+(defun map-paths (engine market tau make-visitor &key times)
+  "Step every path of ENGINE's process, resolved at TAU, over TIMES (default
+the uniform grid on [0, TAU] of N-STEPS steps) and show each state to a
+visitor, without storing paths. Work is split into N-CHUNKS chunks run in parallel. Under the
 :COUNTER rng path i's normals depend only on the seed and i; under a stream
 rng each chunk has its own stream.
 
 For each chunk, (funcall MAKE-VISITOR chunk-index start end n-base) returns
 (values visit finish). The chunk steps the base paths [START, END) and, under
 antithetics, their partners [START + N-BASE, END + N-BASE). It calls
-(visit path-index step state) at steps 0 .. N-STEPS of every path; STATE is
+(visit path-index step state) at every grid index of every path; STATE is
 reused, so copy anything kept. It calls (finish) when the chunk is done.
 Returns the FINISH values in chunk order, whatever the worker count.
 
   (map-paths e m 1d0 (lambda (chunk start end n-base)
                        (values (lambda (i j state) ...) (lambda () result))))"
-  (let* ((n-steps (n-steps engine))
+  (let* ((times (or times (uniform-time-grid tau (n-steps engine))))
+         (n-steps (1- (length times)))
          (p (-> engine process (resolve-process market tau)))
          (anti (antithetic engine))
          (n-base (if anti (/ (total-paths engine) 2) (total-paths engine)))
-         (stepper (make-stepper p market (uniform-time-grid tau n-steps))) ; dispatch once
+         (stepper (make-stepper p market times)) ; dispatch once
          (n-factors (process-factors p))
+         (plan (make-sampling-plan engine times n-factors n-base))
          (template (initial-state p market))
          (ranges (chunk-ranges n-base (n-chunks engine))))
     (declare (type function stepper make-visitor)
@@ -302,7 +427,7 @@ Returns the FINISH values in chunk order, whatever the worker count.
              (multiple-value-bind (visit finish)
                  (funcall make-visitor index (car range) (cdr range) n-base)
                (declare (type function visit finish))
-               (multiple-value-bind (g start-path) (make-normal-filler engine index)
+               (multiple-value-bind (g start-path) (make-normal-filler engine index plan)
                  (declare (type function start-path))
                  (let ((state (copy-seq template))
                        (mirror (copy-seq template))
@@ -331,14 +456,15 @@ Returns the FINISH values in chunk order, whatever the worker count.
       (with-pricing-kernel ()
         (lp:pmap 'list #'run-chunk ranges (a:iota (length ranges)))))))
 
-(defun simulate-state-paths (engine market tau components)
+(defun simulate-state-paths (engine market tau components &key times)
   "One PATH-MATRIX per state component in COMPONENTS (indices into the state
-vector), in the same order: (total paths) x (N-STEPS + 1), antithetic
-partners in the second half. Works for any process: the engine only calls
-MAKE-STEPPER."
+vector), in the same order: (total paths) x (grid points), on TIMES (default
+the uniform grid of N-STEPS steps), antithetic partners in the second half.
+Works for any process: the engine only calls MAKE-STEPPER."
   (let* ((n-paths (total-paths engine))
+         (n-times (if times (length times) (1+ (n-steps engine))))
          (matrices (iter (repeat (length components))
-                         (collect (make-path-matrix n-paths (1+ (n-steps engine))))))
+                         (collect (make-path-matrix n-paths n-times))))
          (datas (map 'simple-vector #'path-matrix-data matrices))
          (indices (coerce components '(simple-array fixnum (*)))))
     (declare (fixnum n-paths) (type (simple-array fixnum (*)) indices))
@@ -353,7 +479,8 @@ MAKE-STEPPER."
                                (setf (aref (the (simple-array double-float (*)) (svref datas k))
                                            cell)
                                      (aref state (aref indices k))))))
-                         (constantly nil))))
+                         (constantly nil)))
+               :times times)
     matrices))
 
 (defun simulate-paths (engine market tau)
@@ -374,10 +501,11 @@ the chunking."
          (n (if anti (ceiling (n-paths engine) 2) (n-paths engine)))
          (n-factors (process-factors (process engine)))
          (samples (make-array n :element-type 'double-float))
+         (plan (make-sampling-plan engine (coerce `(0d0 ,(float tau 1d0)) 'double-vector) n-factors n))
          (ranges (chunk-ranges n (n-chunks engine))))
     (declare (type function sampler kernel) (fixnum n n-factors))
     (flet ((run-chunk (range index)
-             (multiple-value-bind (g start-path) (make-normal-filler engine index)
+             (multiple-value-bind (g start-path) (make-normal-filler engine index plan)
                (declare (type function start-path))
                (let ((normals (make-array n-factors :element-type 'double-float))
                      (anti-normals (make-array n-factors :element-type 'double-float)))
@@ -394,43 +522,236 @@ the chunking."
                          (setf (aref samples i) v)))))))
       (with-pricing-kernel ()
         (lp:pmapc #'run-chunk ranges (a:iota (length ranges))))
-      (summarize (moments samples) :discount (discount-factor market tau)))))
+      (summarize-samples engine samples :discount (discount-factor market tau)))))
 
-;;; Any payoff: a European needs only the observable at expiry, and the
-;;; payoff reaches the engine as its PAYOFF-KERNEL.
-(defmethod price-mc ((x european-exercise) (p payoff)
-                     (f path-independent) (e monte-carlo-engine) market)
+;;; Any payoff and path feature: a payoff that needs only the observable at
+;;; expiry uses the process's terminal sampler when it has one; everything
+;;; else steps full paths through the payoff's PATH-KERNEL.
+(defmethod price-mc ((x european-exercise) (p payoff) (f path-feature)
+                     (e monte-carlo-engine) market)
   (let* ((tau (time-to-expiry x market))
-         (kernel (payoff-kernel p))
-         (sampler (-> e process (resolve-process market tau) (terminal-sampler market tau))))
+         (sampler (and (equal (payoff-requirements p f) '(:terminal))
+                       (null (control-variates e))
+                       (-> e process (resolve-process market tau) (terminal-sampler market tau)))))
     (if sampler
-        (price-european-by-sampling sampler e market tau kernel)
-        ;; No exact terminal law: step the paths, keeping only the terminal
-        ;; payoffs, one slot per base path, and take the statistics in index
-        ;; order. Under antithetics a sample is the mean of a pair, as in the
-        ;; terminal shortcut, so the standard error is that of the pair
-        ;; estimator.
-        (let* ((n-steps (n-steps e))
-               (n-base (if (antithetic e) (/ (total-paths e) 2) (total-paths e)))
-               (samples (make-array n-base :element-type 'double-float)))
-          (declare (fixnum n-steps n-base) (type function kernel))
-          (map-paths e market tau
-                     (lambda (chunk start end n-base)
-                       (declare (ignore chunk start end) (fixnum n-base))
-                       ;; A base path reaches step N-STEPS before its partner.
-                       (values (lambda (i j state)
-                                 (declare (fixnum i j)
-                                          (type (simple-array double-float (*)) state))
-                                 (when (= j n-steps)
-                                   (let ((v (funcall kernel (aref state 0))))
-                                     (declare (double-float v))
-                                     (if (< i n-base)
-                                         (setf (aref samples i) v)
-                                         (let ((k (- i n-base)))
-                                           (setf (aref samples k)
-                                                 (* 0.5d0 (+ (aref samples k) v))))))))
-                               (constantly nil))))
-          (summarize (moments samples) :discount (discount-factor market tau))))))
+        (price-european-by-sampling sampler e market tau (payoff-kernel p))
+        (price-by-path-kernel x p f e market))))
+
+;;; A continuous barrier needs the process's bridge, unless it is turned off.
+(defmethod price-mc :before ((x european-exercise) (p payoff) (f barrier)
+                             (e monte-carlo-engine) market)
+  (let ((tau (time-to-expiry x market)))
+    (when (and (barrier-bridge e) (null (observation-dates f))
+               (null (bridge-variance (-> e process (resolve-process market tau)) market
+                                      (coerce `(0d0 ,(float tau 1d0)) 'double-vector))))
+      (error 'model-domain-error
+             :engine e
+             :reason (format nil "a continuous barrier is crossed between grid points by the ~
+Brownian bridge, which ~(~A~) does not have. Give the barrier :MONITORING dates, or ~
+make the engine with :BARRIER-BRIDGE NIL to check it at grid points only."
+                             (class-name (class-of (process e))))))))
+
+(declaim (ftype function control-variate-price)) ; selection.lisp, after WITH-ENGINES
+
+(defun resolve-control-variates (x p f e market)
+  "ENGINE's control variates for the option (X P F), as (payoff path price)
+triples: PRICE is the variate's value on MARKET. Each item of the engine's
+CONTROL-VARIATES is :EUROPEAN (P at expiry, without F), :GEOMETRIC-ASIAN (P
+on the geometric average of F's dates; F must be an Asian), or (payoff path
+pricer), PRICER an engine designator or a function of (option market).
+Built-in variates are priced with the engine's process by automatic
+selection, Monte Carlo excluded, so they are exact for that model."
+  (iter (for item in (control-variates e))
+        (for (payoff path pricer)
+             = (match item
+                 (:european
+                  (when (typep p 'path-payoff)
+                    (signal-invalid-argument 'control-variates item 'list
+                                             "a variate with a terminal payoff, not a path payoff"))
+                  `(,p ,(make-instance 'path-independent) nil))
+                 (:geometric-asian
+                  (unless (typep f 'asian)
+                    (signal-invalid-argument 'control-variates item 'list
+                                             "an Asian option for :GEOMETRIC-ASIAN"))
+                  `(,p ,(make-instance 'asian :average :geometric :dates (observation-dates f)
+                                              :strike-type (strike-type f))
+                       nil))
+                 ((list payoff path pricer) `(,payoff ,path ,pricer))
+                 (_ (signal-invalid-argument
+                     'control-variates item '(or keyword list)
+                     ":EUROPEAN, :GEOMETRIC-ASIAN or (payoff path-feature pricer)"))))
+        (when (member :cashflows (payoff-requirements payoff path))
+          (signal-invalid-argument 'control-variates item 'list
+                                   "a variate paying only at expiry"))
+        (collect `(,payoff ,path ,(control-variate-price x payoff path pricer e market)))))
+
+(defun control-variate-samples (samples means)
+  "SAMPLES[0] adjusted by the variates SAMPLES[1..] with known MEANS: y -
+sum_c beta_c (x_c - mean_c), beta from the least-squares fit of y on 1 and
+the centred variates, the rows taken in path order."
+  (let* ((y (svref samples 0))
+         (n (length y))
+         (k (length means))
+         (acc (make-qr-accumulator (1+ k)))
+         (row (make-array (1+ k) :element-type 'double-float)))
+    (declare (type double-vector y))
+    (dotimes (i n)
+      (setf (aref row 0) 1d0)
+      (iter (for mean in means) (for c from 1)
+            (setf (aref row c) (- (aref (the double-vector (svref samples c)) i) mean)))
+      (qr-add-row! acc row (aref y i)))
+    (let ((beta (qr-solve acc))
+          (adjusted (make-array n :element-type 'double-float)))
+      (declare (type double-vector beta))
+      (dotimes (i n adjusted)
+        (setf (aref adjusted i)
+              (- (aref y i)
+                 (iter (for mean in means) (for c from 1)
+                       (sum (* (aref beta c)
+                               (- (aref (the double-vector (svref samples c)) i) mean))))))))))
+
+(defun price-by-path-kernel (x p f e market)
+  "Step every path over the time grid of X, P and F's dates (MAKE-TIME-GRID,
+at most the span over N-STEPS apart) and value it through P's PATH-KERNEL
+under F, and through the kernels of E's control variates on the same paths.
+A path stops when every kernel's STEP has returned NIL; its antithetic
+partner goes on alone. Cash flows recorded with PAY are discounted to their
+payment dates and the final amount to expiry. Sample i (the mean of a pair
+under antithetics) is written to slot i and the statistics are taken in index
+order, so the result does not depend on the chunking."
+  (let* ((tau (time-to-expiry x market))
+         (process (-> e process (resolve-process market tau)))
+         (variates (resolve-control-variates x p f e market))
+         (specs `((,p ,f) ,@(mapcar (lambda (v) (subseq v 0 2)) variates)))
+         (grid (make-time-grid market
+                               :dates (iter (for (payoff path) in specs)
+                                            (appending (instrument-grid-dates x payoff path)))
+                               :n-steps (n-steps e)))
+         (times (time-grid-times grid))
+         (n-steps (1- (length times)))
+         (stepper (make-stepper process market times))
+         (template (initial-state process market))
+         (n-factors (process-factors process))
+         (n-kernels (length specs))
+         (sizes (map 'simple-vector (lambda (s) (path-accumulator-size (first s) (second s))) specs))
+         (expiry-discount (discount-factor market tau))
+         (discount-kernel (path-discount-kernel process market grid))
+         ;; Cash flows are carried relative to expiry, so the final amount
+         ;; alone is summed as before and discounted once.
+         (payments (path-payment-dates p f))
+         (pay-discounts (map 'double-vector (lambda (d) (/ (discount-factor market d) expiry-discount))
+                             (if (eq payments :grid) times payments)))
+         (anti (antithetic e))
+         (n-base (if anti (/ (total-paths e) 2) (total-paths e)))
+         (samples (map-into (make-array n-kernels)
+                            (lambda () (make-array n-base :element-type 'double-float))))
+         (plan (make-sampling-plan e times n-factors n-base))
+         (ranges (chunk-ranges n-base (n-chunks e)))
+         ;; Each kernel's (init step final), the target's first.
+         (kernels (let ((*barrier-bridge* (barrier-bridge e)))
+                    (map 'simple-vector
+                         (lambda (s)
+                           (coerce (multiple-value-list (path-kernel (first s) (second s) process grid))
+                                   'simple-vector))
+                         specs)))
+         (no-pay (lambda (amount k) (declare (ignore amount k)) nil)))
+    (declare (type function stepper) (fixnum n-steps n-factors n-base n-kernels)
+             (type double-vector pay-discounts))
+    (flet ((run-chunk (range index)
+             (multiple-value-bind (g start-path) (make-normal-filler e index plan)
+               (declare (type function start-path))
+               (let* ((state (copy-seq template))
+                      (mirror (copy-seq template))
+                      (normals (make-array n-factors :element-type 'double-float))
+                      (anti-normals (make-array n-factors :element-type 'double-float))
+                      ;; Per side (0 the base path, 1 its partner) and kernel.
+                      (accs (flet ((side () (map 'simple-vector
+                                                 (lambda (size)
+                                                   (make-array size :element-type 'double-float))
+                                                 sizes)))
+                              (vector (side) (side))))
+                      (alive (make-array `(2 ,n-kernels) :element-type 'bit :initial-element 0))
+                      (sums (make-array 2 :element-type 'double-float))
+                      (j 0))
+                 (declare (type (simple-array double-float (*)) state mirror normals anti-normals sums)
+                          (type (simple-array bit (2 *)) alive)
+                          (fixnum j))
+                 (flet ((payer (slot current)
+                          ;; PAY for the path whose running sum is SUMS[SLOT].
+                          (if discount-kernel
+                              (lambda (amount k)
+                                (declare (ignore k) (double-float amount))
+                                (incf (aref sums slot)
+                                      (* amount (the double-float
+                                                     (funcall (the function discount-kernel) current j)))))
+                              (lambda (amount k)
+                                (declare (double-float amount) (fixnum k))
+                                (incf (aref sums slot) (* amount (aref pay-discounts k)))))))
+                   (let ((pays (vector (payer 0 state) (payer 1 mirror))))
+                     (labels ((step-side (side j current)
+                                ;; Step every live kernel of SIDE at J; true if any lives.
+                                (let ((any nil))
+                                  (dotimes (k n-kernels any)
+                                    (when (= 1 (aref alive side k))
+                                      (if (funcall (the function (svref (svref kernels k) 1))
+                                                   (svref (svref accs side) k) j current
+                                                   (if (zerop k) (svref pays side) no-pay))
+                                          (setf any t)
+                                          (setf (aref alive side k) 0))))))
+                              (start-side (side current)
+                                (dotimes (k n-kernels)
+                                  (funcall (the function (svref (svref kernels k) 0))
+                                           (svref (svref accs side) k))
+                                  (setf (aref alive side k) 1))
+                                (step-side side 0 current))
+                              (path-value (side k current)
+                                (+ (if (zerop k) (aref sums side) 0d0)
+                                   (if (= 1 (aref alive side k))
+                                       (* (the double-float
+                                               (funcall (the function (svref (svref kernels k) 2))
+                                                        (svref (svref accs side) k) current))
+                                          (if discount-kernel
+                                              (the double-float
+                                                   (funcall (the function discount-kernel) current n-steps))
+                                              1d0))
+                                       0d0))))
+                       (iter (declare (declare-variables))
+                             (for (the fixnum i) from (car range) below (cdr range))
+                             (funcall start-path i)
+                             (replace state template)
+                             (replace mirror template)
+                             (setf (aref sums 0) 0d0 (aref sums 1) 0d0 j 0)
+                             (let ((base-alive (start-side 0 state))
+                                   (partner-alive (and anti (start-side 1 mirror))))
+                               (iter (while (or base-alive partner-alive))
+                                     (setf j (1+ j))
+                                     (while (<= j n-steps))
+                                     (fill-normals g normals)
+                                     (when base-alive
+                                       (funcall stepper state normals (1- j))
+                                       (setf base-alive (step-side 0 j state)))
+                                     (when partner-alive
+                                       (negate-into normals anti-normals)
+                                       (funcall stepper mirror anti-normals (1- j))
+                                       (setf partner-alive (step-side 1 j mirror))))
+                               (dotimes (k n-kernels)
+                                 (let ((v (path-value 0 k state)))
+                                   (declare (double-float v))
+                                   (setf (aref (the double-vector (svref samples k)) i)
+                                         (if anti
+                                             (* 0.5d0 (+ v (the double-float (path-value 1 k mirror))))
+                                             v)))))))))))))
+      (with-pricing-kernel ()
+        (lp:pmapc #'run-chunk ranges (a:iota (length ranges))))
+      (summarize-samples e (if variates
+                               (control-variate-samples
+                                samples (mapcar (lambda (v)
+                                                  (if discount-kernel
+                                                      (third v)
+                                                      (/ (third v) expiry-discount)))
+                                                variates))
+                               (svref samples 0))
+                         :discount (if discount-kernel 1d0 expiry-discount)))))
 
 ;;; --------------------------------------------------------------------
 ;;; American: Longstaff-Schwartz
@@ -577,18 +898,52 @@ struck payoff, the spot otherwise.")
                      (f path-independent) (e monte-carlo-engine) market)
   (price-lsm x p e market))
 
+(defun grid-step-discounts (market times)
+  "Discount factors between consecutive grid TIMES: DF(t_{j+1}) / DF(t_j)."
+  (iter (with n = (1- (length times)))
+        (for (t0 t1) in-intervals times)
+        (collect-double (/ (discount-factor market t1) (discount-factor market t0))
+                        into v length n)
+        (finally (return v))))
+
 (defun price-lsm (x p e market)
   "Longstaff-Schwartz: (values price standard-error) of payoff P with the
-exercise rights of X on E's time grid."
+exercise rights of X, on the grid of X's dates at most the span over N-STEPS
+apart (MAKE-TIME-GRID): every Bermudan date is a grid point. With
+LSM-VALUATION :INDEPENDENT the exercise rule fitted on the engine's paths
+values a second, independent path set (another seed), a low-biased estimate."
   (let* ((tau (time-to-expiry x market))
-         (n-steps (n-steps e))
+         (times (time-grid-times (make-time-grid market :dates (exercise-mandatory-dates x)
+                                                        :n-steps (n-steps e))))
          (process (-> e process (resolve-process market tau)))
          (components (or (regressors e) (process-regressors process)))
-         (matrices (progn
-                     (unless (eql 0 (first components))
-                       (signal-invalid-argument 'regressors components 'list
-                                                "state indices starting with 0, the observable"))
-                     (simulate-state-paths e market tau components)))
+         (mask (exercise-mask x market times))
+         (fits (make-hash-table)))
+    (unless (eql 0 (first components))
+      (signal-invalid-argument 'regressors components 'list
+                               "state indices starting with 0, the observable"))
+    (lsm-sweep p e market tau times components mask fits t)
+    (multiple-value-bind (mean se)
+        (if (eq (lsm-valuation e) :independent)
+            (lsm-sweep p (derive-engine e :seed (+ (* 7919 (seed e)) 104729)) market tau times
+                       components mask fits nil)
+            (lsm-sweep p e market tau times components mask fits :reuse))
+      (values (if (= 1 (sbit mask 0))
+                  (max mean (funcall (payoff-kernel p) (spot market)))
+                  mean)
+              se))))
+
+(defun lsm-sweep (p e market tau times components mask fits fit)
+  "The LSM backward sweep over E's paths on TIMES: (values mean se) of the
+discounted cash flows, before exercise at time 0. FIT T regresses at each
+exercise date and records (active-components . coefficients) in FITS by
+step; FIT NIL applies the rule recorded in FITS. FIT :REUSE returns the
+result of the last fitting sweep (in-sample valuation)."
+  (when (eq fit :reuse)
+    (return-from lsm-sweep (values-list (gethash :in-sample fits))))
+  (let* ((n-steps (1- (length times)))
+         (process (-> e process (resolve-process market tau)))
+         (matrices (simulate-state-paths e market tau components :times times))
          (n-paths (path-matrix-n-paths (first matrices)))
          (datas (map 'simple-vector #'path-matrix-data matrices))
          (data (svref datas 0))
@@ -602,8 +957,7 @@ exercise rights of X on E's time grid."
                                                 (if (zerop v) 1d0 (float v 1d0))))))
                          '(simple-array double-float (*))))
          (regressions (make-hash-table :test 'equal))
-         (discounts (step-discounts market tau n-steps))
-         (mask (exercise-mask x market (uniform-time-grid tau n-steps)))
+         (discounts (grid-step-discounts market times))
          (cashflows (make-array n-paths :element-type 'double-float))
          (ranges (regression-blocks n-paths)))
     (declare (type (simple-array double-float (*)) data cashflows discounts)
@@ -637,72 +991,84 @@ exercise rights of X on E's time grid."
                                                       (+ col-offset i))))
                                          (setf lo (min lo v) hi (max hi v)))))
                                    (< lo hi))
-                             (collect c))))))
-    (with-pricing-kernel ()
-      ;; Terminal cash flows.
-      (let ((terminal (* n-steps n-paths)))
-        (dotimes (i n-paths)
-          (setf (aref cashflows i) (funcall kernel (aref data (+ terminal i))))))
-      ;; Backward induction. Steps the mask excludes only discount.
-      (iter (declare (declare-variables))
-            (for step from (1- n-steps) downto 1)
-            (for (the fixnum col-offset) = (* step n-paths))
-            (for (the double-float df) = (aref discounts step))
-            (if (zerop (sbit mask step))
-                (dotimes (i n-paths)
-                  (setf (aref cashflows i) (* df (aref cashflows i))))
-                (restart-case
-                    (destructuring-bind (datas n-basis make-filler)
-                        (regression-setup (active-components col-offset))
-                      (declare (type simple-vector datas) (fixnum n-basis)
-                               (type function make-filler))
-                    (multiple-value-bind (acc itm)
-                        (regress-continuation datas cashflows col-offset kernel make-filler
-                                              n-basis df ranges)
-                      (when (> itm (* 2 n-basis))
-                        (let ((beta (handler-case (qr-solve acc)
-                                      (rank-deficient (c)
-                                        (error 'regression-failure :step step :cause c)))))
-                          (declare (type (simple-array double-float (*)) beta))
-                          ;; Exercise where intrinsic beats fitted continuation.
-                          (lp:pmapc
-                           (lambda (range)
-                             (let ((basis (make-array n-basis :element-type 'double-float))
-                                   (values (make-array (length datas)
-                                                       :element-type 'double-float))
-                                   (filler (funcall make-filler)))
-                               (declare (type function filler))
-                               (iter (declare (declare-variables))
-                                     (for (the fixnum i) from (car range) below (cdr range))
-                                     (for (the double-float s) = (aref data (+ col-offset i)))
-                                     (for (the double-float intrinsic) = (funcall kernel s))
-                                     (when (plusp intrinsic)
-                                       (dotimes (r (length datas))
-                                         (setf (aref values r)
-                                               (aref (the (simple-array double-float (*))
-                                                          (svref datas r))
-                                                     (+ col-offset i))))
-                                       (funcall filler basis values)
-                                       (let ((cont 0d0))
-                                         (declare (double-float cont))
-                                         (dotimes (n n-basis)
-                                           (incf cont (* (aref beta n) (aref basis n))))
-                                         (when (> intrinsic cont)
-                                           (setf (aref cashflows i) intrinsic)))))))
-                           ranges)))))
-                  (skip-exercise-date ()
-                    :report "Skip early exercise at this date and continue."
-                    nil))))
-      ;; Discount the first step, and exercise now if the mask allows it.
-      ;; Under antithetics a sample is the mean of a pair (path i and its
-      ;; partner i + n/2), so the standard error is that of the estimator.
-      (multiple-value-bind (mean se)
-          (summarize (moments (if (antithetic e) (pair-means cashflows) cashflows))
-                     :discount (aref discounts 0))
-        (values (if (= 1 (sbit mask 0))
-                    (max mean (funcall kernel (spot market)))
-                    mean)
-                se))))))
+                             (collect c)))))
+           (exercise! (datas n-basis make-filler beta col-offset)
+             ;; Exercise where intrinsic beats fitted continuation.
+             (declare (type simple-vector datas) (fixnum n-basis col-offset)
+                      (type function make-filler)
+                      (type (simple-array double-float (*)) beta))
+             (lp:pmapc
+              (lambda (range)
+                (let ((basis (make-array n-basis :element-type 'double-float))
+                      (values (make-array (length datas) :element-type 'double-float))
+                      (filler (funcall make-filler)))
+                  (declare (type function filler))
+                  (iter (declare (declare-variables))
+                        (for (the fixnum i) from (car range) below (cdr range))
+                        (for (the double-float s) = (aref data (+ col-offset i)))
+                        (for (the double-float intrinsic) = (funcall kernel s))
+                        (when (plusp intrinsic)
+                          (dotimes (r (length datas))
+                            (setf (aref values r)
+                                  (aref (the (simple-array double-float (*)) (svref datas r))
+                                        (+ col-offset i))))
+                          (funcall filler basis values)
+                          (let ((cont 0d0))
+                            (declare (double-float cont))
+                            (dotimes (n n-basis)
+                              (incf cont (* (aref beta n) (aref basis n))))
+                            (when (> intrinsic cont)
+                              (setf (aref cashflows i) intrinsic)))))))
+              ranges)))
+      (with-pricing-kernel ()
+        ;; Terminal cash flows.
+        (let ((terminal (* n-steps n-paths)))
+          (dotimes (i n-paths)
+            (setf (aref cashflows i) (funcall kernel (aref data (+ terminal i))))))
+        ;; Backward induction. Steps the mask excludes only discount.
+        (iter (declare (declare-variables))
+              (for step from (1- n-steps) downto 1)
+              (for (the fixnum col-offset) = (* step n-paths))
+              (for (the double-float df) = (aref discounts step))
+              (cond
+                ((zerop (sbit mask step))
+                 (dotimes (i n-paths)
+                   (setf (aref cashflows i) (* df (aref cashflows i)))))
+                ((not fit)
+                 ;; Apply the fitted rule, if there was one at this step.
+                 (dotimes (i n-paths)
+                   (setf (aref cashflows i) (* df (aref cashflows i))))
+                 (destructuring-bind (&optional active . beta) (gethash step fits)
+                   (when beta
+                     (destructuring-bind (datas n-basis make-filler) (regression-setup active)
+                       (exercise! datas n-basis make-filler beta col-offset)))))
+                (t
+                 (restart-case
+                     (let ((active (active-components col-offset)))
+                       (destructuring-bind (datas n-basis make-filler) (regression-setup active)
+                         (declare (type simple-vector datas) (fixnum n-basis)
+                                  (type function make-filler))
+                         (multiple-value-bind (acc itm)
+                             (regress-continuation datas cashflows col-offset kernel make-filler
+                                                   n-basis df ranges)
+                           (when (> itm (* 2 n-basis))
+                             (let ((beta (handler-case (qr-solve acc)
+                                           (rank-deficient (c)
+                                             (error 'regression-failure :step step :cause c)))))
+                               (declare (type (simple-array double-float (*)) beta))
+                               (setf (gethash step fits) `(,active . ,beta))
+                               (exercise! datas n-basis make-filler beta col-offset))))))
+                   (skip-exercise-date ()
+                     :report "Skip early exercise at this date and continue."
+                     nil)))))
+        ;; Discount the first step. Under antithetics a sample is the mean of
+        ;; a pair (path i and its partner i + n/2), so the standard error is
+        ;; that of the estimator.
+        (let ((result (multiple-value-list
+                       (summarize-samples e (if (antithetic e) (pair-means cashflows) cashflows)
+                                          :discount (aref discounts 0)))))
+          (when fit (setf (gethash :in-sample fits) result))
+          (values-list result))))))
 
 ;;; Any payoff and process: the slow fallback, at 20,000 paths rather than
 ;;; the engine's 100,000. For an American under Heston that is about 0.6 s

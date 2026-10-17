@@ -13,7 +13,11 @@ when every check passed."
         (lp:*kernel* nil))
     (mapc #'funcall serial)
     (setf lp:*kernel* (lp:make-kernel 4))
-    (unwind-protect (mapc #'funcall parallel)
+    ;; A full collection between checks: the LSM checks' path matrices
+    ;; (80 MB each) otherwise fragment SBCL's default 1 GB heap.
+    (unwind-protect (dolist (check parallel)
+                      (funcall check)
+                      #+sbcl (sb-ext:gc :full t))
       (lp:end-kernel :wait t))
     (format t "~&~[All checks passed~:;~:*~D failure(s)~]~%" *failures*)
     (zerop *failures*)))
@@ -33,7 +37,7 @@ when every check passed."
 
 (defparameter *slow-checks*
   (list 'rates-instrument-checks 'mc-checks 'counter-stream-checks 'antithetic-se-checks 'process-checks 'levy-checks 'selection-test-checks 'term-structure-checks 'clarke-parrott-checks
-        'greeks-checks 'invariant-checks 'option-round-trip-checks 'golden-checks)
+        'greeks-checks 'invariant-checks 'option-round-trip-checks 'path-checks 'golden-checks)
   "Monte Carlo-heavy checks, the invariant sweep and the golden values.")
 
 (defun run-tests ()

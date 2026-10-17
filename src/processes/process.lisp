@@ -303,3 +303,54 @@ such shortcut exists; the engine then steps the full path.")
   (:method ((p stochastic-process) market time)
     (declare (ignore market time))
     nil))
+
+;;; --------------------------------------------------------------------
+;;; Named state components and pathwise discounting (task 19)
+;;; --------------------------------------------------------------------
+
+(defgeneric process-state-names (process)
+  (:documentation "One keyword per element of PROCESS's state vector, in
+order: element 0, the observable, is :SPOT.
+
+  (process-state-names (make-heston)) => (:SPOT :VARIANCE)")
+  (:method ((p stochastic-process))
+    (if (= 1 (process-state-size p))
+        '(:spot)
+        (cons :spot (iter (for i from 1 below (process-state-size p))
+                          (collect (a:make-keyword (format nil "STATE-~D" i))))))))
+
+(defun state-index (process designator)
+  "The state-vector index of the component DESIGNATOR names: a keyword from
+PROCESS-STATE-NAMES, or a list whose first element is one (task 23 adds the
+underlying after it). Resolve names once, outside inner loops.
+
+  (state-index (make-heston) :variance) => 1"
+  (let* ((names (process-state-names process))
+         (name (if (consp designator) (first designator) designator))
+         (index (position name names)))
+    (unless (and index (or (atom designator) (null (rest designator))))
+      (signal-invalid-argument 'designator designator 'keyword
+                               (format nil "a state component of ~(~A~): ~{~S~^, ~}"
+                                       (class-name (class-of process)) names)))
+    index))
+
+(defgeneric bridge-variance (process market times)
+  (:documentation "For continuous monitoring between grid points: a closure
+(lambda (state j acc slot)) that stores in ACC[SLOT] the variance of the
+log-observable over [TIMES[j], TIMES[j+1]] given STATE at TIMES[j], the
+variance of the Brownian bridge between the two grid values. NIL when the
+log-observable is not a diffusion between grid points (jumps, discrete-time
+models), the default.")
+  (:method ((p stochastic-process) market times)
+    (declare (ignore market times))
+    nil))
+
+(defgeneric path-discount-kernel (process market grid)
+  (:documentation "NIL for deterministic rates: engines discount with the
+market's discount factors. A process with stochastic rates returns
+(lambda (state j)), the discount factor from 0 to the time of grid index J
+along the path whose state is STATE; engines then discount every cash flow
+with it. No process implements it yet.")
+  (:method ((p stochastic-process) market grid)
+    (declare (ignore market grid))
+    nil))

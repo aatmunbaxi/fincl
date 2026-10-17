@@ -61,6 +61,7 @@ ATM-forward Black vol to T.")
   (or (h0 process) (garch-default-h0 process market nil)))
 
 (defmethod process-regressors ((p garch)) '(0 1))    ; spot and conditional variance
+(defmethod process-state-names ((p garch)) '(:spot :conditional-variance))
 
 (defmethod initial-state ((p garch) market)
   (let ((state (make-array 2 :element-type 'double-float)))
@@ -95,4 +96,6 @@ ATM-forward Black vol to T.")
         (setf (aref state 0)
               (* s (exp (+ (aref mu j) (* -0.5d0 h) (* (sqrt h) z))))
               (aref state 1)
-              (+ omega (* beta h) (* alpha h (expt (- z gamma) 2))))))))
+              (+ omega (* beta h) (* alpha h (expt (- z gamma) 2)))))
+      ;; Steppers return nothing: a double-float result would be boxed.
+      nil)))

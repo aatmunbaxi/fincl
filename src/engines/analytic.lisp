@@ -47,6 +47,142 @@ relative precision far out of the money.
                            (m market))
   (values (black-scholes (phi p) m (strike p) (expiry x)) nil))
 
+;;; --------------------------------------------------------------------
+;;; Barriers: Reiner-Rubinstein, with Broadie-Glasserman-Kou for discrete
+;;; monitoring
+;;; --------------------------------------------------------------------
+
+(a:define-constant +bgk-beta+ 0.5825971579390106d0 :test #'=
+  :documentation "-zeta(1/2)/sqrt(2 pi): Broadie, Glasserman and Kou's continuity correction.")
+
+(defun reiner-rubinstein (phi barrier-type s k h rebate tau df dividend-df variance)
+  "Price of a continuously monitored single barrier option, (Haug's A-F
+terms, as QuantLib's AnalyticBarrierEngine): PHI 1 or -1, BARRIER-TYPE
+:DOWN-AND-OUT etc., spot S, strike K, barrier H, REBATE (paid at the hit for
+knock-outs, at expiry for knock-ins), TAU in years, the discount factors to
+expiry and the total variance. The spot must not be past the barrier."
+  (let* ((std-dev (sqrt variance))
+         (vol2 (/ variance tau))
+         (r (/ (- (log df)) tau))
+         (q (/ (- (log dividend-df)) tau))
+         (mu (- (/ (- r q) vol2) 0.5d0))
+         (mu-sigma (* (+ 1d0 mu) std-dev))
+         (hs (/ h s))
+         (pow-hs0 (expt hs (* 2d0 mu)))
+         (pow-hs1 (* pow-hs0 hs hs)))
+    (labels ((times-n (power n) (if (zerop n) 0d0 (* power n)))
+             (a (phi)
+               (let ((x1 (+ (/ (log (/ s k)) std-dev) mu-sigma)))
+                 (* phi (- (* s dividend-df (norm-cdf (* phi x1)))
+                           (* k df (norm-cdf (* phi (- x1 std-dev))))))))
+             (b (phi)
+               (let ((x2 (+ (/ (log (/ s h)) std-dev) mu-sigma)))
+                 (* phi (- (* s dividend-df (norm-cdf (* phi x2)))
+                           (* k df (norm-cdf (* phi (- x2 std-dev))))))))
+             (c (eta phi)
+               (let ((y1 (+ (/ (log (/ (* h hs) k)) std-dev) mu-sigma)))
+                 (* phi (- (* s dividend-df (times-n pow-hs1 (norm-cdf (* eta y1))))
+                           (* k df (times-n pow-hs0 (norm-cdf (* eta (- y1 std-dev)))))))))
+             (d (eta phi)
+               (let ((y2 (+ (/ (log hs) std-dev) mu-sigma)))
+                 (* phi (- (* s dividend-df (times-n pow-hs1 (norm-cdf (* eta y2))))
+                           (* k df (times-n pow-hs0 (norm-cdf (* eta (- y2 std-dev)))))))))
+             (e (eta)
+               (if (plusp rebate)
+                   (let ((x2 (+ (/ (log (/ s h)) std-dev) mu-sigma))
+                         (y2 (+ (/ (log hs) std-dev) mu-sigma)))
+                     (* rebate df (- (norm-cdf (* eta (- x2 std-dev)))
+                                     (times-n pow-hs0 (norm-cdf (* eta (- y2 std-dev)))))))
+                   0d0))
+             (f (eta)
+               (if (plusp rebate)
+                   (let ((discriminant (+ (* mu mu) (/ (* 2d0 r) vol2))))
+                     (when (minusp discriminant)
+                       (return-from reiner-rubinstein nil))
+                     (let* ((lambda (sqrt discriminant))
+                            (z (+ (/ (log hs) std-dev) (* lambda std-dev))))
+                       (* rebate (+ (times-n (expt hs (+ mu lambda)) (norm-cdf (* eta z)))
+                                    (times-n (expt hs (- mu lambda))
+                                             (norm-cdf (* eta (- z (* 2d0 lambda std-dev)))))))))
+                   0d0)))
+      (let ((above (>= k h)))
+        (if (plusp phi)
+            (ecase barrier-type
+              (:down-and-in (if above (+ (c 1 1) (e 1)) (+ (- (a 1) (b 1)) (d 1 1) (e 1))))
+              (:up-and-in (if above (+ (a 1) (e -1)) (+ (- (b 1) (c -1 1)) (d -1 1) (e -1))))
+              (:down-and-out (if above (+ (- (a 1) (c 1 1)) (f 1)) (+ (- (b 1) (d 1 1)) (f 1))))
+              (:up-and-out (if above (f -1) (+ (- (a 1) (b 1)) (c -1 1) (- (d -1 1)) (f -1)))))
+            (ecase barrier-type
+              (:down-and-in (if above (+ (- (b -1) (c 1 -1)) (d 1 -1) (e 1)) (+ (a -1) (e 1))))
+              (:up-and-in (if above (+ (- (a -1) (b -1)) (d -1 -1) (e -1)) (+ (c -1 -1) (e -1))))
+              (:down-and-out (if above (+ (- (a -1) (b -1)) (c 1 -1) (- (d 1 -1)) (f 1)) (f 1)))
+              (:up-and-out (if above (+ (- (b -1) (d -1 -1)) (f -1)) (+ (- (a -1) (c -1 -1)) (f -1))))))))))
+
+;;; Rates, dividends and vol enter as their averages to expiry (zero rates
+;;; and the Black vol at the strike), as in QuantLib: exact on flat markets.
+;;; Discrete monitoring shifts the barrier away from the spot by
+;;; exp(0.5826 sigma sqrt(dt)), dt the mean spacing of the monitoring dates
+;;; (Broadie, Glasserman and Kou 1997; accurate for evenly spaced dates).
+(defmethod price-analytic ((x european-exercise) (p vanilla-payoff) (f barrier)
+                           (e black-scholes-engine) (m market))
+  (let* ((date (expiry x))
+         (tau (time-to-expiry x m))
+         (s (spot m)) (k (strike p)) (h (barrier-level f))
+         (up (eq (barrier-direction f) :up))
+         (out (eq (barrier-knock f) :out))
+         (df (discount-factor m date))
+         (variance (black-variance m k date))
+         (dates (observation-dates f))
+         (h (if dates
+                (* h (exp (* (if up 1d0 -1d0) +bgk-beta+
+                             (sqrt (/ variance (length dates))))))
+                h)))
+    (values
+     (cond ((and (null dates) (if up (>= s h) (<= s h)))
+            ;; Touched now: a knock-out pays its rebate, a knock-in is vanilla.
+            (if out (barrier-rebate f) (black-scholes (phi p) m k date)))
+           ((if up (>= s h) (<= s h))
+            (error 'model-domain-error
+                   :engine e
+                   :reason (format nil "the spot ~A is past the barrier ~A shifted for discrete ~
+monitoring; price with Monte Carlo." s h)))
+           (t (or (reiner-rubinstein (phi p) (barrier-type f) s k h (barrier-rebate f) tau df
+                                     (/ (* df (forward m date)) s) variance)
+                  (error 'model-domain-error
+                         :engine e
+                         :reason (format nil "the knock-out rebate formula needs mu^2 + 2r/sigma^2 ~
+>= 0, which fails for this negative rate; price with Monte Carlo.")))))
+     nil)))
+
+;;; --------------------------------------------------------------------
+;;; Geometric Asians with discrete fixings
+;;; --------------------------------------------------------------------
+
+;;; ln G, G the geometric mean of S on dates t_1 < ... < t_n, is normal: its
+;;; mean is the average of ln F(t_i) - w(t_i)/2 and its variance
+;;; sum_ij w(min(t_i, t_j)) / n^2, w the ATM-forward Black variance (the
+;;; variance GBM's paths have). Black's formula in that forward and
+;;; variance, discounted from the expiry, is Kemna and Vorst's price
+;;; generalized to term structure.
+(defmethod price-analytic ((x european-exercise) (p vanilla-payoff) (f asian)
+                           (e black-scholes-engine) (m market))
+  (unless (and (eq (asian-average f) :geometric) (not (floating-p f)))
+    (error 'unsupported-combination :exercise x :payoff p :path f :engine e :market m))
+  (let* ((dates (observation-dates f))
+         (n (length dates))
+         (variances (mapcar (lambda (d) (atm-forward-variance m (market-time m d))) dates))
+         (mean (/ (iter (for d in dates)
+                        (for w in variances)
+                        (sum (- (log (forward m d)) (* 0.5d0 w))))
+                  n))
+         (variance (/ (iter (for w in variances)
+                            (for i from 0)
+                            (sum (* w (- (* 2 (- n i)) 1))))
+                      (* n n))))
+    (values (black-formula (phi p) (exp (+ mean (* 0.5d0 variance))) (strike p)
+                           (discount-factor m (expiry x)) variance)
+            nil)))
+
 ;;; Barone-Adesi-Whaley quadratic approximation for American vanillas. The
 ;;; formula is stated in constant r, q, sigma and T, so flat equivalents are
 ;;; backed out of the discount factor, forward and variance to expiry. Under
@@ -249,6 +385,15 @@ put-call parity fails; the formula here covers beta <= 1." beta)))
 ;;; --------------------------------------------------------------------
 ;;; Automatic selection
 ;;; --------------------------------------------------------------------
+
+(defmethod engine-candidates append ((designator (eql :black-scholes)) (x european-exercise) (p vanilla-payoff)
+                                     (f barrier) (process gbm))
+  (unless (explicit-parameters process) '((10 :black-scholes))))
+
+(defmethod engine-candidates append ((designator (eql :black-scholes)) (x european-exercise) (p vanilla-payoff)
+                                     (f asian) (process gbm))
+  (unless (or (explicit-parameters process) (eq (asian-average f) :arithmetic) (floating-p f))
+    '((10 :black-scholes))))
 
 (defmethod engine-candidates append ((designator (eql :black-scholes)) (x european-exercise) (p vanilla-payoff)
                                      (f path-independent) (process gbm))

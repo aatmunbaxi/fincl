@@ -61,4 +61,11 @@ jumps."))
                  (exp (+ (aref compensator j)
                          (if (zerop n)
                              0d0
-                             (+ (* n mu) (* sigma (sqrt (float n 1d0)) (aref normals 3))))))))))))
+                             (+ (* n mu) (* sigma (sqrt (float n 1d0)) (aref normals 3)))))))))
+      ;; Steppers return nothing: a double-float result would be boxed.
+      nil)))
+
+;;; Jumps: no Brownian bridge between grid points.
+(defmethod bridge-variance ((p bates) market times)
+  (declare (ignore market times))
+  nil)

@@ -132,7 +132,11 @@ agnostic: everything model-specific comes from the process.")
         :documentation ":COUNTER (the default): normal k of path i is a pure
 function of (seed, i, k), from the Philox4x32-10 counter-based generator, so
 prices do not depend on N-CHUNKS or the worker count, and path i is the same
-whatever N-PATHS is. Otherwise one stream per chunk: a random-state generator
+whatever N-PATHS is. :SOBOL: randomized quasi-Monte Carlo, 16 scrambled and
+shifted Sobol' sequences (Joe-Kuo directions, at most 1111 steps x factors)
+through a Brownian bridge, normals by inverse transform whatever SAMPLER
+says; the standard error is that of the 16 randomization means, and results
+do not depend on N-CHUNKS or the worker count. Otherwise one stream per chunk: a random-state generator
 designator (a keyword such as :MERSENNE-TWISTER-64, or (keyword
 seed-offset)), or :NATIVE for the host RNG; prices then depend on N-CHUNKS.")
    (sampler :initarg :sampler :initform :box-muller :reader sampler
@@ -151,6 +155,23 @@ all monomials of total degree <= BASIS-DEGREE; or :LAGUERRE, the weighted
 Laguerre functions exp(-x/2) L_a(x) of the scaled spot times monomials in the
 other regressors, a + b <= BASIS-DEGREE. The spot is scaled by the payoff's
 REGRESSION-SCALE (the strike), other components by their value at t = 0.")
+   (control-variates :initarg :control-variates :initform nil :reader control-variates
+                     :documentation "Variates simulated on the same paths, whose
+known prices correct the estimate (regression coefficients fitted over all
+paths): :EUROPEAN (the option's payoff at expiry, priced exactly for the
+process), :GEOMETRIC-ASIAN (for an Asian, the payoff of the geometric
+average), or (payoff path-feature pricer), PRICER an engine designator or a
+function of (option market). European exercise only.")
+   (barrier-bridge :initarg :barrier-bridge :initform t :reader barrier-bridge
+                   :documentation "If true, a continuously monitored barrier is
+crossed between grid points with the Brownian-bridge probability, which
+needs a diffusion (BRIDGE-VARIANCE: GBM, CEV log-Euler, Heston). NIL checks
+the barrier at grid points only, which overprices knock-outs; any process.")
+   (lsm-valuation :initarg :lsm-valuation :initform :in-sample :reader lsm-valuation
+                  :type (member :in-sample :independent)
+                  :documentation "LSM's price: :IN-SAMPLE, on the paths the exercise rule
+was fitted on, or :INDEPENDENT, the fitted rule applied to a fresh path set
+(a different seed), which is biased low.")
    (regressors :initarg :regressors :initform nil :reader regressors
                :documentation "State components the LSM regression uses, as
 indices into the state vector, starting with 0. NIL uses the process's
@@ -241,7 +262,8 @@ default accepts everything.")
     nil))
 
 (defmethod validate-pricing-inputs ((o option) engine market)
-  (validate-payoff (option-payoff o) market (expiry (option-exercise o))))
+  (validate-payoff (option-payoff o) market (expiry (option-exercise o)))
+  (validate-path-feature (option-path o) market))
 
 (defun restart-applies-p (condition type)
   "For a restart :TEST: offer the restart for conditions of TYPE, and when no

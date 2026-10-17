@@ -123,6 +123,10 @@
    #:cap-floor #:make-cap-floor #:cap-floor-type #:cap-floor-leg #:cap-rates #:floor-rates
    #:swaption #:make-swaption #:swaption-swap #:swaption-exercise #:swaption-settlement
    #:rates-vol-structure #:flat-rates-vol #:expiry-rates-vol #:rates-vol-variance
+   ;; path simulation (task 19)
+   #:payoff-requirements #:path-accumulator-size #:path-payment-dates #:path-kernel
+   #:define-path-payoff #:path-payoff
+   #:process-state-names #:state-index #:instrument-mandatory-dates
    #:rates-engine #:discounting-engine #:black-rates-engine #:bachelier-rates-engine
    #:cap-floor-optionlet-prices
    #:callable-fixed-rate-bond #:make-callable-fixed-rate-bond #:bond-call-schedule
@@ -135,14 +139,16 @@
    #:exercise #:european-exercise #:american-exercise #:bermudan-exercise
    #:expiry #:exercise-dates #:exercise-allowed-p #:exercise-mask #:time-to-expiry
    #:resolve-expiry
-   #:path-feature #:path-independent
+   #:path-feature #:path-independent #:observed-path #:asian #:barrier #:lookback
+   #:observation-dates #:asian-average #:strike-type #:barrier-direction #:barrier-knock
+   #:barrier-level #:barrier-rebate #:barrier-type #:past-observation
    #:option #:option-payoff #:option-exercise #:option-path
    #:make-option #:make-option-from-clauses #:make-vanilla-option
    #:payoff-value #:payoff-kernel #:define-payoff #:declare-payoff-variables
    #:formula-payoff-superclass
    ;; processes
    #:stochastic-process #:process-factors #:process-state-size
-   #:initial-state #:make-stepper #:terminal-sampler #:process-vol
+   #:initial-state #:make-stepper #:bridge-variance #:terminal-sampler #:process-vol
    #:characteristic-function #:log-cumulants
    #:resolve-process #:increment-characteristic-function #:independent-increments
    #:calendar-arbitrage
