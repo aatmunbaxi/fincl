@@ -5,4 +5,5 @@
   :depends-on ("fincl" "py4cl")
   :pathname "viz/"
   :components ((:file "viz")
-               (:file "greeks")))
+               (:file "greeks")
+               (:file "calibration")))

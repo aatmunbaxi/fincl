@@ -420,8 +420,17 @@ order) and :PARAMETERS (name value ...).
                       values targets quotes))))
       (let* ((x (handler-bind ((convergence-failure #'use-best))
                   (if (eq method :levenberg-marquardt)
+                      ;; Model prices come from numerical methods (COS
+                      ;; truncation, quadrature), whose noise swamps a
+                      ;; difference quotient at the default step of ~1e-8.
+                      ;; Central differences at 1e-5 max(|x|, 0.01) sit well
+                      ;; above it.
                       (minimize method #'residuals x0 :bounds bounds :tolerance tolerance
-                                                      :max-iterations max-iterations)
+                                                      :max-iterations max-iterations
+                                                      :jacobian (lambda (x out)
+                                                                  (jacobian! #'residuals x out
+                                                                             :scheme :central
+                                                                             :steps (map 'list (lambda (v) (* 1d-5 (max 1d-2 (abs v)))) x))))
                       (minimize method (lambda (x) (sum-of-squares (residuals x))) x0
                                 :bounds bounds :tolerance tolerance :max-iterations max-iterations))))
              (calibrated (trial x))
