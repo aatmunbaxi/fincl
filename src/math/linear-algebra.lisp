@@ -246,3 +246,40 @@ C[n-1] are corner elements). Returns OUT.
                (cond ((< i (1- n)) (* (aref c i) (aref x (1+ i))))
                      (cyclic (* (aref c (1- n)) (aref x 0)))
                      (t 0d0)))))))
+
+;;; --------------------------------------------------------------------
+;;; Small dense systems
+;;; --------------------------------------------------------------------
+
+(defun solve-linear-system (a b)
+  "The solution x of A x = B for a small dense system, by Gaussian
+elimination with partial pivoting. A is an n x n array and B a sequence of
+length n; neither is modified. Signals RANK-DEFICIENT on a pivot below
+1e-14 of the largest entry.
+
+  (solve-linear-system #2a((2d0 1d0) (1d0 3d0)) #(3d0 5d0)) => #(0.8d0 1.4d0)"
+  (let* ((n (length b))
+         (m (make-array `(,n ,n) :element-type 'double-float))
+         (x (make-array n :element-type 'double-float))
+         (scale 0d0))
+    (dotimes (i n)
+      (setf (aref x i) (float (elt b i) 1d0))
+      (dotimes (j n)
+        (setf (aref m i j) (float (aref a i j) 1d0)
+              scale (max scale (abs (aref m i j))))))
+    (dotimes (k n)
+      (let ((pivot (iter (for i from k below n) (finding i maximizing (abs (aref m i k))))))
+        (when (<= (abs (aref m pivot k)) (* 1d-14 scale))
+          (error 'rank-deficient :index k :pivot (aref m pivot k)))
+        (unless (= pivot k)
+          (dotimes (j n) (rotatef (aref m k j) (aref m pivot j)))
+          (rotatef (aref x k) (aref x pivot)))
+        (iter (for i from (1+ k) below n)
+              (let ((factor (/ (aref m i k) (aref m k k))))
+                (iter (for j from k below n) (decf (aref m i j) (* factor (aref m k j))))
+                (decf (aref x i) (* factor (aref x k)))))))
+    (iter (for i from (1- n) downto 0)
+          (setf (aref x i) (/ (- (aref x i) (iter (for j from (1+ i) below n)
+                                                  (sum (* (aref m i j) (aref x j)))))
+                              (aref m i i))))
+    x))

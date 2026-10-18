@@ -68,7 +68,8 @@
                              (:file "protocol")
                              (:file "flat")
                              (:file "yield-curves")
-                             (:file "rates-vol")))
+                             (:file "rates-vol")
+                             (:file "vol-surfaces")))
                (:file "market")
                (:module "instruments"
                 :serial t
@@ -95,6 +96,7 @@
                              (:file "heston")
                              (:file "bates")
                              (:file "garch")
+                             (:file "local-vol")
                              (:file "hull-white")))
                (:module "engines"
                 :serial t
@@ -113,7 +115,8 @@
                (:file "pricing")
                (:file "implied-volatility")
                (:file "greeks")
-               (:file "mc-greeks"))
+               (:file "mc-greeks")
+               (:file "calibration"))
   :in-order-to ((test-op (test-op "fincl/tests"))))
 
 (defsystem "fincl/tests"
@@ -147,6 +150,7 @@
                (:file "golden")
                (:file "rates-instruments")
                (:file "paths")
+               (:file "surfaces")
                (:file "readme")
                ;; The runners call the checks above; keep them last.
                (:file "tests"))

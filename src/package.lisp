@@ -86,6 +86,16 @@
    ;; term structures and composite markets
    #:term-structure #:yield-curve #:dividend-curve #:black-vol-structure
    #:curve-discount #:curve-zero-rate #:curve-dividend-discount #:curve-dividend-yield
+   ;; vol surfaces and calibration (task 17)
+   #:smile #:smile-variance #:smile-vol #:smile-expiry #:make-interpolated-smile
+   #:svi-slice #:make-svi-slice #:sabr-smile #:make-sabr-smile #:sabr-volatility
+   #:moneyness-vol-structure #:surface-variance #:smile-surface #:make-smile-surface
+   #:grid-vol-surface #:make-grid-vol-surface #:svi-surface #:make-svi-surface
+   #:ssvi-surface #:make-ssvi-surface #:surface-smile
+   #:butterfly-arbitrage-free-p #:calendar-arbitrage-free-p #:butterfly-arbitrage
+   #:option-quote #:make-option-quote #:quote-set #:quote-set-quotes #:quote-instrument
+   #:quote-weight #:quote-implied-vol #:quote-price #:quotes-vol-surface
+   #:fit-svi #:fit-ssvi #:fit-sabr #:local-vol #:make-local-vol #:calibrate
    #:structure-black-variance #:structure-black-vol #:bump-structure #:shift #:apply-shift
    #:flat-yield-curve #:flat-dividend-curve #:flat-black-vol #:flat-rate #:flat-vol
    #:dated-curve #:interpolated-discount-curve #:interpolated-zero-curve

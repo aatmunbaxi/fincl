@@ -133,15 +133,18 @@ its day counter. Only dated curves have one.")
         (curve-dividend-yield c 1d-6)
         (/ (- (log (curve-dividend-discount c horizon))) horizon))))
 
-(defgeneric structure-black-variance (structure strike horizon)
-  (:documentation "Total Black variance for STRIKE to HORIZON."))
+(defgeneric structure-black-variance (structure strike horizon &optional forward)
+  (:documentation "Total Black variance for STRIKE to HORIZON. FORWARD, the
+forward to HORIZON, is what a surface in moneyness needs; a market passes
+it."))
 
-(defgeneric structure-black-vol (structure strike horizon)
-  (:documentation "Black volatility for STRIKE to HORIZON.")
-  (:method ((s black-vol-structure) strike horizon)
+(defgeneric structure-black-vol (structure strike horizon &optional forward)
+  (:documentation "Black volatility for STRIKE to HORIZON (FORWARD as for
+STRUCTURE-BLACK-VARIANCE).")
+  (:method ((s black-vol-structure) strike horizon &optional forward)
     (if (zerop horizon)
-        (structure-black-vol s strike 1d-6)
-        (sqrt (/ (structure-black-variance s strike horizon) horizon)))))
+        (structure-black-vol s strike 1d-6 forward)
+        (sqrt (/ (structure-black-variance s strike horizon forward) horizon)))))
 
 ;;; --------------------------------------------------------------------
 ;;; Shifts, for risk-factor bumps

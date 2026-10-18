@@ -52,11 +52,11 @@
   (declare (ignore horizon))
   (flat-rate c))
 
-(defmethod structure-black-variance ((s flat-black-vol) strike horizon)
-  (declare (ignore strike))
+(defmethod structure-black-variance ((s flat-black-vol) strike horizon &optional forward)
+  (declare (ignore strike forward))
   (* (flat-vol s) (flat-vol s) horizon))
-(defmethod structure-black-vol ((s flat-black-vol) strike horizon)
-  (declare (ignore strike horizon))
+(defmethod structure-black-vol ((s flat-black-vol) strike horizon &optional forward)
+  (declare (ignore strike horizon forward))
   (flat-vol s))
 
 (defmethod bump-structure ((c flat-yield-curve) shift)
