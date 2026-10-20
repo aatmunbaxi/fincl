@@ -190,7 +190,12 @@ days)."
     (if (< reference 16)
         (setf per-year 1
               reference (float (date- (add-tenor d1 (make-tenor 1 :years)) d1) 1d0))
-        (setf per-year (lround (/ 12d0 (float (lround (/ (* 12 reference) 365d0)) 1d0)))))
+        (setf per-year (-<> (* 12 reference)
+                            (/ <> 365d0)
+                            lround
+                            (float 1d0)
+                            (/ 12d0 <>)
+                            lround)))
     ;; A reference period over two years implies no coupons a year, where
     ;; QuantLib divides by zero.
     (when (zerop per-year)

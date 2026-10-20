@@ -17,7 +17,7 @@
                     (#:lp #:lparallel)
                     (#:c2mop #:closer-mop))
   (:import-from #:trivia #:match #:ematch #:guard)
-  (:import-from #:arrow-macros #:-> #:->> #:cond->)
+  (:import-from #:arrow-macros #:-> #:->> #:-<> #:<> #:cond->)
   (:export
    ;; math
    #:norm-cdf #:norm-pdf #:norm-quantile #:expm1 #:log1p #:erfcx

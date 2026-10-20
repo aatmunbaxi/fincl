@@ -99,11 +99,11 @@ without duplicates.
   (instrument-mandatory-dates (make-option (put 100) (bermudan :dates ds))) => DS"))
 
 (defmethod instrument-mandatory-dates ((o option))
-  (remove-duplicates (sort (append (exercise-mandatory-dates (option-exercise o))
-                                   (path-mandatory-dates (option-path o))
-                                   (payoff-mandatory-dates (option-payoff o)))
-                           #'date<)
-                     :test #'date=))
+  (-<> (append (exercise-mandatory-dates (option-exercise o))
+               (path-mandatory-dates (option-path o))
+               (payoff-mandatory-dates (option-payoff o)))
+       (sort <> #'date<)
+       (remove-duplicates <> :test #'date=)))
 
 ;;; Options are built with the option construction language
 ;;; (option-language.lisp): (make-option (put 40) (american) (expires #D"...")).

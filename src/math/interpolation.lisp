@@ -323,7 +323,7 @@ c3 t^3; :LINEAR extrapolation is the tangent line at the end knot."
                           (declare (double-float tt a1 a2 a3) (ignorable a1))
                           ,inside))))))
         (values
-         (closure (+ (aref ys segment) (* tt (+ a1 (* tt (+ a2 (* tt a3))))))
+         (closure (horner tt (aref ys segment) a1 a2 a3)
                   (y-first y-last)
                   (+ y-first (* slope-first (- x x-first)))
                   (+ y-last (* slope-last (- x x-last))))

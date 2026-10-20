@@ -116,7 +116,11 @@ piecewise-flat forwards).
         (curve-interpolate c time)
         ;; Flat instantaneous forward beyond the last date.
         (let* ((d-max (last-value c))
-               (forward (- (/ (interpolator-derivative (curve-interpolator c) (last-time c)) d-max))))
+               (forward (-> c
+                            curve-interpolator
+                            (interpolator-derivative (last-time c))
+                            (/ d-max)
+                            -)))
           (* d-max (exp (- (* forward (- time (last-time c))))))))))
 
 (defmethod bump-structure ((c interpolated-discount-curve) shift)
@@ -127,8 +131,14 @@ piecewise-flat forwards).
                  :discounts (map 'list (lambda (time df)
                                          (if (zerop time)
                                              1d0
-                                             (exp (- (* (apply-shift (/ (- (log df)) time) shift)
-                                                        time)))))
+                                             (-<> df
+                                                  log
+                                                  -
+                                                  (/ <> time)
+                                                  (apply-shift <> shift)
+                                                  (* <> time)
+                                                  -
+                                                  exp)))
                                  (curve-times c) (curve-values c))))
 
 ;;; --------------------------------------------------------------------

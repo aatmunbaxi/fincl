@@ -33,9 +33,10 @@ given, it is the uniform grid of N-STEPS steps.
   (make-time-grid m :dates (list d1 d2 expiry) :n-steps 50)"
   (check-input dates (and list (not null)) "a non-empty list of dates")
   (let* ((today (valuation-date market))
-         (dates (remove-duplicates (sort (remove-if (lambda (d) (date<= d today)) (copy-list dates))
-                                         #'date<)
-                                   :test #'date=)))
+         (dates (-<> (copy-list dates)
+                     (remove-if (lambda (d) (date<= d today)) <>)
+                     (sort <> #'date<)
+                     (remove-duplicates <> :test #'date=))))
     (unless dates
       (signal-invalid-argument 'dates dates 'list (format nil "dates after the valuation date ~A" today)))
     (let* ((mandatory (mapcar (lambda (d) (float (market-time market d) 1d0)) dates))

@@ -48,27 +48,30 @@ initial-guess branches.")
               ;; Far from the money: (2.1)-(2.3).
               (let* ((g (/ (- target 0.5d0)))
                      (g2 (* g g))
-                     (xi-bar (/ (- 0.032114372355d0
-                                   (* g2 (- 0.016969777977d0
-                                            (* g2 (- 2.6207332461d-3 (* 9.6066952861d-5 g2))))))
-                                (- 1d0 (* g2 (- 0.6635646938d0
-                                                (* g2 (- 0.14528712196d0
-                                                         (* 0.010472855461d0 g2)))))))))
+                     (xi-bar (/ (horner g2 0.032114372355d0 -0.016969777977d0 2.6207332461d-3 -9.6066952861d-5)
+                                (horner g2 1d0 -0.6635646938d0 0.14528712196d0 -0.010472855461d0))))
                 (* g (+ +one-over-sqrt-two-pi+ (* xi-bar g2))))
               ;; Near the money: (2.4)-(2.5).
               (let ((h (sqrt (- (log (- target))))))
-                (/ (- 9.4883409779d0
-                      (* h (- 9.6320903635d0 (* h (+ 0.58556997323d0 (* 2.1464093351d0 h))))))
-                   (- 1d0 (* h (+ 0.65174820867d0
-                                  (* h (+ 1.5120247828d0 (* 6.6437847132d-5 h)))))))))))
+                (/ (horner h 9.4883409779d0 -9.6320903635d0 0.58556997323d0 2.1464093351d0)
+                   (horner h 1d0 -0.65174820867d0 -1.5120247828d0 -6.6437847132d-5))))))
     (declare (double-float x-bar))
     ;; (2.6)-(2.7): one third-order correction.
     (let* ((q (/ (- (phi-tilde x-bar) target) (lbr-norm-pdf x-bar)))
            (x2 (* x-bar x-bar)))
       (declare (double-float q x2))
       (+ x-bar (/ (* 3 q x2 (- 2 (* q x-bar (+ 2 x2))))
-                  (+ 6 (* q x-bar (+ -12 (* x-bar (+ (* 6 q)
-                                                     (* x-bar (+ -6 (* q x-bar (+ 3 x2))))))))))))))
+                  ;; Horner in x-bar, innermost first; (* q x-bar <>) keeps
+                  ;; the product's association.
+                  (-<> (+ 3 x2)
+                       (* q x-bar <>)
+                       (+ -6 <>)
+                       (* x-bar <>)
+                       (+ (* 6 q) <>)
+                       (* x-bar <>)
+                       (+ -12 <>)
+                       (* q x-bar <>)
+                       (+ 6 <>)))))))
 
 (defun normalised-bachelier (theta difference stddev)
   "The undiscounted Bachelier price of a call (THETA = 1) or put (THETA = -1)
