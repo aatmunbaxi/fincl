@@ -224,6 +224,40 @@ mixin; GBM).
 
   (make-instance 'cos-engine :process (make-instance 'heston) :n-terms 160)"))
 
+(defclass fd-engine (engine)
+  ((process :initarg :process :initform (make-instance 'gbm) :reader process
+            :documentation "The dynamics: GBM, CEV and local vol on a log-spot
+grid (PDE-COEFFICIENTS), Heston on a (log-spot, variance) grid by ADI.")
+   (n-space :initarg :n-space :initform 200 :reader n-space
+            :documentation "Log-spot grid points.")
+   (n-variance :initarg :n-variance :initform 50 :reader n-variance
+               :documentation "Variance grid points (Heston).")
+   (n-time :initarg :n-time :initform 200 :reader n-time
+           :documentation "Time steps to expiry; exercise and monitoring dates are
+grid times, with gaps filled evenly.")
+   (theta :initarg :theta :initform 1/2 :reader fd-theta
+          :documentation "The theta-scheme weight: 1/2 Crank-Nicolson, 1 implicit.
+Heston's ADI uses Hundsdorfer-Verwer's 1/2 + sqrt(3)/6 instead.")
+   (rannacher-steps :initarg :rannacher-steps :initform 2 :reader rannacher-steps
+                    :documentation "Fully implicit substeps replacing the step after
+each payoff discontinuity (expiry, Bermudan exercise, barrier monitoring).
+0 disables the smoothing.")
+   (concentration :initarg :concentration :initform 2 :reader concentration
+                  :documentation "Width of the sinh concentration around the strike,
+in standard deviations of ln S_T; NIL for a uniform grid.")
+   (width :initarg :width :initform 5 :reader grid-width
+          :documentation "Half-width of the log-spot grid, in standard deviations of
+ln S_T around the spot."))
+  (:metaclass engine-class)
+  (:designator :fd)
+  (:models stochastic-process)
+  (:documentation "Finite differences in log-spot: a theta-scheme with
+Rannacher start-up on a sinh-concentrated grid, Ikonen-Toivanen splitting
+for American exercise, continuous barriers as boundary conditions; Heston by
+Hundsdorfer-Verwer ADI.
+
+  (make-engine :fd :process (make-local-vol) :n-space 400 :n-time 400)"))
+
 ;;; --------------------------------------------------------------------
 ;;; Protocol
 ;;; --------------------------------------------------------------------
@@ -342,6 +376,12 @@ condition is given."
   (price-cos (option-exercise o) (option-payoff o) (option-path o)
              (process e) e market))
 
+;; The PDE engine dispatches on the process too: its coefficients (or, for
+;; Heston, its two-dimensional scheme) come from it.
+(defmethod price ((o option) (e fd-engine) market)
+  (price-fd (option-exercise o) (option-payoff o) (option-path o)
+            (process e) e market))
+
 (defmethod price ((o option) (e binomial-engine) market)
   (restart-case
       (price-binomial (option-exercise o) (option-payoff o) (option-path o)
@@ -358,6 +398,7 @@ condition is given."
 (defgeneric price-mc (exercise payoff path engine market))
 (defgeneric price-cos (exercise payoff path process engine market))
 (defgeneric price-binomial (exercise payoff path process engine market))
+(defgeneric price-fd (exercise payoff path process engine market))
 
 (macrolet ((fallback (name)
              `(defmethod ,name (exercise payoff path process (engine engine) market)
@@ -365,7 +406,8 @@ condition is given."
                        :exercise exercise :payoff payoff :path path
                        :process process :engine engine :market market))))
   (fallback price-cos)
-  (fallback price-binomial))
+  (fallback price-binomial)
+  (fallback price-fd))
 
 ;; Least-specific fallbacks turn a missing combination into a readable error
 ;; instead of NO-APPLICABLE-METHOD.

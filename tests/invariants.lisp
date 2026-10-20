@@ -44,6 +44,12 @@ engine does not take a process and PROCESS is not the one its model fixes
 (defmethod test-engine-instance ((c (eql 'binomial-engine)) process)
   (make-instance 'binomial-engine :process process :n-steps 500))
 
+(defmethod test-engine-instance ((c (eql 'fd-engine)) process)
+  ;; Heston's two-dimensional grid is coarser, to keep the sweep quick.
+  (if (typep process 'heston)
+      (make-instance 'fd-engine :process process :n-space 80 :n-variance 30 :n-time 50)
+      (make-instance 'fd-engine :process process :n-space 200 :n-time 200)))
+
 (defmethod test-engine-instance ((c (eql 'cos-engine)) process)
   (make-instance 'cos-engine :process process))
 
@@ -79,6 +85,9 @@ invariant involves, for Monte Carlo engines.")
   (:method ((e cos-engine) magnitude &optional se)
     (declare (ignore magnitude se))
     1d-4)
+  (:method ((e fd-engine) magnitude &optional se)
+    (declare (ignore magnitude se))
+    1d-3)
   (:method ((e binomial-engine) magnitude &optional se)
     (declare (ignore magnitude se))
     1d-3)

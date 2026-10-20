@@ -106,6 +106,8 @@
                              (:file "monte-carlo")
                              (:file "path-payoffs")
                              (:file "binomial")
+                             (:file "fd")
+                             (:file "fd-heston")
                              (:file "cos")
                              (:file "selection")
                              (:file "discounting")
@@ -151,6 +153,7 @@
                (:file "rates-instruments")
                (:file "paths")
                (:file "surfaces")
+               (:file "fd")
                (:file "readme")
                ;; The runners call the checks above; keep them last.
                (:file "tests"))

@@ -12,7 +12,7 @@
            #:run-binomial-tests #:run-math-tests #:run-invariant-tests
            #:run-golden-tests #:run-fast-tests #:run-levy-tests #:run-rates-tests #:run-selection-tests
            #:run-readme-check #:run-rates-instrument-tests
-           #:run-path-tests #:run-surface-tests))
+           #:run-path-tests #:run-surface-tests #:run-fd-tests))
 
 (in-package #:fincl/tests)
 (named-readtables:in-readtable fincl:syntax)

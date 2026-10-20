@@ -121,12 +121,12 @@
     (let ((warned nil))
       (multiple-value-bind (v se engine)
           (handler-bind ((engine-fallback (lambda (c) (setf warned t) (muffle-warning c))))
-            (price put (make-cev :beta 0.5d0) m))
+            (price put (make-bates) m))
         (declare (ignore v se))
-        (check-that "CEV American falls back to Monte Carlo with ENGINE-FALLBACK"
+        (check-that "Bates American falls back to Monte Carlo with ENGINE-FALLBACK"
                     (and warned (eq (engine-key engine) :mc)))))
     (check-error "(:fallback nil) refuses the fallback"
-                 (with-engines ((:fallback nil)) (price put (make-cev :beta 0.5d0) m))
+                 (with-engines ((:fallback nil)) (price put (make-bates) m))
                  unsupported-combination)
     ;; Overrides: by style, by process class, by both; inner shadows outer.
     (check-that "an override by exercise style"

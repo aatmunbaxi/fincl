@@ -175,6 +175,7 @@
    #:barone-adesi-whaley-engine #:merton-series-engine #:cev-engine #:monte-carlo-engine
    #:cos-engine #:n-terms #:truncation #:richardson-dates
    #:binomial-engine #:smooth #:extrapolate
+   #:fd-engine #:price-fd #:pde-coefficients
    #:process #:n-paths #:n-steps #:seed #:antithetic #:n-chunks
    #:basis-degree #:basis #:regressors #:process-regressors #:rng #:sampler
    #:price #:price-analytic #:price-mc #:price-cos #:price-binomial

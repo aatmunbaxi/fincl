@@ -220,6 +220,25 @@ price under aging."
 ;;; derivatives in sigma survive it; second ones do not (volga -1.55 against
 ;;; Black-Scholes -1.98 there), so vanna and volga are left out unless asked
 ;;; for.
+(defmethod greeks ((o option) (e fd-engine) market
+                   &key (which '(:delta :gamma :vega :theta :rho :dividend-rho)) bumps)
+  "Delta, gamma and theta from the grid at t = 0 (theta: the change over the
+first time step, per calendar day); the others by bumping."
+  (let* ((node-keys '(:delta :gamma :theta))
+         (from-grid (intersection which node-keys))
+         (grid (and from-grid
+                    (let* ((m (pricing-market market o))
+                           (x (option-exercise o))
+                           (process (resolve-process (process e) m (time-to-expiry x m))))
+                      (multiple-value-bind (v delta gamma theta)
+                          (fd-node-greeks x (option-payoff o) (option-path o) process e m)
+                        (declare (ignore v))
+                        `(:delta ,delta :gamma ,gamma :theta ,theta)))))
+         (bumped (let ((rest (if from-grid (set-difference which node-keys) which)))
+                   (and rest (bump-greeks o e market :which rest :bumps bumps)))))
+    (iter (for key in which)
+          (appending `(,key ,(getf (if (member key node-keys) grid bumped) key))))))
+
 (defmethod greeks ((o option) (e binomial-engine) market
                    &key (which '(:delta :gamma :vega :theta :rho :dividend-rho)) bumps)
   (let* ((node-keys '(:delta :gamma :theta))
