@@ -127,6 +127,19 @@
             ];
           };
 
+          # The default shell plus QuantLib and a C++ toolchain, for the
+          # benchmarks against QuantLib (benchmarks/):
+          #
+          #   nix develop .#benchmarks -c sbcl --non-interactive \
+          #     --eval '(ql:quickload :fincl/benchmarks)' \
+          #     --eval '(fincl/benchmarks:run-benchmarks)'
+          benchmarks = pkgs.mkShell {
+            name = "fincl-benchmarks";
+            inputsFrom = [ self.devShells.${pkgs.system}.default ];
+            packages = [ pkgs.quantlib pkgs.boost pkgs.gcc ];
+            LD_LIBRARY_PATH = nativeLibPath;
+          };
+
           # QuantLib (C++; nixpkgs has no Python bindings), only for
           # regenerating test fixtures:
           #

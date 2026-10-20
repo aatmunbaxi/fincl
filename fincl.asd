@@ -162,3 +162,22 @@
   :perform (test-op (o c)
              (unless (symbol-call '#:fincl/tests '#:run-tests)
                (error "fincl/tests: RUN-TESTS reported failing checks."))))
+
+(defsystem "fincl/benchmarks"
+  :description "fincl against QuantLib: the same jobs priced by both, timed
+under one protocol. Not part of fincl; run by hand in the .#benchmarks shell."
+  :depends-on ("fincl" "lparallel" "iterate" "uiop")
+  :pathname "benchmarks/"
+  :serial t
+  :components ((:file "package")
+               (:file "harness")
+               (:file "report")
+               (:file "common")
+               (:file "runner")
+               (:file "calibration/calibration")
+               (:file "options-pricing/options-pricing")
+               (:file "exotics-analytic/exotics-analytic")
+               (:file "monte-carlo/monte-carlo")
+               (:file "pde/pde")
+               (:file "rates/rates")
+               (:file "calibration-models/calibration-models")))
