@@ -1,6 +1,5 @@
 #+title: fincl: Quantitative Finance in Common Lisp
 
-* fincl: Quantitative Finance in Common Lisp
 /Finance in Common Lisp/
 
 
