@@ -12,8 +12,22 @@
 
 (defparameter *compiler-flags* '("-std=c++17" "-O2" "-DNDEBUG"))
 
+(defun project-root ()
+  "The fincl working tree: the nearest directory with a fincl.asd, searching
+up from the current directory. ASDF's location of the system is the fallback.
+The system can be loaded from a read-only Nix store copy (a flake's relative
+path, as in benchmarks/.envrc), so results and build products are written
+under the working tree instead."
+  (let ((ancestors
+          (iter (for dir initially (truename *default-pathname-defaults*)
+                     then (uiop:pathname-parent-directory-pathname dir))
+                (collect dir)
+                (until (equal dir (uiop:pathname-parent-directory-pathname dir))))))
+    (or (find-if (lambda (dir) (probe-file (merge-pathnames "fincl.asd" dir))) ancestors)
+        (asdf:system-source-directory "fincl"))))
+
 (defun benchmarks-directory ()
-  (asdf:system-relative-pathname "fincl" "benchmarks/"))
+  (merge-pathnames "benchmarks/" (project-root)))
 
 (defun group-source (group)
   (merge-pathnames (format nil "~(~A~)/~:*~(~A~).cpp" group) (benchmarks-directory)))
