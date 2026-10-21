@@ -48,3 +48,8 @@ The following are taken from =fincl/viz= demonstrations.
 
 | [[./viz/images/euro-convergence.png]] | [[./viz/images/american-convergence.png]] |
 | [[./viz/images/asian-convergence.png]]                       |                                       |
+
+** Volatility Calibration
+| [[./viz/images/calibration-before.png]] |
+| [[./viz/images/calibration-after.png]] |
+
