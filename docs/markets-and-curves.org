@@ -13,12 +13,17 @@ the underlying selects spot, dividends, and equity vol.
                          :dividend 0.01d0 :vol 0.2d0))
    :curves '((:usd-ois :rate 0.04d0))
    :discounting '((:usd . :usd-ois))))
-(defparameter *stock-view* (market-view *named-market* :underlying :stock))
+(defparameter *stock-view* (market-view *named-market* :underlying :foo))
 
 (spot *stock-view*)
+;; => 100.0d0
 (discount-factor *stock-view* #D"2027-10-01")
+;; => 0.9607894391523232d0 (96.07894391523232d0%)
 (forward *stock-view* #D"2027-10-01")
+;; => 103.0454533953517d0
 #+end_src
+
+
 The discount factor is exp(-0.04); the forward is 100 * exp(0.03).
 With several underlyings, put =(underlying :stock)= in the option clauses.
 Currency conversion and quanto pricing are not supplied by this view.
@@ -34,7 +39,8 @@ extends its last instantaneous forward rate.
                  :dates (list #D"2026-10-01" #D"2027-10-01" #D"2028-10-01")
                  :discounts '(1d0 0.96d0 0.92d0)
                  :day-counter +actual-365-fixed+))
-(curve-discount *usd-curve* #D"2027-10-01") ; 0.96d0
+(curve-discount *usd-curve* #D"2027-10-01")
+;; => 0.96d0
 
 (make-market :valuation-date #D"2026-10-01"
              :curves `((:usd-ois :curve ,*usd-curve*))
@@ -56,8 +62,10 @@ for example, a deposit helper specifies a quote, index, and valuation date.
 #+begin_src lisp
 (defparameter *quoted-rate*
   (make-interest-rate 0.05d0 :day-counter +actual-360+
-                            :compounding :compounded :frequency :semiannual))
+                             :compounding :compounded
+                             :frequency :semiannual))
 (compound-factor *quoted-rate* #D"2026-10-01" #D"2027-10-01")
+;; => 1.0513458770904074d0 (105.13458770904074d0%)
 #+end_src
 Coupon accrual, curve time, and a yield quote need not share a day count.
 Supply the relevant convention rather than reusing the market's by accident.
@@ -66,13 +74,14 @@ Supply the relevant convention rather than reusing the market's by accident.
 BUMP returns another market. A relative spot shift of 0.01 is a 1% move;
 an absolute vol shift of 0.01 is one volatility percentage point.
 #+begin_src lisp
-(bump *named-market* '(:spot :stock) '(:relative 0.01d0))
-(bump *named-market* '(:vol :stock) '(:absolute 0.01d0))
+(bump *named-market* '(:spot :foo) '(:relative 0.01d0))
+(bump *named-market* '(:vol :foo) '(:absolute 0.01d0))
 (bump *named-market* '(:curve :usd-ois) '(:absolute 0.0001d0))
 (derive-market *named-market* :valuation-date #D"2026-10-02")
 
 (adjust +target+ #D"2026-10-03" :following) ; Monday 2026-10-05
 (make-schedule #D"2027-10-01" #D"2029-10-01" #T"6M" :calendar +target+)
+;; => #<SCHEDULE #D"2027-10-01" to #D"2029-10-01", 4 periods>
 #+end_src
 A curve bump shifts zero-rate knots for interpolated curves and helper
 quotes for bootstrapped curves. These are different risk experiments.

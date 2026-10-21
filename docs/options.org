@@ -12,10 +12,10 @@ evaluated Lisp expressions; the data constructor accepts already built values.
                   :spot 100 :rate 0.04d0 :dividend 0.01d0 :vol 0.2d0))
 (defparameter *european*
   (make-option (call 100) (expires #T"1Y" :from #D"2026-10-01")))
+
 (defparameter *bermudan*
   (make-option (put 100)
                (bermudan :dates (list #D"2027-04-01" #D"2027-10-01"))))
-(make-option-from-clauses `((:put 100) (:expires ,#D"2027-10-01")))
 #+end_src
 A tenor needs a starting date and is resolved when the option is built.
 For a Bermudan, the last exercise date becomes expiry.
@@ -23,13 +23,28 @@ For a Bermudan, the last exercise date becomes expiry.
 * Numerical method and process
 #+begin_src lisp
 (price *european* :black-scholes *option-market*)
+;; => 9.319738455197548d0
+;;    NIL
+;;    #<ENGINE (make-engine :black-scholes)>
+
 (price *bermudan* (make-engine :binomial :n-steps 2000) *option-market*)
+;; => 6.538366446473676d0
+;;    NIL
+;;    #<ENGINE (make-engine :binomial)>
+
 (price *european*
        (make-engine :cos
                     :process (make-gbm :vol 0.3d0)
                     :n-terms 256)
        ,*option-market*)
+;; => 13.151137270960932d0
+;;    NIL
+;;    #<ENGINE (make-engine :cos :process (make-gbm :vol 0.3d0))>
+
 (price *european* (make-heston :xi 0.5d0 :rho -0.7d0) *option-market*)
+;; => 8.840561336808683d0
+;;    NIL
+;;    #<ENGINE (make-engine :cos :process (make-heston :xi 0.5d0))>
 #+end_src
 The Black-Scholes and Barone-Adesi-Whaley engines use market volatility. To
 supply an explicit process vol, use an engine that takes that process (or bump
@@ -43,6 +58,9 @@ market vol). A process in the engine argument asks fincl to choose a method;
          (make-engine :mc :process (make-heston :xi 0.5d0)
                           :n-paths 20000 :n-steps 50 :seed 42)
          *option-market*))
+;; => 8.769800399537948d0
+;;    0.048702102370630926d0 (4.870210237063093d0%)
+;;    #<ENGINE (make-engine :mc :process (make-heston :xi 0.5d0) :n-paths 20000)>
 #+end_src
 The wrapper creates and cleans up a worker kernel if none is bound. The
 default counter RNG makes results reproducible across worker/chunk counts.
@@ -55,9 +73,13 @@ dates snap to a uniform grid; COS uses the supplied future exercise times.
 #+begin_src lisp
 (greeks *european* :black-scholes *option-market*
         :which '(:delta :gamma :vega :theta))
+;; => (:DELTA 0.5927490982069542d0 :GAMMA 0.01914103523783824d0 :VEGA
+;;    38.28207047567648d0 :THETA -0.01434690815862183d0)
+
 (implied-volatility *european*
                     (price *european* :black-scholes *option-market*)
-                    :black-scholes *option-market*) ; about 0.2d0
+                    :black-scholes *option-market*) 
+;; => about 0.2d0
 #+end_src
 Greeks return a plist. Vega is per unit vol, not per one percentage point;
 rho is per unit rate. Theta is expressed per calendar day; tree-node theta
@@ -78,8 +100,10 @@ payoff method and a closure for simulation.
 #+begin_src lisp
 (define-payoff cash-digital (strike-payoff) () (s)
   (if (plusp (* phi (- s strike))) 1d0 0d0))
+
 (defparameter *digital*
   (make-option (call 100) (cash-digital) (expires #D"2027-10-01")))
+
 (with-pricing-kernel (:workers 2)
   (price *digital* (make-engine :mc :n-paths 20000) *option-market*))
 #+end_src

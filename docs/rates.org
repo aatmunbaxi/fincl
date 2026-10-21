@@ -12,15 +12,24 @@ to curve; an index names its forecast curve separately.
   (make-market :valuation-date #D"2026-10-01"
                :curves '((:eur-ois :rate 0.025d0) (:euribor-6m :rate 0.03d0))
                :discounting '((:eur . :eur-ois))))
+
 (defparameter *bond-schedule*
   (make-schedule #D"2026-10-01" #D"2031-10-01" #T"1Y" :calendar +target+))
+
 (defparameter *bond*
   (make-fixed-rate-bond *bond-schedule* 0.035d0 +actual-365-fixed+
                         :face 1000 :currency :eur :settlement-days 2))
 
 (price *bond* :discounting *rates-market*)
+;; => 1044.9754377424476d0
+;;    NIL
+;;    #<ENGINE (make-engine :discounting)>
+
 (bond-clean-price *bond* *rates-market*)
+;; => 104.48782099611151d0
+
 (bond-dirty-price *bond* *rates-market*)
+;; => 104.52617716049508d0
 #+end_src
 PRICE gives the currency NPV at valuation. Clean/dirty prices are per 100
 of face at settlement; dirty includes accrued interest. BOND-YIELD,
@@ -32,15 +41,23 @@ are explicit; the market supplies forecasts and discount factors.
 #+begin_src lisp
 (defparameter *fixed-schedule*
   (make-schedule #D"2027-10-01" #D"2032-10-01" #T"1Y" :calendar +target+))
+
 (defparameter *float-schedule*
   (make-schedule #D"2027-10-01" #D"2032-10-01" #T"6M" :calendar +target+))
+
 (defparameter *swap*
   (make-vanilla-swap :payer 1000000
                      *fixed-schedule* 0.03d0
                      (make-instance 'thirty-360 :variant :bond-basis)
                      *float-schedule* (euribor #T"6M" :forecast-curve :euribor-6m)))
+
 (price *swap* :discounting *rates-market*)
+;; => 2037.1977964745602d0
+;;    NIL
+;;    #<ENGINE (make-engine :discounting)>
+
 (fair-rate *swap* *rates-market*)
+;; => 0.0304500457396286d0 (3.04500457396286d0%)
 #+end_src
 OIS uses MAKE-OIS-SWAP with an overnight index such as SOFR or ESTR. FRAs
 use MAKE-FORWARD-RATE-AGREEMENT. Both have discounting-engine routes.
@@ -57,7 +74,9 @@ future, so no historical fixings are required.
   (make-swaption *swap*
                  (make-instance 'european-exercise :expiry #D"2027-09-29")
                  :settlement :physical))
+
 (price *swaption* (make-engine :black-rates :volatility 0.20d0) *rates-market*)
+
 (price *swaption* (make-engine :bachelier-rates :volatility 0.008d0) *rates-market*)
 #+end_src
 These are different quotes: 20% lognormal versus 80 basis points normal
@@ -80,14 +99,23 @@ Use a single-curve example when comparing its formulas or tree.
   (make-market :valuation-date #D"2026-10-01"
                :curves '((:euribor-6m :rate 0.03d0))
                :discounting '((:eur . :euribor-6m))))
+
 (defparameter *hw* (make-hull-white :a 0.05d0 :sigma 0.01d0))
+
 (price *swaption* (make-engine :jamshidian :process *hw*) *single-curve-market*)
+;; => 16867.247938661803d0
+;;    NIL
+;;    #<ENGINE (make-engine :jamshidian)>
+
 (price *swaption*
        (make-engine :hull-white-tree :process *hw* :time-steps 100)
-       *single-curve-market*)
+       ,*single-curve-market*)
+;; => 16867.58390145408d0
+;;    NIL
+;;    #<ENGINE (make-engine :hull-white-tree :time-steps 100)>
 #+end_src
 Jamshidian supports European physical settlement without floating spread.
 The tree also handles physical Bermudan swaptions and callable fixed-rate
 bonds, putting exercise/call dates on its grid. Hull-White sigma is a model
 parameter; it is not the Black swaption volatility from the previous example.
-Unlike equity options, rates instruments do not accept =:auto= selection.
+Unlike equity options, rates instrument pricing does not accept =:auto= selection.

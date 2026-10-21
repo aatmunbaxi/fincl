@@ -183,7 +183,11 @@ Payoffs are automatically made known to =make-option=,
 ;; And under arbitrary asset dynamics
 (price *autocall* (make-engine :mc :process (make-heston :xi 0.5d0 :rho -0.7d0)
                                    :n-paths 50000 :n-steps 4)
-       ,*m*)
+       *m*)
+;; => 95.0157193971212d0
+;;    0.04817825450751784d0 (4.8178254507517835d0%)
+;;    #<ENGINE (make-engine :mc :process (make-heston :xi 0.5d0) :n-paths 50000
+;;                          :n-steps 4)>
 #+end_src
 The payoffs defined is European-only, has no closed form, and reads latent state by
 name (=(:state v :variance)= under Heston).
@@ -200,7 +204,7 @@ reproducible and testable:
            (with-pricing-kernel (:workers 8) (price *asian* e *m*)))))
 ;; => (T)
 #+end_src
-Variance reduction with control variates is a setting, and can dramatically reduce variance for an equivalent simulation with 
+Variance reduction with control variates is a setting, and can dramatically reduce variance for an equivalent simulation.
 #+begin_src lisp
 ;; Standard errors of the same Asian under plain MC, a geometric-Asian control
 ;; variate, and randomized QMC (Sobol, scrambled, Brownian-bridge ordered).
@@ -216,7 +220,12 @@ everything else:
 #+begin_src lisp
 (with-pricing-kernel ()
   (greeks *asian* (make-engine :mc :n-paths 100000) *m* :method :pathwise))
+;; => (:DELTA 0.5603027305873618d0 :VEGA 23.531126227095505d0
+;;  :STANDARD-ERRORS (:DELTA 4.566744146796074d-4 :VEGA 0.10997555780061449d0))
+
 (greeks *call* :black-scholes *m* :which '(:delta :gamma :vega :theta :rho))
+;; => (:DELTA 0.5927490982069542d0 :GAMMA 0.01914103523783824d0 :VEGA
+;;     38.28207047567648d0 :THETA -0.01434690815862183d0 :RHO 49.95517136549787d0)
 #+end_src
 
 * Surfaces, local vol and calibration

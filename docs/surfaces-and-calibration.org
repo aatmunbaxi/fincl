@@ -8,7 +8,7 @@ calibration recover it.
 (defpackage #:surfaces (:use #:cl #:fincl))
 (in-package #:surfaces)
 (named-readtables:in-readtable fincl:syntax)
-(defparameter +today+ #D"2026-10-01")
+(defconstant +today+ #D"2026-10-01")
 (defparameter *m*
   (make-bs-market :valuation-date +today+ :spot 100 :rate 0.04d0
                   :dividend 0.01d0 :vol 0.22d0))
@@ -37,6 +37,7 @@ come from it).
 #+begin_src lisp
 (let ((q (first (quote-set-quotes *quotes*))))
   (list (quote-price q *m*) (quote-implied-vol q *m*)))
+;; => (1.4947874085597358d-4  0.32642734145571956d0)
 #+end_src
 
 * Surfaces
@@ -56,13 +57,16 @@ construction; =butterfly-arbitrage-free-p= and =calendar-arbitrage-free-p=
 check Gatheral's /g(k) >= 0/ and monotonicity in /T/ on dense grids.
 #+begin_src lisp
 (defparameter *grid* (quotes-vol-surface *quotes* *m*))
+
 (defparameter *smiled*
   (make-bs-market :valuation-date +today+ :spot 100 :rate 0.04d0 :dividend 0.01d0 :vol *grid*))
+
 (list (price (otm 90 (months-out 12)) :black-scholes *smiled*)
       (price (otm 90 (months-out 12)) (make-engine :cos :process *truth*) *m*)) ; same, up to interpolation
+;; => (3.3438919340851565d0 3.343891934085157d0)
 #+end_src
 SSVI has an arbitrage-free parameter region, enforced at construction:
-=eta (1 + |rho|) <= 2= and =0 < gamma <= 1/2=.
+=eta (1 + |rho|) ≤ 2= and =0 < gamma ≤1/2=.
 
 * Fitting smiles
 Each fitter takes quotes and the market and returns =(values fit vol-rmse)=:
@@ -77,6 +81,8 @@ expiry; =:beta= fixes β).
                              (quote-set-quotes *quotes*)))))
   (multiple-value-bind (slice rmse) (fit-svi one-year *m*)
     (list slice rmse (butterfly-arbitrage-free-p slice))))
+;; => (#<SVI-SLICE T=1.0000 a=0.01297 b=0.07536 rho=-0.6768 m=0.1270 sigma=0.1323>
+;;     5.043729683575655d-5 T)
 #+end_src
 Hagan's SABR formulas (lognormal and normal) match QuantLib's
 =sabrVolatility= to 1e-8 on 66 cases (=tests/fixtures/sabr.sexp=).
@@ -87,12 +93,16 @@ Hagan's SABR formulas (lognormal and normal) match QuantLib's
 of Europeans reproduce the surface by construction; exotics then differ from
 both Black–Scholes and a calibrated stochastic-vol model, which is the point:
 #+begin_src lisp
-(defparameter *dko* (make-option (call 100) (barrier :down-and-out 80)
-                                 (expires #T"1Y" :from +today+)))
+(defparameter *dko* (make-option
+                     (call 100)
+                     (barrier :down-and-out 80)
+                     (expires #T"1Y" :from +today+)))
+
 (with-pricing-kernel ()
   (list (price *dko* (make-engine :mc :process (make-local-vol) :n-paths 50000 :n-steps 100) *smiled*)
         (price *dko* (make-engine :mc :process *truth* :n-paths 50000 :n-steps 100) *m*)
         (price *dko* :black-scholes *m*)))
+;; => 8.606164227386468d0 8.560487105337211d0 9.903083205761547d0)
 #+end_src
 A non-positive Dupire denominator (butterfly arbitrage in the surface)
 signals =butterfly-arbitrage=. =:substeps= (default 4) sets the Euler steps
@@ -108,14 +118,28 @@ compares Black implied vols (=:implied-vol-rmse=, default) or prices
 (=:price-rmse=), each scaled by the quote's weight.
 #+begin_src lisp
 (multiple-value-bind (fitted report)
-    (calibrate (make-heston :v0 0.03d0 :theta 0.03d0 :kappa 3d0 :xi 0.2d0 :rho 0d0)
-               *m* *quotes* :engine :cos)
+    (calibrate (make-heston
+                :v0 0.03d0
+                :theta 0.03d0
+                :kappa 3d0
+                :xi 0.2d0
+                :rho 0d0)
+                *m* *quotes*
+               :engine :cos)
+  
   (list (getf report :rmse) (getf report :parameters)))
+;; => (2.601815973602666d-10
+;;     (:V0 0.04000000000773375d0 :KAPPA 1.4999999990700663d0 :THETA
+;;      0.04999999999958196d0 :XI 0.5999999995879258d0 :RHO -0.7000000003161662d0))
 
 ;; Hold kappa fixed (by name, or (name value)):
-(multiple-value-bind (fitted report) (calibrate (make-heston :kappa 2d0) *m* *quotes*
-                                                :engine :cos :fixed '(:kappa))
+(multiple-value-bind (fitted report)
+    (calibrate (make-heston :kappa 2d0) *m* *quotes*
+               :engine :cos
+               :fixed '(:kappa))
   (getf report :parameters))
+;; => (:V0 0.039984523446048525d0 :KAPPA 2.0d0 :THETA 0.047247177589407996d0 :XI
+;;     0.6354777261657102d0 :RHO -0.7012794084778351d0)
 #+end_src
 The report is a plist: =:rmse :max-error :iterations :residuals
 :parameters=. Quotes are repriced in parallel under the bound kernel (serially

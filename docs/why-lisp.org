@@ -78,11 +78,7 @@ You can now repurpose the =price= function, and specify your =black-scholes=-spe
 ;;    #<ENGINE (make-engine :mc)>
 #+end_src
 
-Since common lisp has a good degree of self-awareness, automatic engine
-selection of =price= is also aware of the user-defined analytic pricing method.
-#+begin_src lisp
-(price *digital* :auto *m*)   ; will use user-defined pricing formula 
-#+end_src
+
 SBCL users might be aware that multiple dispatch is somewhat slow in CLOS, but
 dispatch is done once per call to price; inner hot loops get typed closures
 (=make-stepper=, =payoff-kernel=, =path-kernel=), and never call generics while, e.g.
