@@ -155,19 +155,29 @@ int main(int argc, char** argv) {
                    });
                });
 
-    bench::run("swap-npv-fair-rate", "VanillaSwap + DiscountingSwapEngine",
-               Plist()("nominal", 5e6)("fixed-rate", 0.026)("spread", 0.001)("start", "2026-09-28")(
-                   "end", "2036-09-29"),
-               Plist(), [] {
-                   auto curves = builtCurves();
-                   auto swap = euroSwap(Swap::Receiver, 5e6, 0.026, Date(28, September, 2026),
-                                        Date(29, September, 2036),
-                                        ext::make_shared<Euribor6M>(curves.euriborHandle), 0.001);
-                   swap->setPricingEngine(ext::make_shared<DiscountingSwapEngine>(curves.estrHandle));
-                   return std::function<bench::Result()>([swap, curves] {
+    Plist swapInputs = Plist()("nominal", 5e6)("fixed-rate", 0.026)("spread", 0.001)(
+        "start", "2026-09-28")("end", "2036-09-29");
+    auto swapSetup = [] {
+        auto curves = builtCurves();
+        auto swap = euroSwap(Swap::Receiver, 5e6, 0.026, Date(28, September, 2026),
+                             Date(29, September, 2036),
+                             ext::make_shared<Euribor6M>(curves.euriborHandle), 0.001);
+        swap->setPricingEngine(ext::make_shared<DiscountingSwapEngine>(curves.estrHandle));
+        return std::make_pair(swap, curves);
+    };
+    bench::run("swap-npv", "VanillaSwap + DiscountingSwapEngine", swapInputs, Plist(), [swapSetup] {
+        auto [swap, curves] = swapSetup();
+        return std::function<bench::Result()>([swap = swap, curves = curves] {
+            swap->recalculate();
+            return bench::Result{swap->NPV()};
+        });
+    });
+    bench::run("swap-fair-rate", "VanillaSwap + DiscountingSwapEngine", swapInputs, Plist(),
+               [swapSetup] {
+                   auto [swap, curves] = swapSetup();
+                   return std::function<bench::Result()>([swap = swap, curves = curves] {
                        swap->recalculate();
-                       return bench::Result{swap->NPV(), std::nan(""),
-                                            bench::Plist()("fair-rate", swap->fairRate())};
+                       return bench::Result{swap->fairRate()};
                    });
                });
 

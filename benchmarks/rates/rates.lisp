@@ -12,7 +12,8 @@
 ;;;;   bootstrap-euribor-on-estr   PiecewiseYieldCurve, ESTR discounting       bootstrap-curve :discount-curve
 ;;;;   bond-clean-price            BondFunctions::cleanPrice (10Y Treasury)    bond-clean-price
 ;;;;   bond-yield                  BondFunctions::yield (Brent, 1e-14)         bond-yield
-;;;;   swap-npv-fair-rate          VanillaSwap + DiscountingSwapEngine         :discounting, fair-rate
+;;;;   swap-npv                    VanillaSwap + DiscountingSwapEngine         :discounting
+;;;;   swap-fair-rate              VanillaSwap + DiscountingSwapEngine         fair-rate
 ;;;;   cap-black                   Cap + BlackCapFloorEngine (5Y semiannual)   :black-rates
 ;;;;   swaption-black              Swaption + BlackSwaptionEngine (1Y x 5Y)    :black-rates
 ;;;;   swaption-hw-jamshidian      JamshidianSwaptionEngine (1Y x 9Y)          :jamshidian
@@ -138,16 +139,27 @@ tolerance of 1e-14")
     ((bond (treasury)) (dc (nth-value 1 (treasury))))
   (bond-yield bond 99.5d0 dc :compounded :semiannual :valuation-date *today* :tolerance 1d-14))
 
-(define-benchmark "swap-npv-fair-rate"
-    (:group :rates :title "10Y EUR receiver swap, NPV and fair rate" :engine "discounting"
+(define-benchmark "swap-npv"
+    (:group :rates :title "10Y EUR receiver swap, NPV" :engine "discounting"
      :inputs '(:nominal 5d6 :fixed-rate 0.026d0 :spread 0.001d0 :start "2026-09-28" :end "2036-09-29")
      :tolerance 5d-4
-     :notes "tolerance 1e-10 per unit nominal, the fixtures'; the value is the NPV on 5,000,000; QuantLib computes the fair rate in
-the same calculation, fincl in a second pass")
+     :notes "tolerance 1e-10 per unit nominal, the fixtures'; the NPV on 5,000,000.
+QuantLib's calculation also computes both legs' BPS, fincl's only the NPVs")
     ((m (rates-market))
      (swap (euro-swap :receiver 5d6 0.026d0 #D"2026-09-28" #D"2036-09-29" :spread 0.001d0))
      (e (make-engine :discounting)))
-  (values (price swap e m) nil `(:fair-rate ,(fair-rate swap m))))
+  (priced swap e m))
+
+(define-benchmark "swap-fair-rate"
+    (:group :rates :title "10Y EUR receiver swap, fair rate" :engine "fair-rate"
+     :inputs '(:nominal 5d6 :fixed-rate 0.026d0 :spread 0.001d0 :start "2026-09-28" :end "2036-09-29")
+     :tolerance 1d-10
+     :notes "tolerance 1e-10, the fixtures'. QuantLib reads the fair rate from the
+calculation that also gives the NPV; fincl's FAIR-RATE values both legs and
+the fixed leg's BPS")
+    ((m (rates-market))
+     (swap (euro-swap :receiver 5d6 0.026d0 #D"2026-09-28" #D"2036-09-29" :spread 0.001d0)))
+  (fair-rate swap m))
 
 (define-benchmark "cap-black"
     (:group :rates :title "5Y cap at 2.5% on EURIBOR 6M, Black 25%" :engine "black-rates"

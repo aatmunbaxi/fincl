@@ -229,6 +229,7 @@ GROWTH = log(F(HORIZON)/S0)."
 (defun complex-log1p (z)
   "log(1 + Z) for complex Z, accurate also for |Z| near 0 (Kahan's method,
 as LOG1P)."
+  (declare (type (complex double-float) z))
   (let ((u (+ 1d0 z)))
     (if (= u 1d0)
         z
@@ -248,7 +249,13 @@ as LOG1P)."
         ;; i u + u^2, d^2 = beta^2 + xi^2 a, so beta - d = -xi^2 a / (beta + d):
         ;; every (beta - d)/xi^2 is written without the cancellation that
         ;; would otherwise lose about log10(1/xi^2) digits as xi -> 0.
-        (let ((xi2 (* xi xi)))
+        ;; Typed, so that the closure runs on unboxed doubles; the
+        ;; expression and its operation order are unchanged. HORIZON may be
+        ;; a rational: converting it first gives the same products.
+        (let ((kappa kappa) (theta theta) (xi xi) (rho rho) (v0 v0) (growth growth)
+              (horizon (float horizon 1d0))
+              (xi2 (* xi xi)))
+          (declare (double-float kappa theta xi rho v0 growth horizon xi2))
           (lambda (u)
             (declare (double-float u))
             (let* ((iu (complex 0d0 u))
@@ -263,5 +270,6 @@ as LOG1P)."
                             (- (* bmd/xi2 horizon)
                                (/ (* 2d0 (complex-log1p (/ (* g (- 1d0 e)) (- 1d0 g)))) xi2)))))
                    (dd (* bmd/xi2 (/ (- 1d0 e) (- 1d0 (* g e))))))
+              (declare (type (complex double-float) iu a beta d bmd/xi2 g e c dd))
               (exp (+ c (* dd v0)))))))))
 

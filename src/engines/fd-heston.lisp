@@ -22,7 +22,10 @@
   (xs nil :type double-vector) (vs nil :type double-vector)
   ;; Three-point first and second derivative weights, per x node and per v node.
   (x1 nil :type (simple-array double-float (* 3))) (x2 nil :type (simple-array double-float (* 3)))
-  (v1 nil :type (simple-array double-float (* 3))) (v2 nil :type (simple-array double-float (* 3))))
+  (v1 nil :type (simple-array double-float (* 3))) (v2 nil :type (simple-array double-float (* 3)))
+  ;; Second-order one-sided first-derivative weights over v0, v1, v2, for
+  ;; the boundary at v = 0.
+  (v0-weights nil :type double-vector))
 
 (defun three-point-weights (nodes order)
   "Weights over (i-1, i, i+1) at each interior node of NODES for the ORDER-th
@@ -44,7 +47,9 @@ derivative, as an (n x 3) array; zero rows at the ends."
     (dotimes (j n-v) (setf (aref vs j) (* d (sinh (* j h)))))
     (%make-heston-grid :xs xs :vs vs
                        :x1 (three-point-weights xs 1) :x2 (three-point-weights xs 2)
-                       :v1 (three-point-weights vs 1) :v2 (three-point-weights vs 2))))
+                       :v1 (three-point-weights vs 1) :v2 (three-point-weights vs 2)
+                       :v0-weights (map 'double-vector (lambda (w) (float w 1d0))
+                                        (finite-difference-weights `(0d0 ,(aref vs 1) ,(aref vs 2)) 1)))))
 
 (defstruct (heston-operators (:constructor %make-heston-operators))
   "Tridiagonal coefficients of A1 (along x) and A2 (along v) at every node,
@@ -54,6 +59,7 @@ and the mixed term's coefficient rho xi v_j."
   (mixed nil :type double-vector))
 
 (defun heston-operators (grid kappa theta xi rho growth rate)
+  (declare (double-float kappa theta xi rho growth rate))
   (let* ((xs (heston-grid-xs grid)) (vs (heston-grid-vs grid))
          (nx (length xs)) (nv (length vs)) (n (* nx nv))
          (x1 (heston-grid-x1 grid)) (x2 (heston-grid-x2 grid))
@@ -88,7 +94,7 @@ and the mixed term's coefficient rho xi v_j."
                   ((zerop j)
                    ;; v = 0: kappa theta V_v, one-sided over v0, v1, v2 (second
                    ;; order). Column 0, unused at j = 0, holds the v2 weight.
-                   (let ((w (finite-difference-weights `(0d0 ,(aref vs 1) ,(aref vs 2)) 1))
+                   (let ((w (heston-grid-v0-weights grid))
                          (kt (* kappa theta)))
                      (setf (aref a2 node 1) (- (* kt (aref w 0)) half-r)
                            (aref a2 node 2) (* kt (aref w 1))
@@ -221,9 +227,12 @@ PROCESS: (values price delta gamma theta-per-day)."
          (line-x (iter (repeat 4) (collect (make-array nx :element-type 'double-float))))
          (line-v (iter (repeat 4) (collect (make-array nv :element-type 'double-float))))
          (snapshot nil))
-    (declare (ignore work))
+    (declare (ignore work) (type double-vector u payoff) (type (or null double-vector) lambdas)
+             (fixnum n))
     (destructuring-bind (fu y0 y1 y2 a1u a2u fy2 tmp tmp2) vectors
+      (declare (type double-vector fu y0 y1 y2 a1u a2u fy2 tmp tmp2))
       (labels ((full (ops v out)
+                 (declare (type double-vector v out))
                  ;; OUT = (A0 + A1 + A2) V.
                  (apply-a0 ops grid nx nv v out)
                  (apply-a1 ops nx nv v tmp)
@@ -236,7 +245,9 @@ PROCESS: (values price delta gamma theta-per-day)."
                (adi-step (ops dt douglas)
                  ;; One Douglas (DOUGLAS true, theta = 1) or Hundsdorfer-Verwer
                  ;; step of U over DT, with the Ikonen-Toivanen source.
+                 (declare (double-float dt))
                  (let ((th (if douglas 1d0 (+ 0.5d0 (/ (sqrt 3d0) 6d0)))))
+                   (declare (double-float th))
                    (full ops u fu)
                    (dotimes (k n)
                      (setf (aref y0 k) (+ (aref u k) (* dt (aref fu k))

@@ -99,6 +99,18 @@ difference in combined standard errors (:STATISTICAL only)."
 
 (defun format-ratio (r) (if r (format nil "~,2Fx" r) "--"))
 
+(defun per-unit (side benchmark unit)
+  "SIDE's median per path (UNIT :PATH) or per path step (:STEP), from the
+benchmark's :WORK :PATHS and :STEPS; NIL without them."
+  (let ((median (and side (getf side :median)))
+        (paths (getf (benchmark-work benchmark) :paths))
+        (steps (or (getf (benchmark-work benchmark) :steps) 1)))
+    (and median paths (/ median (if (eq unit :step) (* paths steps) paths)))))
+
+(defun per-unit-cell (quantlib fincl benchmark unit)
+  (format nil "~A / ~A" (format-seconds (per-unit quantlib benchmark unit))
+          (format-seconds (per-unit fincl benchmark unit))))
+
 (defun cost-to-se (side &optional (target 1d-3))
   "Seconds to reach a standard error of TARGET: t (se / target)^2."
   (let ((se (side-error side)) (median (and side (getf side :median))))
@@ -151,7 +163,9 @@ left-aligned and the rest right-aligned, or as an org table."
                     ,(format-time-cell fincl)
                     ,(format-ratio (time-ratio fincl quantlib))
                     ,@(when statistical
-                        `(,(format nil "~A / ~A" (format-seconds (cost-to-se quantlib))
+                        `(,(per-unit-cell quantlib fincl benchmark :path)
+                          ,(per-unit-cell quantlib fincl benchmark :step)
+                          ,(format nil "~A / ~A" (format-seconds (cost-to-se quantlib))
                                    (format-seconds (cost-to-se fincl)))))
                     ,(format-bytes (getf fincl :consed))
                     ,(format-seconds (getf quantlib :setup-seconds))
@@ -160,7 +174,9 @@ left-aligned and the rest right-aligned, or as an org table."
           ,@(when parallel
               `((,(format nil "  [fincl, ~D workers]" workers) "" ,(value-cell parallel statistical)
                  "" "" "" ,(format-time-cell parallel) ,(format-ratio (time-ratio parallel quantlib))
-                 ,@(when statistical `(,(format nil "-- / ~A" (format-seconds (cost-to-se parallel)))))
+                 ,@(when statistical `(,(per-unit-cell nil parallel benchmark :path)
+                                       ,(per-unit-cell nil parallel benchmark :step)
+                                       ,(format nil "-- / ~A" (format-seconds (cost-to-se parallel)))))
                  ,(format-bytes (getf parallel :consed)) "" ,(format-seconds (getf parallel :setup-seconds))))))))))
 
 (defun geometric-mean (xs)
@@ -180,7 +196,8 @@ left-aligned and the rest right-aligned, or as an org table."
         (format stream "~&~%== ~A ~A~%" title (make-string (max 3 (- 78 (length title))) :initial-element #\=)))
     (print-table `("benchmark" "QuantLib value" "fincl value" ,(if statistical "diff (se)" "diff")
                    "verdict" "QuantLib median [min] ±MAD" "fincl median [min] ±MAD" "ratio"
-                   ,@(when statistical '("cost to 1e-3 se (QL / fincl)"))
+                   ,@(when statistical '("per path (QL / fincl)" "per step (QL / fincl)"
+                                         "cost to 1e-3 se (QL / fincl)"))
                    "fincl consed" "QL setup" "fincl setup")
                  (mapcan (lambda (row) (row-cells row statistical org)) rows)
                  stream :org org)

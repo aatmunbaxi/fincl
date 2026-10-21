@@ -107,21 +107,26 @@ in GBP."
 ;;; Fixings and forecasts
 ;;; --------------------------------------------------------------------
 
+(defun market-discount-curve (market curve)
+  "CURVE, a yield curve or the id of one in MARKET, as a function of
+MARKET's time: resolve it once to take many discount factors."
+  (curve-in-market (if (keywordp curve) (find-yield-curve market curve) curve) market))
+
 (defun market-curve-discount (market curve date)
   "Discount factor from MARKET's valuation date to DATE on CURVE, a yield
 curve or the id of one in MARKET."
-  (let ((curve (if (keywordp curve) (find-yield-curve market curve) curve)))
-    (curve-discount (curve-in-market curve market) (market-time market date))))
+  (curve-discount (market-discount-curve market curve) (market-time market date)))
 
 (defun index-forecast (index market start end &optional span)
   "The simple forward rate of INDEX's forecast curve in MARKET from START to
 END over SPAN (default the index day counter's fraction):
 (D(start)/D(end) - 1) / span."
   (let ((span (or span (year-fraction (index-day-counter index) start end)))
-        (curve (find-yield-curve market (index-forecast-curve index))))
+        (curve (market-discount-curve market (index-forecast-curve index))))
     (unless (plusp span)
       (signal-invalid-argument 'end end 'date (format nil "a date after ~A" start)))
-    (/ (- (/ (market-curve-discount market curve start) (market-curve-discount market curve end))
+    (/ (- (/ (curve-discount curve (market-time market start))
+             (curve-discount curve (market-time market end)))
           1d0)
        span)))
 

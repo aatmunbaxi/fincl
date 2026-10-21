@@ -11,4 +11,4 @@
   (:shadowing-import-from #:fincl #:minimize)
   (:import-from #:arrow-macros #:-> #:->>)
   (:local-nicknames (#:a #:alexandria) (#:lp #:lparallel))
-  (:export #:run-benchmarks))
+  (:export #:run-benchmarks #:replay-results))

@@ -156,23 +156,26 @@ C++ result in the table CPP (or NIL)."
   (multiple-value-bind (s mi h d mo y) (decode-universal-time (get-universal-time) 0)
     (format nil "~D-~2,'0D-~2,'0DT~2,'0D~2,'0D~2,'0DZ" y mo d h mi s)))
 
-(defun print-header (stream header workers quick pin quantlib-notice &key org)
-  (let ((governor (governor)) (load (load-average)))
-    (format stream "~&~:[~;* ~]fincl benchmarks against QuantLib~@[ ~A~]~%" org (getf header :quantlib))
-    (format stream "~&  machine  : ~A, ~D cores (~D threads), governor ~A~:[~; (!)~], load ~,2F~@[, pinned to CPU ~D~]~%"
-            (cpu-model) (physical-cores) (logical-cores) (or governor "unknown")
-            (and governor (string/= governor "performance")) (or load 0) pin)
-    (format stream "~&  fincl    : SBCL ~A, 1 worker (Monte Carlo and calibration also at ~D)~%"
-            (lisp-implementation-version) workers)
-    (format stream "~&  QuantLib : ~:[not run~;~:*~A~]~@[, g++ ~A~] ~{~A~^ ~}~%"
-            (getf header :quantlib) (getf header :compiler) *compiler-flags*)
-    (format stream "~&  protocol : ~D samples (fewer for calls over ~,2F s: about ~D s a series, at least 5, 3 above 10 s), ~
+(defun print-header (stream run &key org)
+  "The report's header lines for RUN, the description of a run: the plist
+RUN-BENCHMARKS writes at the top of a results file, minus its rows."
+  (destructuring-bind (&key machine fincl quantlib quick pin notice &allow-other-keys) run
+    (destructuring-bind (&key cpu cores threads governor load &allow-other-keys) machine
+      (format stream "~&~:[~;* ~]fincl benchmarks against QuantLib~@[ ~A~]~%" org (getf quantlib :quantlib))
+      (format stream "~&  machine  : ~A, ~D cores (~D threads), governor ~A~:[~; (!)~], load ~,2F~@[, pinned to CPU ~D~]~%"
+              cpu cores threads (or governor "unknown")
+              (and governor (string/= governor "performance")) (or load 0) pin)
+      (format stream "~&  fincl    : SBCL ~A, 1 worker (Monte Carlo and calibration also at ~D)~%"
+              (getf fincl :sbcl) (getf fincl :workers))
+      (format stream "~&  QuantLib : ~:[not run~;~:*~A~]~@[, g++ ~A~] ~{~A~^ ~}~%"
+              (getf quantlib :quantlib) (getf quantlib :compiler) (getf run :flags))
+      (format stream "~&  protocol : ~D samples (fewer for calls over ~,2F s: about ~D s a series, at least 5, 3 above 10 s), ~
 median of batches >= ~D ms, wall time (CLOCK_MONOTONIC)~%"
-            (if quick 10 30) (/ *series-seconds* 30) (round *series-seconds*) (round (* 1000 *sample-seconds*)))
-    (when (and load (> load 0.5))
-      (format stream "~&  warning  : the load average is ~,2F; timings will be noisy~%" load))
-    (when quantlib-notice
-      (format stream "~&  notice   : ~A~%" quantlib-notice))))
+              (if quick 10 30) (/ *series-seconds* 30) (round *series-seconds*) (round (* 1000 *sample-seconds*)))
+      (when (and load (> load 0.5))
+        (format stream "~&  warning  : the load average is ~,2F; timings will be noisy~%" load))
+      (when notice
+        (format stream "~&  notice   : ~A~%" notice)))))
 
 (defun row-data (row)
   "ROW as printable data."
@@ -226,10 +229,15 @@ benchmarks/results/<UTC time>.sexp. Returns the rows as data.
                                            (run-program-for group binary :quick quick :pin pin)
                                          (setf header (or header h))
                                          results))))))
+           (run `(:machine (:cpu ,(cpu-model) :cores ,(physical-cores) :threads ,(logical-cores)
+                            :governor ,(governor) :load ,(load-average))
+                  :fincl (:sbcl ,(lisp-implementation-version) :workers ,threads)
+                  :quantlib ,header :flags ,*compiler-flags* :quick ,quick :pin ,pin
+                  :notice ,notice))
            (stream (if (eq output :sexp) (make-broadcast-stream) *standard-output*))
            (org (eq output :org))
            (all-rows '()))
-      (print-header stream header threads quick pin notice :org org)
+      (print-header stream run :org org)
       (dolist (group groups)
         (let ((rows (run-group group (cdr (assoc group cpp)) :quick quick :workers threads)))
           (print-group group rows stream :org org :workers threads)
@@ -238,15 +246,57 @@ benchmarks/results/<UTC time>.sexp. Returns the rows as data.
       (print-discrepancies all-rows stream :org org)
       (let ((data (mapcar #'row-data all-rows))
             (path (merge-pathnames (format nil "results/~A.sexp" (timestamp)) (benchmarks-directory))))
-        (ensure-directories-exist path)
-        (with-open-file (s path :direction :output :if-exists :supersede)
-          (with-standard-io-syntax
-            (let ((*print-readably* nil) (*print-pretty* t) (*package* (find-package '#:fincl/benchmarks)))
-              (prin1 `(:machine (:cpu ,(cpu-model) :cores ,(physical-cores) :threads ,(logical-cores)
-                                 :governor ,(governor) :load ,(load-average))
-                       :fincl (:sbcl ,(lisp-implementation-version) :workers ,threads)
-                       :quantlib ,header :flags ,*compiler-flags* :quick ,quick :pin ,pin
-                       :rows ,data)
-                     s))))
+        (write-results path run data)
         (format stream "~&~% raw results: ~A~%" (namestring path))
         data))))
+
+(defun write-results (path run rows)
+  "Write RUN and ROWS to PATH as one readable plist."
+  (ensure-directories-exist path)
+  (with-open-file (s path :direction :output :if-exists :supersede)
+    (with-standard-io-syntax
+      (let ((*print-readably* nil) (*print-pretty* t) (*package* (find-package '#:fincl/benchmarks)))
+        (prin1 `(,@run :rows ,rows) s)))))
+
+(defun read-results (path)
+  "The plist written to PATH by WRITE-RESULTS."
+  (with-open-file (s path)
+    (let ((*package* (find-package '#:fincl/benchmarks))
+          (*read-eval* nil)
+          (*read-default-float-format* 'double-float))
+      (read s))))
+
+(defun stored-benchmark (row)
+  "A BENCHMARK holding the description ROW's :benchmark fields record."
+  (%make-benchmark :id (getf row :id) :group (getf row :group) :title (getf row :title)
+                   :engine (getf row :engine) :kind (getf row :kind)
+                   :tolerance (getf row :tolerance) :inputs (getf row :inputs)
+                   :work (getf row :work) :notes (getf row :notes)))
+
+(defun replay-results (path &key (output :text))
+  "Print the report of the results file PATH as if its run had just finished,
+with the groups it holds, in *GROUPS* order. Runs nothing. OUTPUT as
+RUN-BENCHMARKS. Returns the file's contents.
+
+  (replay-results \"results/2026-10-20T201304Z.sexp\")"
+  (let* ((data (read-results path))
+         (run (a:remove-from-plist data :rows))
+         (rows (mapcar (lambda (row)
+                         `(:benchmark ,(stored-benchmark row) :quantlib ,(getf row :quantlib)
+                           :fincl ,(getf row :fincl) :parallel ,(getf row :parallel)
+                           :workers ,(getf row :workers)))
+                       (getf data :rows)))
+         (groups (remove-if-not (lambda (g)
+                                  (find g rows :key (lambda (row) (benchmark-group (getf row :benchmark)))))
+                                *groups*))
+         (workers (getf (getf run :fincl) :workers))
+         (stream (if (eq output :sexp) (make-broadcast-stream) *standard-output*))
+         (org (eq output :org)))
+    (print-header stream run :org org)
+    (dolist (group groups)
+      (print-group group
+                   (remove-if-not (lambda (row) (eq (benchmark-group (getf row :benchmark)) group)) rows)
+                   stream :org org :workers workers))
+    (print-discrepancies rows stream :org org)
+    (format stream "~&~% replayed from: ~A~%" (namestring path))
+    data))

@@ -32,15 +32,26 @@ fixings and forecast curves to floating coupons; fixed flows ignore it."))
    (accrual-end :initarg :accrual-end :reader accrual-end :type date)
    (ref-start :initarg :ref-start :reader coupon-ref-start :type date)
    (ref-end :initarg :ref-end :reader coupon-ref-end :type date)
-   (day-counter :initarg :day-counter :reader coupon-day-counter :type day-counter))
+   (day-counter :initarg :day-counter :reader coupon-day-counter :type day-counter)
+   (period :reader %accrual-period :type double-float
+           :documentation "The year fraction from ACCRUAL-START to ACCRUAL-END,
+computed once: coupons are immutable."))
   (:documentation "Interest on NOMINAL accrued from ACCRUAL-START to
 ACCRUAL-END under DAY-COUNTER, with REF-START and REF-END the reference
 period for day counters that need one."))
 
-(defun accrual-period (coupon &optional (end (accrual-end coupon)))
-  "The year fraction of COUPON's accrual, up to END."
+(defun coupon-year-fraction (coupon end)
   (year-fraction (coupon-day-counter coupon) (accrual-start coupon) end
                  :ref-start (coupon-ref-start coupon) :ref-end (coupon-ref-end coupon)))
+
+(defmethod initialize-instance :after ((c coupon) &key)
+  (setf (slot-value c 'period) (coupon-year-fraction c (accrual-end c))))
+
+(defun accrual-period (coupon &optional (end nil end-p))
+  "The year fraction of COUPON's accrual, up to END (default its accrual end)."
+  (if end-p
+      (coupon-year-fraction coupon end)
+      (%accrual-period coupon)))
 
 (defgeneric coupon-rate (coupon market)
   (:documentation "The rate COUPON accrues at: fixed, or fixed or forecast
@@ -357,10 +368,10 @@ curve the market discounts the leg's currency on.
 
   (leg-npv (fixed-leg schedule (make-money 1d6 :eur) 0.03d0 +actual-360+) market)"
   (check-input market composite-market "a composite market")
-  (let ((curve (leg-discount-curve leg market discount-curve)))
+  (let ((curve (market-discount-curve market (leg-discount-curve leg market discount-curve))))
     (make-money (iter (for cf in (live-cashflows leg market))
                       (sum (* (cashflow-amount cf market)
-                              (market-curve-discount market curve (payment-date cf)))))
+                              (curve-discount curve (market-time market (payment-date cf))))))
                 (leg-currency leg))))
 
 (defun leg-bps (leg market &key discount-curve)
@@ -368,12 +379,12 @@ curve the market discounts the leg's currency on.
 MONEY: 1e-4 times the sum of nominal times accrual period times discount
 factor (QuantLib's CashFlows::bps)."
   (check-input market composite-market "a composite market")
-  (let ((curve (leg-discount-curve leg market discount-curve)))
+  (let ((curve (market-discount-curve market (leg-discount-curve leg market discount-curve))))
     (make-money (* 1d-4
                    (iter (for cf in (live-cashflows leg market))
                          (when (typep cf 'coupon)
                            (sum (* (coupon-nominal cf) (accrual-period cf)
-                                   (market-curve-discount market curve (payment-date cf)))))))
+                                   (curve-discount curve (market-time market (payment-date cf))))))))
                 (leg-currency leg))))
 
 (defun accrued-amount (leg date &optional market)

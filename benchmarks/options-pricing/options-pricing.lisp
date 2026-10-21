@@ -69,10 +69,12 @@ against QuantLib's plain CRR at the same N")
   (priced o e m))
 
 (define-benchmark "heston-european-analytic"
-    (:group :options-pricing :title "Heston European call" :engine "cos"
+    (:group :options-pricing :title "Heston European call, unmatched work: 128 Laguerre points against 256 cosine terms"
+     :engine "cos"
      :inputs (heston-inputs :kind "call") :work '(:laguerre-points 128 :terms 256)
-     :notes "QuantLib integrates the Heston characteristic function by Gauss-Laguerre;
-fincl sums 256 cosine terms")
+     :notes "unmatched work: QuantLib integrates the Heston characteristic function at
+128 Gauss-Laguerre points, fincl sums 256 cosine terms; heston-european-cos is
+the matched row")
     ((m (equity-market)) (o (vanilla :call)) (e (fourier (apply #'make-heston *heston*))))
   (priced o e m))
 
