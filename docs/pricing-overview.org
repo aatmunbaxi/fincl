@@ -1,0 +1,119 @@
+#+title: What goes into a price?
+
+* Pricing Instruments and Contracts
+A valuation combines contract terms, market data, and a pricing method:
+#+begin_src lisp
+(price instrument engine market)
+#+end_src
+An option also needs assumptions about the underlying's dynamics. Some
+engines fix those assumptions: Black-Scholes requires GBM. Others take a
+process, such as Heston, separately from their numerical settings.
+
+| Ingredient | Data Contained                    | Example                           |
+|------------+-----------------------------------+-----------------------------------|
+| Instrument | Terms agreed in the contract      | Strike, expiry, coupon schedule   |
+| Market     | Data observed on a valuation date | Spot, curves, fixings, quoted vol |
+| Process    | Assumed dynamics                  | GBM, Heston, Hull-White           |
+| Engine     | Formula or numerical method       | Black formula, tree, Monte Carlo  |
+
+A fixed-rate bond needs cash flows and discount factors.
+A swap also needs a forecast curve and past fixings.
+A rate option adds either quoted rate volatility or a short-rate model.
+
+=price= returns three values: NPV, sampling standard error, and the engine used.
+The second value is =nil= for deterministic methods, but that doesn't mean zero
+approximation error. Bond NPV is a currency amount; clean/dirty bond prices are
+per 100 of face.
+
+* Instruments and methods
+This is a summary of existing routes, not every possible parameter regime.
+
+| Instrument               | Pricing route                                      | Caveat                                                          |
+|--------------------------+----------------------------------------------------+-----------------------------------------------------------------|
+| European vanilla option  | Black-Scholes, COS, MC; Merton/CEV formulas        | Formula must match the process                                  |
+| American vanilla option  | GBM binomial, BAW, COS, MC with LSM                | BAW has domain limits; LSM approximates exercise                |
+| Bermudan vanilla option  | GBM binomial, COS, MC with LSM                     | Equity tree/LSM snap dates to their grids                       |
+| Custom terminal payoff   | Monte Carlo; LSM for early exercise                | No automatic custom analytic formula                            |
+| Barrier option           | Reiner-Rubinstein (+BGK for dates); MC with bridge | European; continuous barrier needs a diffusion for the bridge   |
+| Asian option             | Geometric, fixed strike: closed form; MC otherwise | European; observation dates must follow the valuation date      |
+| Lookback option          | Monte Carlo                                        | European; vanilla call/put kind only                            |
+| Structured/path payoff   | Monte Carlo through =define-path-payoff=             | European; no closed form; see [[./exotics-and-monte-carlo.org]]     |
+| Fixed-rate bond          | Discounting                                        | Clean/dirty price, yield, duration, convexity, z-spread helpers |
+| Vanilla Ibor swap or OIS | Discounting                                        | Forecast curve, discount curve, and needed fixings              |
+| FRA                      | Discounting                                        | Index forecast/fixing and settlement conventions                |
+| Cap, floor, collar       | Black or Bachelier rates engine                    | Vol is an optionlet quote, not equity vol                       |
+| European swaption        | Black/Bachelier rates; Hull-White Jamshidian/tree  | Settlement and model restrictions below                         |
+| Bermudan swaption        | Hull-White tree                                    | Physical settlement                                             |
+| Callable fixed-rate bond | Hull-White tree                                    | Explicit call/put schedule                                      |
+Key:
+- MC :: Monte Carlo
+- COS :: Fourier-cosine method of Fang and Osterlee
+- LSM :: Longstaff-Schwarz
+- BAW :: Approximation by Barone and Adesi-Whaley
+- GBM :: Geometric Brownian motion
+Black/Bachelier swaptions accept physical or cash-annuity settlement.
+Jamshidian requires European physical settlement and no floating spread.
+Hull-White uses one model curve for forecasting and discounting; it is not
+a general stochastic multi-curve model.
+
+Equity cash-dividend schedules and an equity PDE engine are not implemented
+yet, but are planned. Seasoned path-dependent options (fixings before the
+valuation date) are not supported. Smiles, local vol and model calibration
+are in [[./surfaces-and-calibration.org]].
+
+* Equity processes
+COS is the Fourier-cosine method of Fang and Osterlee. It needs a characteristic function for
+Europeans, and independent increments for early exercise.
+
+| Process                   | European COS             | Monte Carlo             | Early-exercise COS |
+|---------------------------+--------------------------+-------------------------+--------------------|
+| GBM                       | Yes                      | Yes                     | Calls and puts     |
+| Heston                    | Yes                      | Yes                     | No                 |
+| Bates (Heston with jumps) | Yes                      | Yes                     | No                 |
+| Merton jump diffusion     | Yes; also series formula | Yes                     | Puts               |
+| Kou jump diffusion        | Yes                      | Yes                     | Puts               |
+| Variance gamma            | Yes                      | Yes                     | Puts               |
+| NIG                       | Yes                      | Yes                     | Puts               |
+| CGMY                      | Yes                      | No sampler              | Puts               |
+| CEV                       | No; separate CEV formula | Yes                     | No                 |
+| Dupire local vol          | No                       | Yes (needs a surface)   | No                 |
+| GARCH                     | No                       | Yes, model-period steps | No                 |
+
+The CEV formula supports beta <= 1 within its numerical domain. COS early
+exercise for non-GBM processes currently supports puts; its call symmetry
+route is GBM-specific. MC early exercise is available through LSM for the
+simulatable processes, subject to their stepping requirements.
+
+* Curves, rates, and volatilities
+The market stores named yield curves and a currency-to-discount-curve map.
+An equity underlying has a spot, currency, dividend curve, and Black-vol
+structure. Pricing narrows a composite market to that underlying's view.
+Rates instruments use the composite market's named curves directly; no
+placeholder equity underlying is needed.
+
+- A numeric curve rate is continuously compounded. Dated curves can store
+  discount factors, zero rates, or forwards. Bootstrapping builds a curve
+  from deposit, FRA, futures, swap, or OIS helpers.
+- An INTEREST-RATE value carries its day count, compounding, and frequency.
+  That is different from an unqualified numeric curve rate.
+- A market has a day count for converting dates to pricing time. Dated
+  curves have their own reference dates and day counts; adapters reconcile them.
+- Equity flat vol is a Black quote. Default GBM reads the market's ATM-forward
+  variance term structure; this does not make GBM reproduce an arbitrary smile.
+- Rate-option vols are supplied to their engine, flat or by expiry. Black
+  uses relative lognormal vol; Bachelier uses absolute normal rate vol.
+- Hull-White takes mean reversion and short-rate volatility, and fits the
+  initial curve. These are model parameters, not swaption quote volatilities.
+
+* Choosing a route
+For equity options, =:auto= assumes GBM using market vol. Supplying a process in
+place of an engine also requests automatic engine selection under that process.
+No better engine choice falls back to Monte Carlo with a warning; selection is
+not a promise of a given numerical tolerance. Rates instruments require an
+explicit engine such as =:discounting=.
+
+See [[./grand-tour.org]] for the whole library in one page,
+[[./getting-started.org]] for a first price, [[./markets-and-curves.org]]
+for data, [[./options.org]] for equity choices, [[./exotics-and-monte-carlo.org]]
+for path dependence, [[./surfaces-and-calibration.org]] for smiles and
+calibration, and [[./rates.org]] for rates.

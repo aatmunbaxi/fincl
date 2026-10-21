@@ -1,0 +1,333 @@
+#+title: A grand tour of fincl
+
+fincl is an exploratory quantitative finance library in Common Lisp (SBCL) that
+ is meant to be hacked on from a REPL. This page walks through what is supported
+ in the order you would meet it.
+
+Deeper pages: [[./exotics-and-monte-carlo.org]],
+[[./surfaces-and-calibration.org]], [[./markets-and-curves.org]], [[./rates.org]].
+
+* Setup
+First acquire =fincl= locally (currently it is not on quicklisp), then =ql:quickload= it.
+#+begin_src lisp
+(ql:quickload :fincl)
+(defpackage #:tour (:use #:cl #:fincl))
+(in-package #:tour)
+
+;; #D"2027-10-01" and #T"6M" live in a named readtable, not the global one.
+;; Use is optional, but recommended
+(named-readtables:in-readtable fincl:syntax)
+
+(defconstant +today+ #D"2026-10-01")
+(defparameter *m*
+  (make-bs-market :valuation-date +today+ :spot 100 :rate 0.04d0
+                  :dividend 0.01d0 :vol 0.2d0))
+#+end_src
+
+* Terminology
+We call a financial contract an *instrument*. Currently, this can be a variety of
+different option types, bonds, and swaps. Instruments are priced in a given
+*market*, which is a collection of observations of ambient data needed to price a
+financial contract. This could include, but is not limited to, the spot price of
+an underlying asset, the dividend of that asset, the volatility, and/or
+the SOFR curve for US government bonds.
+
+Markets move according to a specified *process*; for example, an equity can be
+assumed to follow a geometric Brownian motion (GBM) and an option on that equity
+will be priced with the Black-Scholes formula. When a user asks to price an
+instrument whose underlying follows a process with a known closed-form price
+formula, =fincl= can choose this method automatically. Otherwise, the user can
+pass an *engine* compatible with the instrument and process directly.
+
+* Pricing with a contract × market × engine
+#+begin_src lisp
+(defparameter *call* (make-option
+                      (call 100)
+                      (expires #T"1Y" :from +today+)))
+
+(price *call* :black-scholes *m*)        ; returns (values npv standard-error engine)
+(price *call* :auto *m*)                 ; let fincl pick: closed form for GBM Europeans
+#+end_src
+Instruments are immutable terms; markets are immutable data (a scenario is a
+new market: =bump=, =derive-market=); engines are immutable too. Nothing
+mutates under a running parallel price.
+
+=make-option= takes clauses =(call k)=, =(put k)=, =(american)=, =(bermudan :every #T"3M"
+:from d)=, =(barrier ...)=, =(average ...)=, =(lookback ...)=. This function gives a
+single high-level entry point to defining options, and is extensible by the user.
+
+* Processes and automatic engine selection
+As mentioned before, =price= requires an instrument, an engine, and a market.
+Handing =price= a process instead of an engine asks fincl for the first engine
+that can price this exercise/payoff/path/process combination. Engines with
+closed form formulas are prioritized.
+#+begin_src lisp
+(price *call* (make-heston :xi 0.5d0 :rho -0.7d0) *m*)
+;; => 8.840561336808683d0
+;;    NIL
+;;    #<ENGINE (make-engine :cos :process (make-heston :xi 0.5d0))>
+
+(price *call* (make-engine :cos :process (make-variance-gamma) :n-terms 512) *m*)
+;;; => 9.429486125841098d0
+;;;    NIL
+;;;    #<ENGINE (make-engine :cos :process (make-variance-gamma) :n-terms 512)>
+#+end_src
+#+begin_src lisp
+(defparameter *put* (make-option (put 100) (american) (expires #T"1Y" :from
++today+)))
+
+;; Binomial engine
+(price *put* :auto *m*)
+;; => 6.701529642169915d0
+;;    NIL
+;;    #<ENGINE (make-engine :binomial)>
+
+;; Monte Carlo engine
+(price *put* (make-engine :mc :process (make-cev :beta 0.7d0) :n-paths 20000) *m*)
+;; => 6.708969807622813d0
+;;    0.03355341215058494d0 (3.355341215058494d0%)
+;;    #<ENGINE (make-engine :mc :process (make-cev :beta 0.7d0) :n-paths 20000)>
+
+;; Barone-Adesi-Whaley
+(with-engines ((:american :baw)) (price *put* :auto *m*))
+;; => 6.704490123847419d0
+;;    NIL
+;;    #<ENGINE (make-engine :baw)>
+
+;; Finite differences: Americans under CEV, local vol and Heston (ADI)
+(price *put* (make-heston :xi 0.5d0) *m*)
+;; => 6.239646134392475d0
+;;    NIL
+;;    #<ENGINE (make-engine :fd :process (make-heston :xi 0.5d0))>
+
+(price *put* (make-engine :fd :process (make-cev :beta 0.7d0) :n-space 400 :n-time 400) *m*)
+;; => 6.69206310222247d0
+#+end_src
+Stochastic processes curretly supported: GBM, CEV, Heston, Bates, GARCH, Merton, Kou,
+variance gamma, NIG, CGMY (transform only), Dupire local vol, Hull-White
+(for interest rates). Method × process tables are in [[./pricing-overview.org]].
+
+* Path-dependent contracts are clauses
+Asians, barriers and lookbacks require path features to accurately price; closed
+forms exist where the mathematics provides them, and Monte Carlo handles the
+rest with a Brownian-bridge correction for continuous monitored barriers.
+#+begin_src lisp
+;; Contiuously monitored barrier
+(defparameter *dko*
+  (make-option (call 100)
+               (barrier :down-and-out 90 :rebate 2)
+               (expires #T"1Y" :from +today+)))
+(price *dko* :black-scholes *m*)                                 
+;; => 8.812870223051647d0
+;;    NIL
+;;    #<ENGINE (make-engine :black-scholes)>
+
+(price *dko* (make-engine :mc :n-paths 200000) *m*)             
+;; => 8.832394676912466d0
+;;    0.02492562391040125d0 (2.4925623910401247d0%)
+;;    #<ENGINE (make-engine :mc :n-paths 200000)>
+
+;; No Brownian bridge, overprices
+(price *dko* (make-engine :mc :n-paths 200000 :barrier-bridge nil) *m*)
+;; => 9.194932834404005d0
+;;    0.025084182766153183d0 (2.5084182766153185d0%)
+;;    #<ENGINE (make-engine :mc :n-paths 200000 :barrier-bridge nil)>
+#+end_src
+
+#+begin_src lisp
+;; Discretely monitored asian (arithmetic mean)
+(defparameter *asian*
+  (make-option (call 100)
+               (average :arithmetic :every #T"1M" :from +today+)
+               (expires #T"1Y" :from +today+)))
+
+(price *asian* (make-engine :mc :n-paths 50000) *m*)
+;; => 5.585964965935848d0
+;;    0.02654001916089671d0 (2.654001916089671d0%)
+;;    #<ENGINE (make-engine :mc :n-paths 50000)>
+#+end_src
+
+** Structured payoffs in a macro
+=define-path-payoff= turns declarative clauses into a typed, allocation-free path
+kernel, with early termination. For example, here is how one would define the
+payoff structure of an autocallable instrument.
+Payoffs are automatically made known to =make-option=, 
+#+begin_src lisp
+(define-path-payoff autocall (payoff)
+    ((notional double-float) (barrier double-float) (coupon double-float)
+     (observations list))
+    (s)
+  ;; run the closure (lambda (i) forms...) on observation dates list
+  (:on observations (i)
+       (when (>= s barrier)
+         (pay (+ notional (* coupon (+ i 1))))
+         (stop)))
+  ;; final payoff
+  (:final (min notional s)))
+
+(defparameter *callable-dates*
+  (mapcar (lambda (m)
+            (add-tenor +today+ (make-tenor m :months)))
+          '(3 6 9 12)))
+
+(defparameter *autocall*
+  (make-option (autocall :notional 100
+                         :barrier 105
+                         :coupon 2
+                         :observations *callable-dates*)
+               (expires #T"1Y" :from +today+)))
+
+;; Option automatically priceable with Monte Carlo
+(price *autocall* (make-engine :mc :n-paths 50000 :n-steps 4) *m*)
+
+;; And under arbitrary asset dynamics
+(price *autocall* (make-engine :mc :process (make-heston :xi 0.5d0 :rho -0.7d0)
+                                   :n-paths 50000 :n-steps 4)
+       ,*m*)
+#+end_src
+The payoffs defined is European-only, has no closed form, and reads latent state by
+name (=(:state v :variance)= under Heston).
+
+Early exercise with path-dependent payoffs (e.g. Hawaiian options) is not implemented.
+
+* Monte Carlo usage
+Results do not depend on worker count or chunking (a counter-based Philox
+generator makes path /i/ a pure function of the seed), so parallel runs are
+reproducible and testable:
+#+begin_src lisp
+(let ((e (make-engine :mc :n-paths 20000)))
+  (list (= (with-pricing-kernel (:workers 1) (price *asian* e *m*))
+           (with-pricing-kernel (:workers 8) (price *asian* e *m*)))))
+;; => (T)
+#+end_src
+Variance reduction with control variates is a setting, and can dramatically reduce variance for an equivalent simulation with 
+#+begin_src lisp
+;; Standard errors of the same Asian under plain MC, a geometric-Asian control
+;; variate, and randomized QMC (Sobol, scrambled, Brownian-bridge ordered).
+(with-pricing-kernel ()
+  (mapcar (lambda (e) (nth-value 1 (price *asian* e *m*)))
+          (list (make-engine :mc :n-paths 16384)
+                (make-engine :mc :n-paths 16384 :control-variates '(:geometric-asian))
+                (make-engine :mc :n-paths 16384 :rng :sobol))))
+;; => about (0.047 0.0018 0.0037): the control variate cuts the SE 25-fold
+#+end_src
+Pathwise and likelihood-ratio Greeks for Monte Carlo, and bump Greeks for
+everything else:
+#+begin_src lisp
+(with-pricing-kernel ()
+  (greeks *asian* (make-engine :mc :n-paths 100000) *m* :method :pathwise))
+(greeks *call* :black-scholes *m* :which '(:delta :gamma :vega :theta :rho))
+#+end_src
+
+* Surfaces, local vol and calibration
+Calibration of stochastic processes to match the volatility implied by a
+collection of options quotes is supported. =calibrate= reads the process'
+parameters and bounds from the class, so a new process can be calibrated as soon
+as it is defined:
+#+begin_src lisp
+;; "Ground truth" process. The dynamics of the market 
+(defparameter *truth* (make-heston :v0 0.04d0 :theta 0.05d0 :kappa 1.5d0 :xi 0.6d0 :rho -0.7d0))
+
+(defun otm (k expiry)
+  (if (< k 100) (make-option (put k) (expires expiry)) (make-option (call k) (expires expiry))))
+
+;; Generate options quotes as a grid of strikes and expiries
+(defparameter *quotes*
+  (quote-set
+   (mapcan (lambda (months)
+             (let ((expiry (add-tenor +today+ (make-tenor months :months))))
+               (mapcar (lambda (k)
+                         (make-option-quote
+                          (otm k expiry)
+                          :price (price (otm k expiry) (make-engine :cos :process *truth*) *m*)))
+                       '(80 90 100 110 120))))
+           '(3 6 12 24))))
+
+;; Fit a default Heston process to quotes
+(multiple-value-bind (fitted report) (calibrate (make-heston) *m* *quotes* :engine :cos)
+  (list (getf report :rmse) (getf report :parameters)))   ; recovers the truth
+;; => (8.657226313474081d-12
+;;    (:V0 0.040000000003141245d0 :KAPPA 1.500000002854704d0 :THETA
+;;     0.049999999978219876d0 :XI 0.6000000003053129d0 :RHO
+;;    -0.7000000000048625d0))
+
+#+end_src
+
+#+begin_src lisp
+;; The same quotes as a surface any engine reads, and as local vol.
+(defparameter *ssvi* (fit-ssvi *quotes* *m*))
+
+(defparameter *smiled*
+  (make-bs-market :valuation-date +today+ :spot 100 :rate 0.04d0 :dividend 0.01d0 :vol *ssvi*))
+
+(price (otm 90 (add-tenor +today+ #T"1Y")) :black-scholes *smiled*)
+;; => 3.292220756093354d0
+;;   NIL
+;;   #<ENGINE (make-engine :black-scholes)>
+
+(with-pricing-kernel ()
+  (price *dko* (make-engine :mc :process (make-local-vol) :n-paths 50000 :n-steps 100) *smiled*))
+;; => 8.08289496109145d0
+;;    0.03312462465176971d0 (3.312462465176971d0%)
+;;    #<ENGINE (make-engine :mc :process (make-local-vol) :n-paths 50000 ;;    :n-steps 100)>
+#+end_src
+SVI, SSVI, SABR (checked against QuantLib's Hagan implementation), grid
+surfaces, Gatheral butterfly and calendar arbitrage checks, and Dupire local vol
+are in [[./surfaces-and-calibration.org]]. A visualization of calibrating a Heston
+volatility surface is provided in [[../viz/calibration.lisp]].
+
+* Rates
+Bootstrapped curves, bonds, swaps, FRAs, caps, swaptions, Bermudan
+swaptions and callable bonds, with QuantLib parity as the stated goal
+(fixtures generated from QuantLib's C++ are the test oracle):
+#+begin_src lisp
+(defparameter *rates*
+  (make-market :valuation-date +today+
+               :curves '((:eur-ois :rate 0.025d0)
+                         (:euribor-6m :rate 0.03d0))
+               :discounting '((:eur . :eur-ois))))
+
+(defparameter *bond*
+  (make-fixed-rate-bond
+   (make-schedule +today+ #D"2031-10-01" #T"1Y" :calendar +target+)
+   0.035d0
+   +actual-365-fixed+
+   :face 1000
+   :currency :eur
+   :settlement-days 2))
+
+(list (price *bond* :discounting *rates*)
+      (bond-clean-price *bond* *rates*)
+      (bond-yield *bond* (bond-clean-price *bond* *rates*) +actual-365-fixed+ :compounded :annual
+ :valuation-date +today+))
+;; => (1044.9754377424476d0 104.48782099611151d0 0.025315120524428757d0)
+#+end_src
+The rest (swaps, OIS, caps, Black/Bachelier and Hull–White swaption engines,
+tree calibration) is in [[./rates.org]].
+
+* Error Handling
+Every error is a =fincl-error= naming the offending object and what would be
+valid, and the recoverable ones offer restarts. A policy applies them across
+a batch without unwinding:
+#+begin_src lisp
+(with-pricing-policy ((unsupported-combination (use-engine (make-engine :mc :n-paths 20000))))
+  (price *autocall* :black-scholes *m*)) ;; re-priced by Monte Carlo
+#+end_src
+
+* Extensibility
+| You want to add...              | Write...                                       | Library finds it through...                    |
+|---------------------------------+------------------------------------------------+------------------------------------------------|
+| a terminal payoff               | =define-payoff= (one formula)                    | clause in =make-option=; any MC engine prices it |
+| a path-dependent payoff         | =define-path-payoff=                             | clause; MC with stops, cash flows and state    |
+| a process                       | =define-process=, =make-stepper=, optional CF      | constructor, bounds, COS/MC/calibration        |
+| a closed form or method         | a =price-analytic=/=price-mc=/=price-cos= method | dispatch on exercise × payoff × path × process |
+| an engine candidate             | an =engine-candidates= method                    | =:auto= selection and =with-engines=               |
+| a path feature or option clause | =define-clause option=, a =path-feature= class     | construction kernel, printing, round trip      |
+
+New source files go in the =:components= list of =fincl.asd=. Tests are plain
+CL (=run-fast-tests= takes about ten seconds); =CLAUDE.md= at the repository
+root documents conventions and internals in more detail than these pages.
+
+* Against QuantLib
+A benchmarked comparison of various pricing and calibration tasks against QuantLib can be found under [[../benchmarks/]].
+The README contained gives a comprehensive comparison of the two. The benchmarking suite is available under the =fincl/benchmarks= package.

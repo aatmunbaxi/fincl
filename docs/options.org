@@ -1,0 +1,90 @@
+#+title: Options and model choices
+
+Use the package/readtable setup in [[./getting-started.org]] first.
+
+* Contract terms
+An option combines a payoff, exercise rights, and a path feature (none,
+Asian, barrier or lookback: see [[./exotics-and-monte-carlo.org]]). Clause arguments are ordinary
+evaluated Lisp expressions; the data constructor accepts already built values.
+#+begin_src lisp
+(defparameter *option-market*
+  (make-bs-market :valuation-date #D"2026-10-01"
+                  :spot 100 :rate 0.04d0 :dividend 0.01d0 :vol 0.2d0))
+(defparameter *european*
+  (make-option (call 100) (expires #T"1Y" :from #D"2026-10-01")))
+(defparameter *bermudan*
+  (make-option (put 100)
+               (bermudan :dates (list #D"2027-04-01" #D"2027-10-01"))))
+(make-option-from-clauses `((:put 100) (:expires ,#D"2027-10-01")))
+#+end_src
+A tenor needs a starting date and is resolved when the option is built.
+For a Bermudan, the last exercise date becomes expiry.
+
+* Numerical method and process
+#+begin_src lisp
+(price *european* :black-scholes *option-market*)
+(price *bermudan* (make-engine :binomial :n-steps 2000) *option-market*)
+(price *european*
+       (make-engine :cos
+                    :process (make-gbm :vol 0.3d0)
+                    :n-terms 256)
+       ,*option-market*)
+(price *european* (make-heston :xi 0.5d0 :rho -0.7d0) *option-market*)
+#+end_src
+The Black-Scholes and Barone-Adesi-Whaley engines use market volatility. To
+supply an explicit process vol, use an engine that takes that process (or bump
+market vol). A process in the engine argument asks fincl to choose a method;
+=:auto= uses market-default GBM. See the [[./pricing-overview.org][feature tables]] for method restrictions.
+
+* Monte Carlo
+#+begin_src lisp
+(with-pricing-kernel (:workers 2)
+  (price *european*
+         (make-engine :mc :process (make-heston :xi 0.5d0)
+                          :n-paths 20000 :n-steps 50 :seed 42)
+         *option-market*))
+#+end_src
+The wrapper creates and cleans up a worker kernel if none is bound. The
+default counter RNG makes results reproducible across worker/chunk counts.
+More paths reduce sampling error; more steps address time discretization.
+Early-exercise MC uses Longstaff-Schwartz regression. Its sampling error
+does not measure exercise-policy or grid bias. Equity tree/LSM Bermudan
+dates snap to a uniform grid; COS uses the supplied future exercise times.
+
+* Risk and implied volatility
+#+begin_src lisp
+(greeks *european* :black-scholes *option-market*
+        :which '(:delta :gamma :vega :theta))
+(implied-volatility *european*
+                    (price *european* :black-scholes *option-market*)
+                    :black-scholes *option-market*) ; about 0.2d0
+#+end_src
+Greeks return a plist. Vega is per unit vol, not per one percentage point;
+rho is per unit rate. Theta is expressed per calendar day; tree-node theta
+is an instantaneous estimate scaled to a day, unlike exact one-day repricing.
+Fallback Greeks bump market inputs, so an explicitly fixed model vol does
+not become a model-vol sensitivity merely by requesting =:vega=.
+
+For European vanillas, IMPLIED-VOLATILITY returns Black quote vol regardless
+of the engine argument. For other supported options it solves by replacing
+the underlying's market vol with a flat vol. It is not a general Heston or
+other model-parameter calibration routine; use =calibrate= for that
+([[./surfaces-and-calibration.org]]).
+
+* A custom payoff
+Define a formula on STRIKE-PAYOFF, which supplies kind and strike without
+claiming vanilla pricing semantics. The formula generates both an ordinary
+payoff method and a closure for simulation.
+#+begin_src lisp
+(define-payoff cash-digital (strike-payoff) () (s)
+  (if (plusp (* phi (- s strike))) 1d0 0d0))
+(defparameter *digital*
+  (make-option (call 100) (cash-digital) (expires #D"2027-10-01")))
+(with-pricing-kernel (:workers 2)
+  (price *digital* (make-engine :mc :n-paths 20000) *option-market*))
+#+end_src
+This pays one unit strictly above strike. A custom formula does not acquire an
+analytic price automatically (though you can specialize on the generic
+=price-analytic= if you have derived one). Inheriting from VANILLA-PAYOFF would
+assert the wrong formula contract; DEFINE-PAYOFF rejects formula-payoff
+inheritance.

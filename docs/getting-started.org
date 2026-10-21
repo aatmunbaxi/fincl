@@ -1,0 +1,69 @@
+#+title: Getting started
+
+* Load the library
+You can acquire the library through various means. It is recommended to register
+it locally with quicklisp and =ql:quickload= it.
+
+The optional =fincl:syntax= readtable enables date literals
+such as =#D"2027-10-01"= and tenors such as =#T"6M"=.
+#+begin_src lisp
+(ql:quickload :fincl)
+(defpackage #:fincl-docs (:use #:cl #:fincl))
+(in-package #:fincl-docs)
+(named-readtables:in-readtable fincl:syntax)
+#+end_src
+
+* A European call
+Let's begin with pricing a basic European option with the Black-Scholes formula.
+We need to define market containing information of the underlying asset (in this case, an equity =:foo=) which includes its spot price, dividend, volatility, risk-free interest rate, and the date these observations were made.
+#+begin_src lisp
+(defparameter *market*
+  (make-market :valuation-date #D"2026-10-01"
+               :underlyings '((:foo :spot 100 :dividend 0d0 :vol 0.2d0))
+               :curves '((:usd-rate :rate 0.05d0))))
+#+end_src
+
+The definition of the option itself will contain the expiry, kind, and strike price. Note =make-option= defaults to European exercise. See [[./options.org]] for more information on the structure of the clauses that =make-option= accepts.
+#+begin_src lisp
+(defparameter *call*
+  (make-option (call 100) (expires #D"2027-10-01")))
+#+end_src
+
+The final ingredient needed to price =*call*= with the given =*market*= is a pricing method. In this case, we will assume the underlying asset follows a geometric Brownian motion, so we can specify the =:black-scholes= engine to price it with the Black-Scholes formula. Alternatively, the =:auto= engine selection keyword will produce the same result. 
+
+#+begin_src lisp
+(price *call* :black-scholes *market*)
+;; => 10.450583572185579d0
+;;    NIL
+;;    #<ENGINE (make-engine :black-scholes)>
+
+;; Equivalent for assumed asset dynamics:
+;; (price *call* :auto *market*)
+#+end_src
+The =*market*= also stores logic to turn contract periods into year fractions (default: ACT/365F).
+Using different calendars will produce slightly different results, which is expected.
+
+
+* An American put
+Early exercise options are also supported. They are declared as their own clause in =make-option=.
+#+begin_src lisp
+(defparameter *put*
+  (make-option (put 100) (american) (expires #D"2027-10-01")))
+(price *put* (make-engine :binomial :n-steps 2000) *market*)
+;; => 6.090396977048424d0
+;;    NIL
+;;    #<ENGINE (make-engine :binomial)>
+#+end_src
+The binomial tree uses GBM with the =*market*= volatility.
+
+* Next steps
+The setup above is shared by the demonstration pages. Their own market and
+instrument definitions can then be evaluated independently of the examples here.
+
+- [[./grand-tour.org]] shows the whole library in one pass, and [[./why-lisp.org]]
+  explains the design.
+- [[./pricing-overview.org]] explains the pieces and supported combinations.
+- [[./exotics-and-monte-carlo.org]] and [[./surfaces-and-calibration.org]] cover
+  barriers, Asians, Monte Carlo, smiles and calibration.
+- [[./markets-and-curves.org]] shows named curves and scenarios.
+- [[./rates.org]] starts with a bond and an interest-rate swap.

@@ -1,0 +1,220 @@
+#+title: Path dependence and Monte Carlo
+
+Setup starts from [[./grand-tour.org]]. This page uses its own market.
+#+begin_src lisp
+(ql:quickload :fincl)
+(defpackage #:exotics (:use #:cl #:fincl))
+(in-package #:exotics)
+(named-readtables:in-readtable fincl:syntax)
+(defconstant +today+ #D"2026-10-01")
+(defparameter *m*
+  (make-bs-market :valuation-date +today+ :spot 100 :rate 0.04d0
+                  :dividend 0.01d0 :vol 0.2d0))
+#+end_src
+
+* Path features
+An option is a payoff, an exercise and a path feature. These clauses build
+the feature; observation dates are given (=:dates=, =:monitoring=) or
+generated every tenor from a start date.
+| Clause                                                 | Meaning                                                        |
+|--------------------------------------------------------+----------------------------------------------------------------|
+| =(average :arithmetic :dates ds)=                        | payoff of the arithmetic mean on =ds= (or =:geometric=)            |
+| =(average ... :strike-type :floating)=                   | pays =max(phi (S_T - A), 0)=                                     |
+| =(barrier :down-and-out 90 :rebate 2)=                   | continuous barrier; also =:up-and-out=, =:down-and-in=, =:up-and-in= |
+| =(barrier :up-and-in 120 :monitoring dates)=             | discretely monitored                                           |
+| =(lookback :floating)=, =(lookback :fixed :monitoring ds)= | extremum of the observable                                     |
+#+begin_src lisp
+(defparameter *asian* (make-option
+                       (call 100)
+                       (average :arithmetic :every #T"1M" :from +today+)
+                       (expires #T"1Y" :from +today+)))
+
+(defparameter *gasian* (make-option
+                        (call 100)
+                        (average :geometric :every #T"1M" :from +today+)
+                        (expires #T"1Y" :from +today+)))
+
+(defparameter *up-in* (make-option
+                       (put 100)
+                       (barrier :up-and-in 120)
+                       (expires #T"1Y" :from +today+)))
+
+#+end_src
+
+#+begin_src lisp
+(price *gasian* :black-scholes *m*)
+;; => 5.383027121587186d0
+;;    NIL
+;;    #<ENGINE (make-engine :black-scholes)>
+
+(price *up-in* :black-scholes *m*)      ; Reiner-Rubinstein
+;; => 0.2329310109975551d0 (23.29310109975551d0%)
+;;    NIL
+;;    #<ENGINE (make-engine :black-scholes)>
+#+end_src
+Path features are European-only and signal =past-observation= for an
+observation date on or before the valuation date (no seasoned fixings yet).
+Floating strikes and lookbacks need a vanilla call/put (only its kind is
+used).
+
+Closed forms on =:black-scholes=: Reiner–Rubinstein for continuous barriers
+(Haug's table is a test), the Broadie–Glasserman–Kou shift for monitored
+barriers, geometric Asians. Everything else prices by Monte Carlo, under any
+simulatable process.
+
+** Continuous barriers and the bridge
+Between grid points the Monte Carlo engine uses the Brownian-bridge crossing
+probability, using the stepper's own variance (GBM, CEV, Heston, local vol),
+so 50 steps are enough. Without it the grid misses crossings and knock-outs
+are overpriced:
+#+begin_src lisp
+(defparameter *dko* (make-option (call 100) (barrier :down-and-out 90)
+                                 (expires #T"1Y" :from +today+)))
+(list (price *dko* :black-scholes *m*)
+      (price *dko* (make-engine :mc :n-paths 200000) *m*)
+      (price *dko* (make-engine :mc :n-paths 200000 :barrier-bridge nil) *m*))
+;; => (7.66320412479217d0 7.682728416716365d0 8.157852989386042d0)
+#+end_src
+Jump processes and GARCH have no bridge: the engine signals
+=model-domain-error= unless you monitor on dates or pass
+=:barrier-bridge nil=.
+
+* =define-path-payoff=
+Exotic options typically involve path-dependent payoff schemes. Here is an
+actual payoff definition for a cliquet (or "ratchet") payoff option. First, we
+review the mathematics of it. All cliquet options are struck at the money, so no
+strike is required (hence we do not inherit from the =strike-payoff= class).
+
+Additionally, the cliquet includes and agreed-upon cap and floor % change, which
+cap upside and downside profit/loss assessed on a collection of days (called
+=resets=) here. At each reset date, the spot of the underlying asset is observed
+in % change, and a cumulative effect on total % is summarized in the table
+below. The % change for the next reset is assessed from the spot of the current
+reset.
+
+| x% change from spot at prev reset | Effect on total% |
+|-----------------------------------+------------------|
+| x < floor                         | (total + floor)% |
+| floor <= x <= cap                 | (total + x)%     |
+| x > cap                           | (total + cap)%   |
+
+Here is how this payoff definition looks with =define-path-payoff=. Note that the
+final payoff is given as a percentage, not a cash amount derived from the final
+%.
+#+begin_src lisp
+(define-path-payoff cliquet (payoff)
+    ((local-cap double-float) (local-floor double-float) (resets list))
+  ;; s is observed spot at a grid point
+  (s)
+  ;; Symbols to track during path
+  (:accumulate (total 0d0) (previous 0d0))
+  ;; Forms eval'd at start of path
+  (:start (setf previous s))
+  ;; Form run on dates in resets date list
+  (:on resets ()
+    (incf total (min local-cap (max local-floor (- (/ s previous) 1d0))))
+    (setf previous s))
+  ;; Final payoff at end of path
+  (:final (max 0d0 total)))
+
+;; Quarterly reset cliquet with cap +5% and floor -3%
+(defparameter *cliquet*
+  (make-option (cliquet :local-cap 0.05d0
+                        :local-floor -0.03d0
+                        :resets (mapcar (lambda (m) (add-tenor +today+ (make-tenor m :months)))
+                                        '(3 6 9 12)))
+               (expires #T"1Y" :from +today+)))
+(price *cliquet* (make-engine :mc :n-paths 50000 :n-steps 4) *m*)
+;; => 0.0452184628883489d0 (4.52184628883489d0%)
+;;    1.1460328646295915d-4 (0.011460328646295915d0%)
+;;    #<ENGINE (make-engine :mc :n-paths 50000 :n-steps 4)>
+#+end_src
+Combining a path payoff with a barrier or Asian clause, or with American
+exercise, is refused. Closed-form engines refuse path payoffs with
+=unsupported-combination=.
+
+* Monte Carlo settings
+| Setting                     | Effect                                                                                             |
+|-----------------------------+----------------------------------------------------------------------------------------------------|
+| =:n-paths :n-steps=           | paths, and time steps (mandatory dates are always grid points)                                     |
+| =:rng :counter=               | default; path /i/ is a pure function of (seed, /i/): same result for any workers/chunks                |
+| =:rng :sobol=                 | randomized QMC: 16 scrambled Sobol' sequences, Brownian-bridge order, at most 1111 steps × factors |
+| =:antithetic=                 | on by default; samples are pair means, so the SE is that of the estimator                          |
+| =:control-variates=           | see below                                                                                          |
+| =:barrier-bridge=             | the bridge correction for continuous barriers                                                      |
+| =:lsm-valuation :independent= | LSM exercise rule fitted on one path set, valued on a fresh one (low-biased)                       |
+| =:process=                    | any simulatable process                                                                            |
+
+** Conptrol variates
+=:control-variates= takes a list of =:european= (the option's own payoff at
+expiry, priced exactly for the engine's process), =:geometric-asian=, or
+=(payoff path-feature pricer)=. Variates are evaluated on the same paths;
+weights come from a least-squares fit over all paths, so the estimate stays
+unbiased. A built-in variate needs an exact price under the simulated
+process: =:geometric-asian= has one under GBM only, =:european= wherever
+COS or a closed form exists.
+#+begin_src lisp
+(with-pricing-kernel ()
+  (mapcar (lambda (variates)
+            (multiple-value-bind (v se)
+                (price *asian* (make-engine :mc :n-paths 50000 :control-variates variates) *m*)
+              (list variates v se)))
+          '(nil (:european) (:geometric-asian) (:geometric-asian :european))))
+;; =>  ((NIL 5.585964965935848d0 0.02654001916089671d0)
+;;      ((:EUROPEAN) 5.569707583706436d0 0.016859560317054278d0)
+;;      ((:GEOMETRIC-ASIAN) 5.577850641082071d0 0.0010153225763408844d0)
+;;      ((:GEOMETRIC-ASIAN :EUROPEAN) 5.577284576730299d0 7.724174439330395d-4))
+#+end_src
+Variates are not entirely free: they disable the terminal-sampling fast path for
+terminal-only payoffs, add a serial least-squares fit, and need an exact price
+per call. =example/example.lisp= prints the variance reduction, time overhead and
+net gain of each combination. On complex exotics, however, a well-chosen control
+variate can dramatically reduce the variance of a simulation for a fixed number
+of paths, presenting the opportunity for speed-ups by pricing with fewer paths
+
+* Bermudan and American exercise
+LSM runs on a grid that contains every Bermudan date, with regressors chosen
+by the process (spot and variance under Heston):
+#+begin_src lisp
+(defparameter *berm* (make-option
+                      (put 100)
+                      (bermudan :every #T"3M" :from +today+)
+                      (expires #T"1Y" :from +today+)))
+#+end_src
+
+#+begin_src lisp
+(list (price *berm* :cos *m*)                                      ; Fourier reference
+      (price *berm* (make-engine :mc :n-paths 100000) *m*)         ; in-sample LSM
+      (price *berm* (make-engine :mc :n-paths 100000 :lsm-valuation :independent) *m*))
+;; => (6.612450071218581d0 6.622194460432886d0 6.620597105854d0)
+#+end_src
+* Monte Carlo Greeks
+=:method :pathwise= (delta and vega per unit volatility) differentiates each path
+for payoffs that are Lipschitz in the path (vanillas, Asians, lookbacks);
+=:likelihood-ratio= (delta) needs no smoothness (digitals, barriers). Both are
+GBM-only and return standard errors:
+#+begin_src lisp
+(with-pricing-kernel ()
+  (list (greeks *asian* (make-engine :mc :n-paths 100000) *m* :method :pathwise)
+        (greeks *dko* (make-engine :mc :n-paths 100000) *m* :method :likelihood-ratio)))
+
+;; =>((:DELTA 0.5603027305873618d0 :VEGA 23.531126227095505d0 :STANDARD-ERRORS
+;;     (:DELTA 4.566744146796074d-4 :VEGA 0.10997555780061449d0))
+;;    (:DELTA 0.7634094468002595d0 :STANDARD-ERRORS (:DELTA 0.017653918024204258d0)))
+#+end_src
+The default =greeks= method bumps markets, averaging ten independent batches
+for Monte Carlo engines.
+
+* Priceable Combinations
+| Contract (European)         | =:black-scholes=    | Monte Carlo (GBM, CEV, Heston, local vol) | MC (Bates, Lévy, GARCH) |
+|-----------------------------+-------------------+-------------------------------------------+-------------------------|
+| continuous barrier          | Reiner–Rubinstein | bridge                                    | =:barrier-bridge nil=     |
+| monitored barrier           | BGK-corrected     | yes                                       | yes                     |
+| geometric Asian, fixed      | closed form       | yes                                       | yes                     |
+| arithmetic / floating Asian | no                | yes                                       | yes                     |
+| lookback                    | no                | yes                                       | yes                     |
+| =define-path-payoff=          | no                | yes                                       | yes                     |
+GARCH needs one grid step per model period, as for vanillas. A geometric Asian
+under non-GBM processes is Monte Carlo only today; a transform pricer for
+exponential Lévy and affine models is outlined in =tasks/026 geometric asians
+under affine and levy models.org=.

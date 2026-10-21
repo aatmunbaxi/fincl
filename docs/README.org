@@ -1,0 +1,22 @@
+#+title: fincl documentation
+
+These are short working notes for the current library, not a complete
+reference.
+
+* Start here
+- [[./grand-tour.org][Grand tour]]
+- [[./why-lisp.org][Why Common Lisp]]
+- [[./getting-started.org][Getting started]]
+
+*  Topics
+- [[./pricing-overview.org][Pricing ingredients and supported features]]: what to supply and which methods apply.
+- [[./options.org][Options]]: exercise styles, models, risk, and a custom payoff.
+- [[./exotics-and-monte-carlo.org][Path dependence and Monte Carlo]]: Asians, barriers, lookbacks,
+  =define-path-payoff=, control variates, QMC, Greeks.
+- [[./surfaces-and-calibration.org][Vol surfaces, local vol and calibration]]: SVI/SSVI/SABR, Dupire, =calibrate=.
+- [[./markets-and-curves.org][Markets, curves, and dates]]: represent data and build scenarios.
+- [[./rates.org][Interest-rate instruments]]: bonds, swaps, and rate options.
+
+Pages that start with a setup block (the tour, Why Lisp, exotics,
+surfaces) define their own package and market. The older pages use the setup
+in [[./getting-started.org]]; run their blocks in order.

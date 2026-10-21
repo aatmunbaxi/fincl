@@ -1,0 +1,189 @@
+#+title: Common Lisp for quant finance
+
+Common lisp (specifically SBCL) presents several advantages that make it a good
+choice for exploratory quantitative finance. This document illustrates some of
+them, contrasting against prior art (such as QuantLib) where applicable.
+
+#+begin_src lisp
+(ql:quickload :fincl)
+(defpackage #:why (:use #:cl #:fincl))
+(in-package #:why)
+(named-readtables:in-readtable fincl:syntax)
+(defparameter +today+ #D"2026-10-01")
+(defparameter *m*
+  (make-bs-market :valuation-date +today+ :spot 100 :rate 0.04d0
+                  :dividend 0.01d0 :vol 0.2d0))
+#+end_src
+
+* 1. One language from REPL to native code
+
+QuantLib is frequently interacted with from higher level dynamic languages, such
+as python. Fortunately, common lisp implementations exist at a high enough level
+that it becomes feasible to interact with the library  in the language it
+was written in. An obvious trade-off is speed, but typed, performant SBCL sits
+among the faster garbage-collected languages, and the expressiveness it buys you
+is arguably best in class. This is a worthwhile trade-off.
+
+As an example, you can update a common lisp program while it is running. Suppose
+you have defined your own path-independent option payoff scheme and you define
+it with =define-payoff=. =fincl= automatically surfaces the slots to the
+high-level =make-option= function and makes it price-able with Monte Carlo:
+#+begin_src lisp
+(define-payoff cash-digital (strike-payoff) () (s)
+  (if (plusp (* phi (- s strike))) 1d0 0d0))
+
+(defparameter *digital*
+  (make-option (call 100) (cash-digital) (expires #T"1Y" :from +today+)))
+(price *digital* (make-engine :mc :n-paths 100000) *m*)
+#+end_src
+
+All =cash-digital= options priced will use the payoff definition above. At any
+point in the future, you may redefine what a =cash-digital= option is by calling
+=define-payoff= again, which updates the payoff class itself, and all references
+to the =cash-digital= payoff will use the most recent definition.
+
+* 2. Multiple dispatch manages combinatorial explosion
+A price depends on /five/ things: exercise, payoff, path feature, process and
+engine, plus the market. QuantLib resolves this with one engine class per
+(instrument, model, method) triple and runtime checks inside engines; its
+analytic barrier engine begins with =dynamic_pointer_cast<PlainVanillaPayoff>= and
+fails with "non-plain payoff given". In =fincl= a method specializes on the axes
+it cares about, and a missing combination is a typed condition, not a failed
+cast.
+For example, suppose you have derived an analytic method of pricing
+your European =cash-digital= option from above. You can implement this formula
+by specializing the generic function =price-analytic=.
+#+begin_src lisp
+;; closed form for the digital option, specializing on the
+;; Black-Scholes assumptions+engine
+(defmethod price-analytic ((x european-exercise) (p cash-digital) (f path-independent)
+                           (e black-scholes-engine) (m market))
+  (let* ((date (expiry x)) (k (strike p))
+         (sd (sqrt (black-variance m k date)))
+         (d2 (- (/ (log (/ (forward m date) k)) sd) (* 0.5d0 sd))))
+    (values (* (discount-factor m date)
+               (norm-cdf (if (eq (kind p) :call) d2 (- d2))))
+            nil)))
+#+end_src
+You can now repurpose the =price= function, and specify your =black-scholes=-specialized engine. 
+#+begin_src lisp
+(price *digital* :black-scholes *m*)
+;; => 0.4995517136549787d0 (49.95517136549787d0%)
+;;    NIL
+;;    #<ENGINE (make-engine :black-scholes)>
+
+(price *digital* (make-engine :mc :n-paths 100000) *m*)
+;; => 0.4999083530853437d0 (49.99083530853437d0%)
+;;    4.241142411595039d-4 (0.04241142411595039d0%)
+;;    #<ENGINE (make-engine :mc)>
+#+end_src
+
+Since common lisp has a good degree of self-awareness, automatic engine
+selection of =price= is also aware of the user-defined analytic pricing method.
+#+begin_src lisp
+(price *digital* :auto *m*)   ; will use user-defined pricing formula 
+#+end_src
+SBCL users might be aware that multiple dispatch is somewhat slow in CLOS, but
+dispatch is done once per call to price; inner hot loops get typed closures
+(=make-stepper=, =payoff-kernel=, =path-kernel=), and never call generics while, e.g.
+stepping through a Monte Carlo simulation.
+
+* 3. Macros that remove code duplication
+=fincl= makes strong use of common lisp's macro system, allowing the code itself
+to write code. In particular, several macros exist to give users the ability to
+extend the available instruments, stochastic processes, calendars, etc.
+
+=define-process= (constructor, bounds and market
+defaults from one declaration), =define-path-payoff= (a state machine over
+the path, compiled to closures; [[./exotics-and-monte-carlo.org]]),
+=define-clause= and =define-fact= (the option language), and =define-calendar=
+(holiday rules as data). In C++ each of these is a base class, a
+constructor, a builder and a registry.
+
+For example, one can define a toy calendar where the only holiday is 21st day of
+September
+#+begin_src lisp
+;; Every day a business day except Sept 21
+;; Inherits on null-calendar, a calendar with
+;; all business days; we specify holidays
+;; in define-calendar by month and day
+(define-calendar earth-wind-fire-calendar (null-calendar)
+  "Do you remember?"
+  (:fixed 9 21))
+#+end_src
+The user can now use this calendar in any instrument, schedule generation, term
+structure, etc.
+* 4. The metaobject protocol: models describe themselves
+Another macro mentioned in the previous section is =define-process=, which defines
+a stochastic process from its inputs. =define-process= also records each
+parameter's bounds and market default as slot metadata, producing compile-time
+validity checks of these. Calibration, parameter vectors and constructors are
+derived from it with no per-model glue; a new process can be calibrated the moment
+it is defined.
+* 5. Data is code and code is data
+Options print as the clauses that build them, readably, and round-trip. The
+option language is an ordinary macro over a data function, so contracts can
+be generated, stored, diffed and sent between processes as s-expressions:
+#+begin_src lisp
+(defparameter *opt*
+  (make-option-from-clauses
+   `((:call 100) (:barrier :down-and-out 90)
+     (:expires ,#D"2027-10-01"))))
+,*opt*
+(round-trip-p 'option *opt*)
+#+end_src
+
+* 6. Conditions and restarts
+A C++ exception unwinds the stack and the work is lost unless they are
+explicitly handled. A Lisp condition is signalled /without/ unwinding, and
+handlers can choose a restart that resumes. fincl's pricing errors offer them
+(=use-engine=, =use-value=, =increase-steps=, =skip-exercise-date=, =retry-with-bracket=),
+and =with-pricing-policy= applies a policy across a whole book:
+#+begin_src lisp
+(with-pricing-policy ((unsupported-combination
+                       (use-engine (make-engine :mc :n-paths 20000))))
+  (mapcar
+   (lambda (o) (nth-value 2 (price o :cos *m*)))
+   (list (make-option (call 100) (expires #T"1Y" :from +today+))   ; COS handles it
+         ,*opt*)))                                                  ; barrier: re-priced by MC
+#+end_src
+Every error is a =fincl-error= naming the offending object and what would
+be valid, so a failed batch tells you which trade and why.
+
+* 7. Immutable values make parallelism highly accessible
+Markets, instruments, engines and calibrated processes are immutable;
+a scenario is a new object. There is no =Settings::evaluationDate= global
+(a valuation date is a required argument) and no observer graph to
+invalidate, so scenario sets and parallel workers cannot interfere:
+#+begin_src lisp
+;; Market spot +1%
+(let ((up (bump *m* '(:spot :default) '(:relative 0.01d0))))
+  (list (price *digital* :black-scholes *m*)                 ; unchanged
+        (price *digital* :black-scholes up)))
+#+end_src
+* 8. Comparison with prior art
+| Concern                     | Typical QuantLib / Python-stack approach                     | fincl                                                             |
+|-----------------------------+--------------------------------------------------------------+-------------------------------------------------------------------|
+| Instrument × model × method | one engine class per triple; downcasts inside engines        | multiple dispatch; user methods extend the library in place       |
+| Engine choice               | caller picks; no fallback                                    | =:auto= by priority, =with-engines= overrides, MC fallback warns      |
+| New payoff                  | C++ class (value, arguments, engine support), rebuild        | one =define-payoff= or =define-path-payoff= form, live                |
+| New model                   | model class, parameters, calibration helper, process, engine | =define-process= + stepper (+ CF for COS); bounds drive calibration |
+| Path state / early stop     | custom engine or payoff-specific Monte Carlo class           | per-path kernels with state names, cash flows and =stop=            |
+| Scenario / bump             | mutate quotes, rely on notification, restore                 | =bump= returns a new market                                         |
+| Determinism under threads   | often a seed per thread; results can change with core count  | counter-based RNG: identical for any workers/chunks               |
+| Errors                      | exceptions; abort the batch                                  | typed conditions with restarts and policies                       |
+| Contract interchange        | serialization layer                                          | s-expression clauses that print, read and round-trip              |
+
+* 9. Caveats
+- *Ecosystem and breadth.* QuantLib has two decades of instruments and
+  conventions; fincl covers equity options, the exotics on this site, and
+  vanilla rates. Day counters, calendars, schedules, curves, swaps and
+  Hull–White are tested against QuantLib's C++, but credit,
+  inflation, FX conventions and many exotics are implemented yet.
+- *Implementation.* SBCL only. Threads come from lparallel; there is no GPU
+  acceleration.
+- *Performance discipline.* Lisp is fast when you declare types and avoid
+  allocation in inner loops, and slow when you do not. The library follows
+  one rule (dispatch once, close over typed data), but new hot-loop code has
+  to as well. A test checks that stepped Monte Carlo conses the same number of
+  bytes whether it takes 25 or 400 steps.

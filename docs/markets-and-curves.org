@@ -1,0 +1,82 @@
+#+title: Markets, curves, and dates
+
+Use the package/readtable setup in [[./getting-started.org]] first.
+
+* Named market data
+A composite market groups data by name. Currency selects discounting;
+the underlying selects spot, dividends, and equity vol.
+#+begin_src lisp
+(defparameter *named-market*
+  (make-market
+   :valuation-date #D"2026-10-01"
+   :underlyings '((:foo :spot 100 :currency :usd
+                         :dividend 0.01d0 :vol 0.2d0))
+   :curves '((:usd-ois :rate 0.04d0))
+   :discounting '((:usd . :usd-ois))))
+(defparameter *stock-view* (market-view *named-market* :underlying :stock))
+
+(spot *stock-view*)
+(discount-factor *stock-view* #D"2027-10-01")
+(forward *stock-view* #D"2027-10-01")
+#+end_src
+The discount factor is exp(-0.04); the forward is 100 * exp(0.03).
+With several underlyings, put =(underlying :stock)= in the option clauses.
+Currency conversion and quanto pricing are not supplied by this view.
+
+* A dated curve
+Discount factors at dates can replace a flat rate. The first date is the
+reference date and its discount factor is one. The default interpolation
+below is log-linear in discount factors; beyond the last knot the curve
+extends its last instantaneous forward rate.
+#+begin_src lisp
+(defparameter *usd-curve*
+  (make-instance 'interpolated-discount-curve
+                 :dates (list #D"2026-10-01" #D"2027-10-01" #D"2028-10-01")
+                 :discounts '(1d0 0.96d0 0.92d0)
+                 :day-counter +actual-365-fixed+))
+(curve-discount *usd-curve* #D"2027-10-01") ; 0.96d0
+
+(make-market :valuation-date #D"2026-10-01"
+             :curves `((:usd-ois :curve ,*usd-curve*))
+             :discounting '((:usd . :usd-ois)))
+#+end_src
+INTERPOLATED-ZERO-CURVE and INTERPOLATED-FORWARD-CURVE store zero and
+instantaneous forward rates instead. BOOTSTRAP-CURVE fits helper quotes;
+for example, a deposit helper specifies a quote, index, and valuation date.
+#+begin_src lisp
+(defparameter *deposit-curve*
+  (bootstrap-curve
+   (list (deposit-helper 0.025d0 (euribor #T"3M")
+                         :valuation-date #D"2026-10-01")
+         (deposit-helper 0.027d0 (euribor #T"6M")
+                         :valuation-date #D"2026-10-01"))))
+#+end_src
+
+* A rate with conventions
+#+begin_src lisp
+(defparameter *quoted-rate*
+  (make-interest-rate 0.05d0 :day-counter +actual-360+
+                            :compounding :compounded :frequency :semiannual))
+(compound-factor *quoted-rate* #D"2026-10-01" #D"2027-10-01")
+#+end_src
+Coupon accrual, curve time, and a yield quote need not share a day count.
+Supply the relevant convention rather than reusing the market's by accident.
+
+* Scenarios and dates
+BUMP returns another market. A relative spot shift of 0.01 is a 1% move;
+an absolute vol shift of 0.01 is one volatility percentage point.
+#+begin_src lisp
+(bump *named-market* '(:spot :stock) '(:relative 0.01d0))
+(bump *named-market* '(:vol :stock) '(:absolute 0.01d0))
+(bump *named-market* '(:curve :usd-ois) '(:absolute 0.0001d0))
+(derive-market *named-market* :valuation-date #D"2026-10-02")
+
+(adjust +target+ #D"2026-10-03" :following) ; Monday 2026-10-05
+(make-schedule #D"2027-10-01" #D"2029-10-01" #T"6M" :calendar +target+)
+#+end_src
+A curve bump shifts zero-rate knots for interpolated curves and helper
+quotes for bootstrapped curves. These are different risk experiments.
+DERIVE-MARKET changes the observation date/convention, not the observed
+quotes or spot. It is an aging scenario, not a forecast of tomorrow's market.
+
+See [[./rates.org]] for separate forecasting/discounting and historical fixings.
