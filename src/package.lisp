@@ -144,9 +144,15 @@
    #:hull-white-discount #:hull-white-bond-option
    #:jamshidian-swaption-engine #:hull-white-tree-engine #:calibrate-hull-white
    ;; instruments
-   #:instrument #:payoff #:call-put-payoff #:strike-payoff #:vanilla-payoff #:kind #:strike
+   #:instrument
+   #:payoff
+   #:call-put-payoff #:strike-payoff #:vanilla-payoff
+   #:kind
+   #:strike
    #:validate-payoff #:validate-pricing-inputs
+   
    #:exercise #:european-exercise #:american-exercise #:bermudan-exercise
+   
    #:expiry #:exercise-dates #:exercise-allowed-p #:exercise-mask #:time-to-expiry
    #:resolve-expiry
    #:path-feature #:path-independent #:observed-path #:asian #:barrier #:lookback
