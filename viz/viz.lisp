@@ -18,11 +18,11 @@
 
 (defpackage #:fincl-viz
   (:use #:cl #:fincl)
-  (:export #:*display* #:*output-directory*
+  (:export #:*display* #:*output-directory* #:uniform-draws
            #:simulate #:state-component #:engine-paths #:instantaneous-vol
            #:plot-paths #:plot-engine-paths #:plot-terminal
            #:plot-log-returns #:plot-convergence #:close-all
-           #:plot-series #:plot-panels))
+           #:plot-series #:plot-array #:plot-panels))
 
 (in-package #:fincl-viz)
 
@@ -116,6 +116,38 @@ Returns the PNG pathname for :FILE, NIL for :WINDOW."
   (begin-figure)
   (draw-series xs series)
   (finish-figure name :title title :xlabel xlabel :ylabel ylabel :legend t))
+
+(defun draw-array (xs ys style label)
+  "Draw YS against XS on the current axes as STYLE: :LINE, :SCATTER (dots) or
+:BAR."
+  (let ((xs (coerce xs 'list)) (ys (coerce ys 'list)))
+    (ecase style
+      (:line (plt "plot" xs ys :label label :linewidth 1))
+      (:scatter (plt "scatter" xs ys :label label :s 8))
+      (:bar (plt "bar" xs ys :label label)))))
+
+(defun plot-array (name data &key (style :line) (xs nil) title xlabel ylabel label)
+  "A one-dimensional array DATA drawn as a :LINE, :SCATTER (dots) or :BAR chart,
+saved as NAME.png. XS gives the horizontal positions; by default they are the
+indices 0 .. n-1.
+
+  (plot-array \"uniform-dots\" (random-uniforms 500) :style :scatter
+              :xlabel \"draw\" :ylabel \"U(0, 1)\")"
+  (check-type style (member :line :scatter :bar))
+  (let* ((ys (coerce data 'list))
+         (positions (or xs (let ((indices '()))
+                             (dotimes (i (length ys) (nreverse indices))
+                               (push i indices))))))
+    (begin-figure)
+    (draw-array positions ys style label)
+    (finish-figure name :title title :xlabel xlabel :ylabel ylabel :legend (and label t))))
+
+(defun random-uniforms (n)
+  "N independent uniform draws on (0, 1], as a vector; a plain Lisp source for
+the examples, not fincl's generator."
+  (let ((draws (make-array n)))
+    (dotimes (i n draws)
+      (setf (aref draws i) (- 1d0 (random 1d0))))))
 
 (defun plot-panels (name panels &key title (columns 2))
   "A grid of charts saved as NAME.png. Each of PANELS is a plist (:xs xs
@@ -262,35 +294,69 @@ process has no latent volatility.")
 (defun process-name (process)
   (string-downcase (class-name (class-of process))))
 
+(define-process uniform-draws (stochastic-process) ()
+  ()
+  (:documentation "A process whose observable is an independent uniform draw on
+(0, 1) at every step, made from the step's normal by the normal CDF. Its only
+purpose is to show a stepper's paths in the plots."))
+
+(defmethod initial-state ((p uniform-draws) market)
+  (declare (ignore market))
+  (make-array 1 :element-type 'double-float :initial-element 0.5d0))
+
+(defmethod make-stepper ((p uniform-draws) market times)
+  (declare (ignore market times))
+  (lambda (state normals j)
+    (declare (type (simple-array double-float (*)) state normals) (ignore j))
+    (setf (aref state 0) (norm-cdf (aref normals 0)))
+    nil))
+
 ;;; --------------------------------------------------------------------
 ;;; Plots
 ;;; --------------------------------------------------------------------
 
+(defun draw-path-dots (times ys)
+  "Draw every column of the (N-STEPS+1) x N-PATHS matrix YS as dots at TIMES."
+  (destructuring-bind (rows cols) (array-dimensions ys)
+    (let ((xs '()) (vs '()))
+      (dotimes (i cols)
+        (dotimes (j rows)
+          (push (aref times j) xs)
+          (push (aref ys j i) vs)))
+      (plt "scatter" (nreverse xs) (nreverse vs) :s 4 :alpha 0.5))))
+
 (defun plot-paths (process market &key (horizon 1) n-steps (n-paths 20)
                                        (seed 42) (rng :counter)
-                                       (component 0) (name "paths") title)
+                                       (component 0) (style :line) (forward t)
+                                       (name "paths") title)
   "Plot state element COMPONENT of N-PATHS simulated paths with their
-sample mean. For the observable (COMPONENT 0) the market forward is drawn
-as well; under the risk-neutral measure the mean should track it.
+sample mean. STYLE is :LINE (one line per path) or :SCATTER (a dot per path
+and step). FORWARD draws the market forward for the observable; under the
+risk-neutral measure the mean should track it, so pass NIL for processes whose
+observable is not a price.
 
   (plot-paths (make-instance 'garch) mkt)
-  (plot-paths (make-instance 'heston) mkt :component 1)   ; variance"
+  (plot-paths (make-instance 'heston) mkt :component 1)   ; variance
+  (plot-paths (make-instance 'uniform-draws) mkt :style :scatter :forward nil)"
+  (check-type style (member :line :scatter))
   (multiple-value-bind (times states)
       (simulate process market :horizon horizon :n-steps n-steps
                                :n-paths n-paths :seed seed :rng rng)
     (let ((ys (state-component states component)))
       (begin-figure)
-      (plt "plot" times ys :linewidth 0.8 :alpha 0.6)
-      (plt "plot" times (row-means ys)
+      (ecase style
+        (:line (plt "plot" (coerce times 'list) ys :linewidth 0.8 :alpha 0.6))
+        (:scatter (draw-path-dots times ys)))
+      (plt "plot" (coerce times 'list) (coerce (row-means ys) 'list)
            :color "black" :linewidth 2 :label "sample mean")
-      (when (zerop component)
+      (when (and forward (zerop component))
         (plt "plot" times (forward-curve market times)
              :color "red" :linestyle "--" :label "forward"))
       (finish-figure name
                      :title (or title (format nil "~A: ~D paths"
                                               (process-name process) n-paths))
                      :xlabel "t (years)"
-                     :ylabel (if (zerop component)
+                     :ylabel (if (and forward (zerop component))
                                  "S"
                                  (format nil "state[~D]" component))
                      :legend t))))
