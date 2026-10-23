@@ -1,12 +1,13 @@
 #+title: fincl: Quantitative Finance in Common Lisp
 
-/Finance in Common Lisp/
+*F*inance *in* *C*ommon *L*isp
 
 
 * Systems
 - =fincl=: main library
 - =fincl/tests=: test suite for numerical correctness, and parity with QuantLib, where appropriate
 - =fincl/benchmarks=: collection of benchmarks comparing quantitatve finance jobs in fincl to equivalent QuantLib (see [[file:./benchmarks/README.org][accompanying summary]]).
+- =fincl/docgen=: documentation generation system with =mgl-pax=
 
 An additional package =fincl-viz= is provided that provides helper utilities to visualize data that comes out of fincl. 
 
