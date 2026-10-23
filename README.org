@@ -20,6 +20,11 @@ An additional package =fincl-viz= is provided that provides helper utilities to 
 
 
 
+* Using fincl
+Refer to the currently rough [[file:./docs/README.org][documentation]] to get started. Please note that the
+library is changing rapidly, and the documentation is far from a complete
+reference to the library's code. Think of it more as a cookbook.
+
 * Capabilities
 - Options pricing :: Vanilla and handful of exotics, see [[file:./docs/options.org][options docs]]
 - Greeks :: From Monte Carlo or likelihood estimator, implied volatility
