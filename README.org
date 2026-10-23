@@ -1,7 +1,8 @@
 #+title: fincl: Quantitative Finance in Common Lisp
 
-*F*inance *in* *C*ommon *L*isp
+(F)inance (in) (C)ommon (L)isp
 
+*Warning: this library is rapidly changing! It is not ready for any sort of heavy lifting; it is merely a curiousity for now.*
 
 * Systems
 - =fincl=: main library
@@ -11,12 +12,10 @@
 
 An additional package =fincl-viz= is provided that provides helper utilities to visualize data that comes out of fincl. 
 
-  
 * Dependencies
 - =fincl= requires SBCL, alexandria, special-functions, statistics, random-state, lparallel, bordeaux-threads, arrow-macros, iterate, named-readtables, and closer-mop.
 - =fincl/tests= requires fincl, lparallel, closer-mop, magicl (to be removed), bordeaux-threads, and iterate
 - =fincl/benchmarks= fincl, lparallel, iterate, and uiop, as well as QuantLib's C++ library to build the corresponding =.cpp= files
-
 - =fincl-viz= (not part of =fincl=) requires python with numpy and matplotlib and py4cl for SBCL interop
 
 
@@ -57,4 +56,5 @@ The following are taken from =fincl/viz= demonstrations.
 ** Volatility Calibration
 | [[./viz/images/calibration-before.png]] |
 | [[./viz/images/calibration-after.png]] |
-
+* LLM Disclosure
+LLMs were supervised in creation of this code.
