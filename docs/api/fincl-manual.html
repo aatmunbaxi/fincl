@@ -18,7 +18,24 @@
    </script>
    <script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/MathJax.js?config=TeX-MML-AM_CHTML">
    </script>
-   
+   <style>
+  html.toc-collapsed #toc { display: none; }
+  #toc-toggle { position: fixed; top: 0.5em; left: 0.5em; z-index: 10;
+                font: inherit; cursor: pointer; }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    var button = document.createElement('button');
+    button.id = 'toc-toggle';
+    button.textContent = 'Contents';
+    button.setAttribute('aria-expanded', 'true');
+    button.addEventListener('click', function () {
+      var collapsed = document.documentElement.classList.toggle('toc-collapsed');
+      button.setAttribute('aria-expanded', String(!collapsed));
+    });
+    document.body.appendChild(button);
+  });
+</script>
 </head>
 <body>
 <div id="content-container">
@@ -257,7 +274,8 @@ payoff is vanilla; with no exercise clause the option is European.</p>
 <a id="FINCL%2FDOCGEN:@ENGINES%20MGL-PAX:SECTION"></a></p>
 <p><span class="outer-navigation"><span class="navigation"> <a href="#FINCL%2FDOCGEN:@MAKE-OPTION%20MGL-PAX:SECTION" title="make-option">&#8592;</a> <a href="fincl-manual.html" title="fincl">&#8593;</a> <a href="#FINCL%2FDOCGEN:@BLACK-SCHOLES%20MGL-PAX:SECTION" title="Black-Scholes">&#8594;</a> <a href="#FINCL%2FDOCGEN:@ENGINES%20MGL-PAX:SECTION" title="Pricing engines">&#8634;</a></span></span></p>
 <h2><a href="#FINCL%2FDOCGEN:@ENGINES%20MGL-PAX:SECTION">3 Pricing engines</a></h2>
-<p><code>(price option engine market)</code> returns <code>(values npv standard-error engine)</code>.
+<p><code>(price instrument engine market)</code> returns <code>(values npv standard-error engine)</code>.
+An instrument is an instance of an instrument: an option, bond, a swap.
 An engine is an instance, a keyword designator, a list <code>(:cos :n-terms 512)</code>,
 a process (priced by the first engine that can), or <code>:auto</code>, which tries the
 engines below in order of speed and accuracy and falls back to Monte Carlo with

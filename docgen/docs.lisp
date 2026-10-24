@@ -134,7 +134,8 @@ options from data."
 
 ; * Engines
 (defsection @engines (:title "Pricing engines")
-  "`(price option engine market)` returns `(values npv standard-error engine)`.
+  "`(price instrument engine market)` returns `(values npv standard-error engine)`.
+An instrument is an instance of an instrument: an option, bond, a swap.
 An engine is an instance, a keyword designator, a list `(:cos :n-terms 512)`,
 a process (priced by the first engine that can), or `:auto`, which tries the
 engines below in order of speed and accuracy and falls back to Monte Carlo with
