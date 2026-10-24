@@ -21,18 +21,18 @@ An additional package =fincl-viz= is provided that provides helper utilities to 
 
 
 * Using fincl
-Refer to the currently rough [[file:./docs/README.org][documentation]] to get started. Please note that the
-library is changing rapidly, and the documentation is far from a complete
-reference to the library's code. Think of it more as a cookbook.
+Refer to the rough [[file:./tour/README.org][tour]] to get started. Please note that the library is changing
+rapidly, and the documentation is far from a complete reference to the library's
+code. Think of it more as a cookbook.
 
 * Capabilities
-- Options pricing :: Vanilla and handful of exotics, see [[file:./docs/options.org][options docs]]
-- Greeks :: From Monte Carlo or likelihood estimator, implied volatility
-- Monte Carlo :: Thread-invariant RNG, antithetic variables, control variates
-- Bond and rate instrument pricing :: Fixed-rate bonds, interest swaps, swaptions
-- Volatility calibration :: Calibrate stochastic processes to quoted option strip
+- Options pricing :: Vanilla and handful of exotics, see [[file:./tour/options.org][options docs]].
+- Greeks :: From Monte Carlo or likelihood estimator, implied volatility.
+- Monte Carlo Simulations :: Thread-invariant RNG, antithetic variables, control variates.
+- Bond and rate instrument pricing :: Fixed-rate bonds, interest swaps, swaptions.
+- Volatility calibration :: Calibrate stochastic processes to quoted option strip.
 
-*Above all: extensible by the user.*
+*And extensible by the user.*
 
 * Showcase
 The following are taken from =fincl/viz= demonstrations.

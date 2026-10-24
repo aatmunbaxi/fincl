@@ -4,8 +4,6 @@ fincl is an exploratory quantitative finance library in Common Lisp (SBCL) that
  is meant to be hacked on from a REPL. This page walks through what is supported
  in the order you would meet it.
 
-Deeper pages: [[./exotics-and-monte-carlo.org]],
-[[./surfaces-and-calibration.org]], [[./markets-and-curves.org]], [[./rates.org]].
 
 * Setup
 First acquire =fincl= locally (currently it is not on quicklisp), then =ql:quickload= it.
