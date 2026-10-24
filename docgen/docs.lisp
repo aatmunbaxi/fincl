@@ -12,7 +12,8 @@ without notice.**"
   (@getting-started section)
   (@options section)
   (@engines section)
-  (@processes section))
+  (@processes section)
+  (@extending section))
 ; * Overview, outline, explanation
 (defsection @getting-started (:title "Getting Started")
   "Acquire the dependencies for `fincl` and the library itself and load it.
@@ -472,30 +473,333 @@ Deutsche mark options, _Review of Financial Studies 9_ (1996)."
 
 
 
+; * Extending fincl
+(defsection @extending (:title "Extending fincl")
+  "New currencies, calendars, processes and payoffs are defined with `define-`
+macros, which write classes, constructors and the methods the engines call.
+The dice game below uses all of them; each subsection defines one piece
+and the last assembles them into a toy option contract pricing.
+
+A fair die is rolled once a week. Players are paid in casino chips, and two contracts are
+written on it:
+
+- **Jackpot:** pays the face of the last roll, plus a bonus if it shows the
+  top face. With a bonus of 10 on a six-sided die the expected payoff is
+  $3.5 + 10/6$.
+- **Bust game:** after three weekly rolls it pays the running total, unless a
+  1 was rolled along the way, in which case the game ends and pays nothing.
+  The expected payoff is $(5/6)^3 \\cdot 12 \\approx 6.944$, where 12 is the
+  expected total of three rolls that are all at least 2.
+
+Start with
+
+```cl
+(ql:quickload :fincl)
+(defpackage #:dice (:use #:cl #:fincl))
+(in-package #:dice)
+(named-readtables:in-readtable fincl:syntax)
+```"
+  (@define-currency section)
+  (@define-calendar section)
+  (@define-process section)
+  (@define-payoff section)
+  (@define-path-payoff section)
+  (@define-clause section)
+  (@dice-example section))
+
+(defsection @define-currency (:title "define-currency")
+  "Register a currency keyword with its name and the number of decimal places
+amounts are shown with. Options and markets refer to it by keyword.
+
+```cl
+(define-currency :chip :name \"Casino chip\" :fraction-digits 0)
+```"
+  (fincl:define-currency macro))
+
+(defsection @define-calendar (:title "define-calendar")
+  "Define a holiday calendar from rules: `(:fixed month day)`,
+`(:nth-weekday n weekday month)`, `(:easter offset)`, `(:dates \"YYYY-MM-DD\"...)`
+and `(:when predicate)`, each with `:observe`, `:from`, `:to` and `:except`.
+The macro makes the class and the singleton `+name+`, which any function
+taking a calendar accepts, e.g. `(expires #T\"2M\" :from d :calendar +casino+)`.
+`define-observance` adds a rule for holidays that fall on a weekend.
+
+Our casino will be closed on weekends as well as Christmas
+and Dec 26, observing this holiday on the previous weekday if it happens
+to fall on a weekend.
+
+```cl
+(define-observance :previous-weekday (date)
+  (case (day-of-week date)
+    (6 (date+ date -1))
+    (7 (date+ date -2))
+    (t date)))
+
+(define-calendar casino (weekends-only)
+  \"Closed on Christmas Day, and on the 26th, observed on the previous weekday.\"
+  (:fixed 12 25)
+  (:fixed 12 26 :observe :previous-weekday))
+```"
+  (fincl:define-calendar macro)
+  (fincl:define-observance macro))
+
+(defsection @define-process (:title "define-process")
+  "Define a custom process, its constructor `make-name` and its parameters,
+which are validated, bounded and enumerable for calibration. The
+dynamics are ordinary methods:
+
+- `initial-state`: the state vector at time zero. Element 0 is the observable
+  that payoffs see; the others are latent.
+- `make-stepper`: returns `(lambda (state normals j))`, which advances the
+  `state` vector in place from `times[j]` to `times[j+1]` using standard normals,
+  and returns NIL. Do expensive work outside the lambda.
+- `process-state-names`: names for the state elements, which path payoffs
+  refer to.
+
+The constructor takes the parameters as keywords. `process-parameter` reads one.
+Our process will model a fair die with `faces` faces. The state of the process
+will consist of 2 values: the value of the most recent roll, and a running
+total of all previous rolls.
+
+```cl
+(define-process fair-die (stochastic-process) (:state-size 2)
+  ((faces 6d0 :bounds (2 nil) :doc \"Number of faces.\"))
+  (:documentation \"A die rolled once per step. Element 0 is the latest roll,
+element 1 the running total.\"))
+
+(defmethod initial-state ((p fair-die) market)
+  (declare (ignore market))
+  (make-array 2 :element-type 'double-float :initial-element 0d0))
+
+(defmethod process-state-names ((p fair-die)) '(:spot :total))
+
+(defmethod make-stepper ((p fair-die) market times)
+  (declare (ignore market times))
+  (let ((faces (process-parameter p :faces)))
+    (declare (type double-float faces))
+    (lambda (state normals j)
+      (declare (type (simple-array double-float (*)) state normals) (ignore j))
+      ;; convert standard normal to discrete uniform U(1,FACES)
+      (let ((roll (+ 1d0 (min (- faces 1d0)
+                              (ffloor (* faces (norm-cdf (aref normals 0))))))))
+        (setf (aref state 0) roll
+              (aref state 1) (+ (aref state 1) roll)))
+      nil)))
+```
+
+A parameter given as `(name nil :market-default fn)` is taken from the market
+when left unset; `(name default :parameter nil)` is a setting, not a model
+parameter."
+  (fincl:define-process macro))
+
+(defsection @define-payoff (:title "define-payoff")
+  "Define a payoff class from a formula of the observable at expiry. Slots are
+`(name type &key initform doc fact)`; one without an `initform` is a required
+initarg. The class becomes a clause of `make-option` taking its slots as
+keywords. Calls and puts with a strike inherit from `strike-payoff`,
+which supplies `phi` and `strike` to the formula.
+
+```cl
+(define-payoff jackpot (payoff)
+    ((top double-float :initform 6d0 :doc \"The face that wins the bonus.\")
+     (bonus double-float :fact :bonus :doc \"Paid on top of the face.\"))
+  (s)
+  (+ s (if (>= s top) bonus 0d0)))
+```
+
+Monte Carlo prices any such payoff. Closed-form engines only know the built-in
+ones, so `:auto` falls back to simulation for new payoffs."
+  (fincl:define-payoff macro))
+
+(defsection @define-path-payoff (:title "define-path-payoff")
+  "Define a payoff that depends on the path, from clauses run on each path in
+the order written. In them `s` is the observable at the current grid point.
+
+- `(:accumulate (var init)...)`: variables kept along a path
+- `(:state var name)`: `var` is the process state element called `name`
+- `(:start form...)`: at the valuation date
+- `(:on slot (i) form...)`: on each date in the date-list slot
+- `(:every form...)`: at every grid point
+- `(:final form)`: the amount paid at expiry
+
+`(pay amount)` inside `:on` pays on that date, and `(stop)` ends the path,
+which then pays nothing at expiry. The observation dates become points of the
+simulation grid. Path payoffs are European and priced by Monte Carlo.
+
+The `bust-game` will refer to the `fair-die` state `:total`, which
+keeps the running total of die rolls. When the die is rolled on a date
+in `rolls`, check if the die rolls `1`, the contract goes bust.
+
+```cl
+(define-path-payoff bust-game (payoff) ((rolls list))
+  (s)
+  (:state total :total)
+  (:on rolls (i)
+    (when (= s 1d0) (stop)))
+  (:final total))
+```"
+  (fincl:define-path-payoff macro))
+
+(defsection @define-clause (:title "define-fact and define-clause")
+  "`make-option` is built from clauses that set named facts. `define-fact` declares
+a fact; `define-clause` adds a clause setting it with `publish`, and a payoff
+slot with `:fact` reads it:
+
+```cl
+(define-fact :bonus double-float \"Paid on top of the top face.\"
+  :coerce #'real-to-double)
+
+(define-clause option bonus (amount)
+  (:publishes :bonus)
+  \"Pay AMOUNT on a roll of the top face.\"
+  (publish :bonus amount))
+```
+
+so `(make-option (jackpot) (bonus 10) ...)` fills the `bonus` slot of `jackpot`.
+A clause lists the facts it may set in `(:publishes ...)`."
+  (fincl:define-fact macro)
+  (fincl:define-clause macro))
+
+(defsection @dice-example (:title "A dice game")
+  "Putting the pieces together. Let us simulate our games played
+at our casino and price the contracts we'll write on them.
+
+```cl
+(define-currency :chip :name \"Casino chip\" :fraction-digits 0)
+
+(define-observance :previous-weekday (date)
+  (case (day-of-week date)
+    (6 (date+ date -1))
+    (7 (date+ date -2))
+    (t date)))
+
+(define-calendar casino (weekends-only)
+  \"Closed on Christmas Day, and on the 26th, observed on the previous weekday.\"
+  (:fixed 12 25)
+  (:fixed 12 26 :observe :previous-weekday))
+
+(define-process fair-die (stochastic-process) (:state-size 2)
+  ((faces 6d0 :bounds (2 nil) :doc \"Number of faces.\"))
+  (:documentation \"A die rolled once per step. Element 0 is the latest roll,
+element 1 the running total.\"))
+
+(defmethod initial-state ((p fair-die) market)
+  (declare (ignore market))
+  (make-array 2 :element-type 'double-float :initial-element 0d0))
+
+(defmethod process-state-names ((p fair-die)) '(:spot :total))
+
+(defmethod make-stepper ((p fair-die) market times)
+  (declare (ignore market times))
+  (let ((faces (process-parameter p :faces)))
+    (declare (type double-float faces))
+    (lambda (state normals j)
+      (declare (type (simple-array double-float (*)) state normals) (ignore j))
+      ;; Phi(Z) is uniform on (0, 1), so floor(faces U) + 1 is uniform on 1..faces.
+      (let ((roll (+ 1d0 (min (- faces 1d0)
+                              (ffloor (* faces (norm-cdf (aref normals 0))))))))
+        (setf (aref state 0) roll
+              (aref state 1) (+ (aref state 1) roll)))
+      nil)))
+
+(define-fact :bonus double-float \"Paid on top of the top face.\"
+  :coerce #'real-to-double)
+
+(define-clause option bonus (amount)
+  (:publishes :bonus)
+  \"Pay AMOUNT on a roll of the top face.\"
+  (publish :bonus amount))
+
+(define-payoff jackpot (payoff)
+    ((top double-float :initform 6d0 :doc \"The face that wins the bonus.\")
+     (bonus double-float :fact :bonus :doc \"Paid on top of the face.\"))
+  (s)
+  (+ s (if (>= s top) bonus 0d0)))
+
+(define-path-payoff bust-game (payoff) ((rolls list))
+  (s)
+  (:state total :total)
+  (:on rolls (i)
+    (when (= s 1d0) (stop)))
+  (:final total))
+```
+
+Now, pricing two contracts on the die:
+
+```cl
+(defparameter *today* #D\"2026-10-26\")
+(defparameter *market*
+  (make-market :valuation-date *today*
+               :underlyings '((:die :spot 1 :currency :chip :vol 0.2d0))
+               :curves '((:chip-curve :rate 0d0))
+               :discounting '((:chip . :chip-curve))))
+(defparameter *engine*
+  (make-engine :mc :process (make-fair-die) :n-paths 200000 :n-steps 3))
+
+;; Pays the last roll, plus 10 chips on a 6: expected 3.5 + 10/6.
+(price (make-option (jackpot) (bonus 10) (currency :chip)
+                    (expires #T\"2M\" :from *today* :calendar +casino+))
+       *engine* *market*)
+;; ==> 5.17...
+
+;; Weekly rolls; pays the total after three rolls unless a 1 shows up.
+(price (make-option (bust-game :rolls (list #D\"2026-11-02\" #D\"2026-11-09\" #D\"2026-11-16\"))
+                    (underlying :die) (expires #D\"2026-11-16\"))
+       *engine* *market*)
+;; ==> 6.96...  (exactly (5/6)^3 * 12 = 6.944)
+```")
+
+
 ;;; The sidebar can be hidden with a button. The style and script go into every
 ;;; page's head; the button is added once the page has loaded.
 (defparameter *sidebar-head* "<style>
-  html.toc-collapsed #toc { display: none; }
-  #toc-toggle { position: fixed; top: 0.5em; left: 0.5em; z-index: 10;
-                font: inherit; cursor: pointer; }
+  #toc .toc-hidden { display: none; }
+  #toc .toc-h3 { padding-left: calc(10px + 1.2em + 12px); }
+  #toc .toc-h4 { padding-left: calc(10px + 1.2em + 24px); }
+  #toc .toc-section-toggle { background: none; border: none; padding: 0;
+                             width: 1.2em; font: inherit; color: inherit;
+                             cursor: pointer; }
 </style>
 <script>
   document.addEventListener('DOMContentLoaded', function () {
-    var button = document.createElement('button');
-    button.id = 'toc-toggle';
-    button.textContent = 'Contents';
-    button.setAttribute('aria-expanded', 'true');
-    button.addEventListener('click', function () {
-      var collapsed = document.documentElement.classList.toggle('toc-collapsed');
-      button.setAttribute('aria-expanded', String(!collapsed));
+    var groups = [], group = null;
+    document.querySelectorAll('#page-toc li').forEach(function (li) {
+      if (li.classList.contains('toc-h2')) {
+        group = { button: document.createElement('button'), items: [] };
+        group.button.type = 'button';
+        group.button.className = 'toc-section-toggle';
+        li.insertBefore(group.button, li.firstChild);
+        groups.push(group);
+      } else if (li.classList.contains('toc-h1')) {
+        group = null;
+      } else if (group) {
+        group.items.push(li);
+      }
     });
-    document.body.appendChild(button);
+    function setOpen(g, open) {
+      g.button.textContent = open ? '\\u25BE' : '\\u25B8';
+      g.button.setAttribute('aria-expanded', String(open));
+      g.items.forEach(function (li) { li.classList.toggle('toc-hidden', !open); });
+    }
+    groups.forEach(function (g) {
+      if (g.items.length === 0) { g.button.style.visibility = 'hidden'; return; }
+      var here = g.items.some(function (li) {
+        var a = li.querySelector('a');
+        return a && a.getAttribute('href') === decodeURI(location.hash);
+      });
+      setOpen(g, here);
+      g.button.addEventListener('click', function () {
+        setOpen(g, g.button.getAttribute('aria-expanded') !== 'true');
+      });
+    });
   });
 </script>"
   "Markup added to the head of every generated page: a style and a script that
-add a button hiding the sidebar.")
+put a button before each top-level section of the sidebar, which shows or
+hides its subsections. Sections start collapsed, except the one holding the
+page's anchor.")
 
 (defun build-manual (&key (target-dir #p"docs/api/"))
-  "Generate the HTML manual into TARGET-DIR with the collapsible sidebar."
+  "Generate the HTML manual into TARGET-DIR, with collapsible sidebar sections."
   (let ((*document-html-head* *sidebar-head*))
     (update-asdf-system-html-docs @fincl-manual :fincl :target-dir target-dir)))

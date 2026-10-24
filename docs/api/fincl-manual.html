@@ -19,21 +19,45 @@
    <script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/MathJax.js?config=TeX-MML-AM_CHTML">
    </script>
    <style>
-  html.toc-collapsed #toc { display: none; }
-  #toc-toggle { position: fixed; top: 0.5em; left: 0.5em; z-index: 10;
-                font: inherit; cursor: pointer; }
+  #toc .toc-hidden { display: none; }
+  #toc .toc-h3 { padding-left: calc(10px + 1.2em + 12px); }
+  #toc .toc-h4 { padding-left: calc(10px + 1.2em + 24px); }
+  #toc .toc-section-toggle { background: none; border: none; padding: 0;
+                             width: 1.2em; font: inherit; color: inherit;
+                             cursor: pointer; }
 </style>
 <script>
   document.addEventListener('DOMContentLoaded', function () {
-    var button = document.createElement('button');
-    button.id = 'toc-toggle';
-    button.textContent = 'Contents';
-    button.setAttribute('aria-expanded', 'true');
-    button.addEventListener('click', function () {
-      var collapsed = document.documentElement.classList.toggle('toc-collapsed');
-      button.setAttribute('aria-expanded', String(!collapsed));
+    var groups = [], group = null;
+    document.querySelectorAll('#page-toc li').forEach(function (li) {
+      if (li.classList.contains('toc-h2')) {
+        group = { button: document.createElement('button'), items: [] };
+        group.button.type = 'button';
+        group.button.className = 'toc-section-toggle';
+        li.insertBefore(group.button, li.firstChild);
+        groups.push(group);
+      } else if (li.classList.contains('toc-h1')) {
+        group = null;
+      } else if (group) {
+        group.items.push(li);
+      }
     });
-    document.body.appendChild(button);
+    function setOpen(g, open) {
+      g.button.textContent = open ? '\u25BE' : '\u25B8';
+      g.button.setAttribute('aria-expanded', String(open));
+      g.items.forEach(function (li) { li.classList.toggle('toc-hidden', !open); });
+    }
+    groups.forEach(function (g) {
+      if (g.items.length === 0) { g.button.style.visibility = 'hidden'; return; }
+      var here = g.items.some(function (li) {
+        var a = li.querySelector('a');
+        return a && a.getAttribute('href') === decodeURI(location.hash);
+      });
+      setOpen(g, here);
+      g.button.addEventListener('click', function () {
+        setOpen(g, g.button.getAttribute('aria-expanded') !== 'true');
+      });
+    });
   });
 </script>
 </head>
@@ -96,6 +120,17 @@
 <li><a href="#FINCL%2FDOCGEN:@CGMY%20MGL-PAX:SECTION" title="CGMY">4.2.5 CGMY</a></li>
 <li><a href="#FINCL%2FDOCGEN:@BATES%20MGL-PAX:SECTION" title="Bates">4.2.6 Bates</a></li>
 </ul></li>
+</ul></li>
+<li><a href="#FINCL%2FDOCGEN:@EXTENDING%20MGL-PAX:SECTION" title="Extending fincl">5 Extending fincl</a>
+
+<ul>
+<li><a href="#FINCL%2FDOCGEN:@DEFINE-CURRENCY%20MGL-PAX:SECTION" title="define-currency">5.1 define-currency</a></li>
+<li><a href="#FINCL%2FDOCGEN:@DEFINE-CALENDAR%20MGL-PAX:SECTION" title="define-calendar">5.2 define-calendar</a></li>
+<li><a href="#FINCL%2FDOCGEN:@DEFINE-PROCESS%20MGL-PAX:SECTION" title="define-process">5.3 define-process</a></li>
+<li><a href="#FINCL%2FDOCGEN:@DEFINE-PAYOFF%20MGL-PAX:SECTION" title="define-payoff">5.4 define-payoff</a></li>
+<li><a href="#FINCL%2FDOCGEN:@DEFINE-PATH-PAYOFF%20MGL-PAX:SECTION" title="define-path-payoff">5.5 define-path-payoff</a></li>
+<li><a href="#FINCL%2FDOCGEN:@DEFINE-CLAUSE%20MGL-PAX:SECTION" title="define-fact and define-clause">5.6 define-fact and define-clause</a></li>
+<li><a href="#FINCL%2FDOCGEN:@DICE-EXAMPLE%20MGL-PAX:SECTION" title="A dice game">5.7 A dice game</a></li>
 </ul></li>
 </ul>
 <h6>[in package FINCL/DOCGEN]</h6>
@@ -814,7 +849,7 @@ $\gamma = \sqrt{\alpha^2-\beta^2}$.</p>
 </ul>
 <p><a id="x-28FINCL-2FDOCGEN-3A-40BATES-20MGL-PAX-3ASECTION-29"></a>
 <a id="FINCL%2FDOCGEN:@BATES%20MGL-PAX:SECTION"></a></p>
-<p><span class="outer-navigation"><span class="navigation"> <a href="#FINCL%2FDOCGEN:@CGMY%20MGL-PAX:SECTION" title="CGMY">&#8592;</a> <a href="#FINCL%2FDOCGEN:@LEVY-PROCS%20MGL-PAX:SECTION" title="Lévy processes">&#8593;</a> <a href="#FINCL%2FDOCGEN:@BATES%20MGL-PAX:SECTION" title="Bates">&#8634;</a></span></span></p>
+<p><span class="outer-navigation"><span class="navigation"> <a href="#FINCL%2FDOCGEN:@CGMY%20MGL-PAX:SECTION" title="CGMY">&#8592;</a> <a href="#FINCL%2FDOCGEN:@LEVY-PROCS%20MGL-PAX:SECTION" title="Lévy processes">&#8593;</a> <a href="#FINCL%2FDOCGEN:@EXTENDING%20MGL-PAX:SECTION" title="Extending fincl">&#8594;</a> <a href="#FINCL%2FDOCGEN:@BATES%20MGL-PAX:SECTION" title="Bates">&#8634;</a></span></span></p>
 <h4><a href="#FINCL%2FDOCGEN:@BATES%20MGL-PAX:SECTION">4.2.6 Bates</a></h4>
 <p>$$\frac{dS_t}{S_t} = (r-q-\lambda k)\,dt + \sqrt{v_t}\,dW^1_t + (e^{Y}-1)\,dN_t,
 \qquad dv_t = \kappa(\theta - v_t)\,dt + \xi\sqrt{v_t}\,dW^2_t,$$</p>
@@ -844,6 +879,424 @@ jumps.</p></li>
 
 <p>A new bates process: (make-instance 'bates initarg...).</p></li>
 </ul>
+<p><a id="x-28FINCL-2FDOCGEN-3A-40EXTENDING-20MGL-PAX-3ASECTION-29"></a>
+<a id="FINCL%2FDOCGEN:@EXTENDING%20MGL-PAX:SECTION"></a></p>
+<p><span class="outer-navigation"><span class="navigation"> <a href="#FINCL%2FDOCGEN:@BATES%20MGL-PAX:SECTION" title="Bates">&#8592;</a> <a href="fincl-manual.html" title="fincl">&#8593;</a> <a href="#FINCL%2FDOCGEN:@DEFINE-CURRENCY%20MGL-PAX:SECTION" title="define-currency">&#8594;</a> <a href="#FINCL%2FDOCGEN:@EXTENDING%20MGL-PAX:SECTION" title="Extending fincl">&#8634;</a></span></span></p>
+<h2><a href="#FINCL%2FDOCGEN:@EXTENDING%20MGL-PAX:SECTION">5 Extending fincl</a></h2>
+<p>New currencies, calendars, processes and payoffs are defined with <code>define-</code>
+macros, which write classes, constructors and the methods the engines call.
+The dice game below uses all of them; each subsection defines one piece
+and the last assembles them into a toy option contract pricing.</p>
+<p>A fair die is rolled once a week. Players are paid in casino chips, and two contracts are
+written on it:</p>
+<ul>
+<li><p><strong>Jackpot:</strong> pays the face of the last roll, plus a bonus if it shows the
+  top face. With a bonus of 10 on a six-sided die the expected payoff is
+  $3.5 + 10/6$.</p></li>
+<li><p><strong>Bust game:</strong> after three weekly rolls it pays the running total, unless a
+  1 was rolled along the way, in which case the game ends and pays nothing.
+  The expected payoff is $(5/6)^3 \cdot 12 \approx 6.944$, where 12 is the
+  expected total of three rolls that are all at least 2.</p></li>
+</ul>
+<p>Start with</p>
+<pre><code><span class="code"><span class="paren1">(<span class="code">ql:quickload <span class="keyword">:fincl</span></span>)</span>
+<span class="paren1">(<span class="code"><i><span class="symbol">defpackage</span></i> <span class="keyword">#:dice</span> <span class="paren2">(<span class="code"><span class="keyword">:use</span> <span class="keyword">#:cl</span> <span class="keyword">#:fincl</span></span>)</span></span>)</span>
+<span class="paren1">(<span class="code">in-package <span class="keyword">#:dice</span></span>)</span>
+<span class="paren1">(<span class="code">named-readtables:in-readtable fincl:syntax</span>)</span></span></code></pre>
+<p><a id="x-28FINCL-2FDOCGEN-3A-40DEFINE-CURRENCY-20MGL-PAX-3ASECTION-29"></a>
+<a id="FINCL%2FDOCGEN:@DEFINE-CURRENCY%20MGL-PAX:SECTION"></a></p>
+<p><span class="outer-navigation"><span class="navigation"> <a href="#FINCL%2FDOCGEN:@EXTENDING%20MGL-PAX:SECTION" title="Extending fincl">&#8592;</a> <a href="#FINCL%2FDOCGEN:@EXTENDING%20MGL-PAX:SECTION" title="Extending fincl">&#8593;</a> <a href="#FINCL%2FDOCGEN:@DEFINE-CALENDAR%20MGL-PAX:SECTION" title="define-calendar">&#8594;</a> <a href="#FINCL%2FDOCGEN:@DEFINE-CURRENCY%20MGL-PAX:SECTION" title="define-currency">&#8634;</a></span></span></p>
+<h3><a href="#FINCL%2FDOCGEN:@DEFINE-CURRENCY%20MGL-PAX:SECTION">5.1 define-currency</a></h3>
+<p>Register a currency keyword with its name and the number of decimal places
+amounts are shown with. Options and markets refer to it by keyword.</p>
+<pre><code><span class="code"><span class="paren1">(<span class="code"><i><span class="symbol">define-currency</span></i> <span class="keyword">:chip</span> <span class="keyword">:name</span> <span class="string">"Casino chip"</span> <span class="keyword">:fraction-digits</span> 0</span>)</span></span></code></pre>
+<p><a id="x-28FINCL-3ADEFINE-CURRENCY-20MGL-PAX-3AMACRO-29"></a>
+<a id="FINCL:DEFINE-CURRENCY%20MGL-PAX:MACRO"></a></p>
+<ul>
+<li><p><span class=reference-bullet><span class=reference><span class="locative-type">[macro]</span> <span class="reference-object"><a href="#FINCL:DEFINE-CURRENCY%20MGL-PAX:MACRO" >FINCL:DEFINE-CURRENCY</a></span></span> <span class="locative-args">CODE &amp;KEY NAME (FRACTION-DIGITS 2)</span></span></p>
+
+<p>Register the currency CODE, a keyword, with its NAME and the number of
+FRACTION-DIGITS amounts are shown with.</p>
+
+<p>(define-currency :usd :name &quot;US Dollar&quot; :fraction-digits 2)</p></li>
+</ul>
+<p><a id="x-28FINCL-2FDOCGEN-3A-40DEFINE-CALENDAR-20MGL-PAX-3ASECTION-29"></a>
+<a id="FINCL%2FDOCGEN:@DEFINE-CALENDAR%20MGL-PAX:SECTION"></a></p>
+<p><span class="outer-navigation"><span class="navigation"> <a href="#FINCL%2FDOCGEN:@DEFINE-CURRENCY%20MGL-PAX:SECTION" title="define-currency">&#8592;</a> <a href="#FINCL%2FDOCGEN:@EXTENDING%20MGL-PAX:SECTION" title="Extending fincl">&#8593;</a> <a href="#FINCL%2FDOCGEN:@DEFINE-PROCESS%20MGL-PAX:SECTION" title="define-process">&#8594;</a> <a href="#FINCL%2FDOCGEN:@DEFINE-CALENDAR%20MGL-PAX:SECTION" title="define-calendar">&#8634;</a></span></span></p>
+<h3><a href="#FINCL%2FDOCGEN:@DEFINE-CALENDAR%20MGL-PAX:SECTION">5.2 define-calendar</a></h3>
+<p>Define a holiday calendar from rules: <code>(:fixed month day)</code>,
+<code>(:nth-weekday n weekday month)</code>, <code>(:easter offset)</code>, <code>(:dates &quot;YYYY-MM-DD&quot;...)</code>
+and <code>(:when predicate)</code>, each with <code>:observe</code>, <code>:from</code>, <code>:to</code> and <code>:except</code>.
+The macro makes the class and the singleton <code>+name+</code>, which any function
+taking a calendar accepts, e.g. <code>(expires #T&quot;2M&quot; :from d :calendar +casino+)</code>.
+<code>define-observance</code> adds a rule for holidays that fall on a weekend.</p>
+<p>Our casino will be closed on weekends as well as Christmas
+and Dec 26, observing this holiday on the previous weekday if it happens
+to fall on a weekend.</p>
+<pre><code><span class="code"><span class="paren1">(<span class="code"><i><span class="symbol">define-observance</span></i> <span class="keyword">:previous-weekday</span> <span class="paren2">(<span class="code">date</span>)</span>
+  <span class="paren2">(<span class="code">case <span class="paren3">(<span class="code">day-of-week date</span>)</span>
+    <span class="paren3">(<span class="code">6 <span class="paren4">(<span class="code">date+ date -1</span>)</span></span>)</span>
+    <span class="paren3">(<span class="code">7 <span class="paren4">(<span class="code">date+ date -2</span>)</span></span>)</span>
+    <span class="paren3">(<span class="code">t date</span>)</span></span>)</span></span>)</span>
+
+<span class="paren1">(<span class="code"><i><span class="symbol">define-calendar</span></i> casino <span class="paren2">(<span class="code">weekends-only</span>)</span>
+  <span class="string">"Closed on Christmas Day, and on the 26th, observed on the previous weekday."</span>
+  <span class="paren2">(<span class="code"><span class="keyword">:fixed</span> 12 25</span>)</span>
+  <span class="paren2">(<span class="code"><span class="keyword">:fixed</span> 12 26 <span class="keyword">:observe</span> <span class="keyword">:previous-weekday</span></span>)</span></span>)</span></span></code></pre>
+<p><a id="x-28FINCL-3ADEFINE-CALENDAR-20MGL-PAX-3AMACRO-29"></a>
+<a id="FINCL:DEFINE-CALENDAR%20MGL-PAX:MACRO"></a></p>
+<ul>
+<li><p><span class=reference-bullet><span class=reference><span class="locative-type">[macro]</span> <span class="reference-object"><a href="#FINCL:DEFINE-CALENDAR%20MGL-PAX:MACRO" >FINCL:DEFINE-CALENDAR</a></span></span> <span class="locative-args">NAME (SUPERCLASS) &amp;BODY BODY</span></span></p>
+
+<p>Define the holiday calendar NAME: a class on SUPERCLASS (WEEKENDS-ONLY,
+or another holiday calendar, whose rules NAME inherits), the singleton
++NAME+, and the holiday rules in BODY (after an optional docstring). Each
+rule is one of</p>
+
+<p>(:fixed month day)              a date every year
+  (:nth-weekday n weekday month)  e.g. 3 :monday 1; negative N counts from
+                                  the month's end (-1 :monday 5: last Monday
+                                  of May)
+  (:easter offset)                days from Easter Sunday (-2 Good Friday,
+                                  1 Easter Monday)
+  (:dates &quot;YYYY-MM-DD&quot; ...)     one-off closures
+  (:when predicate)               PREDICATE, evaluated, of (year month day)</p>
+
+<p>and <code>:FIXED</code>, <code>:NTH-WEEKDAY</code>, <code>:EASTER</code> and <code>:WHEN</code> take the options <code>:OBSERVE</code>
+keyword (:none, :next-monday, :nearest-weekday, :sunday-to-monday, or one
+from DEFINE-OBSERVANCE), <code>:FROM</code> year, <code>:TO</code> year and <code>:EXCEPT</code> (years...). The
+weekend comes from SUPERCLASS.</p>
+
+<p>(define-calendar my-exchange (weekends-only)
+    &quot;An exchange closed on New Year's Day and Good Friday.&quot;
+    (:fixed 1 1 :observe :sunday-to-monday)
+    (:easter -2))</p></li>
+</ul>
+<p><a id="x-28FINCL-3ADEFINE-OBSERVANCE-20MGL-PAX-3AMACRO-29"></a>
+<a id="FINCL:DEFINE-OBSERVANCE%20MGL-PAX:MACRO"></a></p>
+<ul>
+<li><p><span class=reference-bullet><span class=reference><span class="locative-type">[macro]</span> <span class="reference-object"><a href="#FINCL:DEFINE-OBSERVANCE%20MGL-PAX:MACRO" >FINCL:DEFINE-OBSERVANCE</a></span></span> <span class="locative-args">NAME (DATE) &amp;BODY BODY</span></span></p>
+
+<p>Define the observance rule NAME: BODY maps the holiday's DATE to the date
+it is observed on, or <code>NIL</code> if it is not observed that year.</p>
+
+<p>(define-observance :sunday-to-monday (date)
+    (if (= (day-of-week date) 7) (date+ date 1) date))</p></li>
+</ul>
+<p><a id="x-28FINCL-2FDOCGEN-3A-40DEFINE-PROCESS-20MGL-PAX-3ASECTION-29"></a>
+<a id="FINCL%2FDOCGEN:@DEFINE-PROCESS%20MGL-PAX:SECTION"></a></p>
+<p><span class="outer-navigation"><span class="navigation"> <a href="#FINCL%2FDOCGEN:@DEFINE-CALENDAR%20MGL-PAX:SECTION" title="define-calendar">&#8592;</a> <a href="#FINCL%2FDOCGEN:@EXTENDING%20MGL-PAX:SECTION" title="Extending fincl">&#8593;</a> <a href="#FINCL%2FDOCGEN:@DEFINE-PAYOFF%20MGL-PAX:SECTION" title="define-payoff">&#8594;</a> <a href="#FINCL%2FDOCGEN:@DEFINE-PROCESS%20MGL-PAX:SECTION" title="define-process">&#8634;</a></span></span></p>
+<h3><a href="#FINCL%2FDOCGEN:@DEFINE-PROCESS%20MGL-PAX:SECTION">5.3 define-process</a></h3>
+<p>Define a custom process, its constructor <code>make-name</code> and its parameters,
+which are validated, bounded and enumerable for calibration. The
+dynamics are ordinary methods:</p>
+<ul>
+<li><p><code>initial-state</code>: the state vector at time zero. Element 0 is the observable
+  that payoffs see; the others are latent.</p></li>
+<li><p><code>make-stepper</code>: returns <code>(lambda (state normals j))</code>, which advances the
+  <code>state</code> vector in place from <code>times[j]</code> to <code>times[j+1]</code> using standard normals,
+  and returns <code>NIL</code>. Do expensive work outside the lambda.</p></li>
+<li><p><code>process-state-names</code>: names for the state elements, which path payoffs
+  refer to.</p></li>
+</ul>
+<p>The constructor takes the parameters as keywords. <code>process-parameter</code> reads one.
+Our process will model a fair die with <code>faces</code> faces. The state of the process
+will consist of 2 values: the value of the most recent roll, and a running
+total of all previous rolls.</p>
+<pre><code><span class="code"><span class="paren1">(<span class="code"><i><span class="symbol">define-process</span></i> fair-die <span class="paren2">(<span class="code">stochastic-process</span>)</span> <span class="paren2">(<span class="code"><span class="keyword">:state-size</span> 2</span>)</span>
+  <span class="paren2">(<span class="code"><span class="paren3">(<span class="code">faces 6d0 <span class="keyword">:bounds</span> <span class="paren4">(<span class="code">2 nil</span>)</span> <span class="keyword">:doc</span> <span class="string">"Number of faces."</span></span>)</span></span>)</span>
+  <span class="paren2">(<span class="code"><span class="keyword">:documentation</span> <span class="string">"A die rolled once per step. Element 0 is the latest roll,
+element 1 the running total."</span></span>)</span></span>)</span>
+
+<span class="paren1">(<span class="code"><i><span class="symbol">defmethod</span></i> initial-state <span class="paren2">(<span class="code"><span class="paren3">(<span class="code">p fair-die</span>)</span> market</span>)</span>
+  <span class="paren2">(<span class="code">declare <span class="paren3">(<span class="code">ignore market</span>)</span></span>)</span>
+  <span class="paren2">(<span class="code">make-array 2 <span class="keyword">:element-type</span> 'double-float <span class="keyword">:initial-element</span> 0d0</span>)</span></span>)</span>
+
+<span class="paren1">(<span class="code"><i><span class="symbol">defmethod</span></i> process-state-names <span class="paren2">(<span class="code"><span class="paren3">(<span class="code">p fair-die</span>)</span></span>)</span> '<span class="paren2">(<span class="code"><span class="keyword">:spot</span> <span class="keyword">:total</span></span>)</span></span>)</span>
+
+<span class="paren1">(<span class="code"><i><span class="symbol">defmethod</span></i> make-stepper <span class="paren2">(<span class="code"><span class="paren3">(<span class="code">p fair-die</span>)</span> market times</span>)</span>
+  <span class="paren2">(<span class="code">declare <span class="paren3">(<span class="code">ignore market times</span>)</span></span>)</span>
+  <span class="paren2">(<span class="code"><i><span class="symbol">let</span></i> <span class="paren3">(<span class="code"><span class="paren4">(<span class="code">faces <span class="paren5">(<span class="code">process-parameter p <span class="keyword">:faces</span></span>)</span></span>)</span></span>)</span>
+    <span class="paren3">(<span class="code">declare <span class="paren4">(<span class="code">type double-float faces</span>)</span></span>)</span>
+    <span class="paren3">(<span class="code"><i><span class="symbol">lambda</span></i> <span class="paren4">(<span class="code">state normals j</span>)</span>
+      <span class="paren4">(<span class="code">declare <span class="paren5">(<span class="code">type <span class="paren6">(<span class="code">simple-array double-float <span class="paren1">(<span class="code">*</span>)</span></span>)</span> state normals</span>)</span> <span class="paren5">(<span class="code">ignore j</span>)</span></span>)</span>
+      <span class="comment">;; convert standard normal to discrete uniform U(1,FACES)
+</span>      <span class="paren4">(<span class="code"><i><span class="symbol">let</span></i> <span class="paren5">(<span class="code"><span class="paren6">(<span class="code">roll <span class="paren1">(<span class="code">+ 1d0 <span class="paren2">(<span class="code">min <span class="paren3">(<span class="code">- faces 1d0</span>)</span>
+                              <span class="paren3">(<span class="code">ffloor <span class="paren4">(<span class="code">* faces <span class="paren5">(<span class="code">norm-cdf <span class="paren6">(<span class="code">aref normals 0</span>)</span></span>)</span></span>)</span></span>)</span></span>)</span></span>)</span></span>)</span></span>)</span>
+        <span class="paren5">(<span class="code">setf <span class="paren6">(<span class="code">aref state 0</span>)</span> roll
+              <span class="paren6">(<span class="code">aref state 1</span>)</span> <span class="paren6">(<span class="code">+ <span class="paren1">(<span class="code">aref state 1</span>)</span> roll</span>)</span></span>)</span></span>)</span>
+      nil</span>)</span></span>)</span></span>)</span></span></code></pre>
+<p>A parameter given as <code>(name nil :market-default fn)</code> is taken from the market
+when left unset; <code>(name default :parameter nil)</code> is a setting, not a model
+parameter.</p>
+<p><a id="x-28FINCL-3ADEFINE-PROCESS-20MGL-PAX-3AMACRO-29"></a>
+<a id="FINCL:DEFINE-PROCESS%20MGL-PAX:MACRO"></a></p>
+<ul>
+<li><p><span class=reference-bullet><span class=reference><span class="locative-type">[macro]</span> <span class="reference-object"><a href="#FINCL:DEFINE-PROCESS%20MGL-PAX:MACRO" >FINCL:DEFINE-PROCESS</a></span></span> <span class="locative-args">NAME SUPERCLASSES (&amp;KEY STATE-SIZE FACTORS) SLOTS &amp;REST CLASS-OPTIONS</span></span></p>
+
+<p>Define the process class NAME and its constructor MAKE-NAME. SUPERCLASSES
+defaults to (STOCHASTIC-PROCESS). STATE-SIZE and FACTORS, when given, define
+PROCESS-STATE-SIZE and PROCESS-FACTORS (both default to 1). Each of SLOTS is</p>
+
+<p>(slot-name default &amp;key bounds market-default (parameter t) doc reader type)</p>
+
+<ul>
+<li><p>DEFAULT is the initform, evaluated per instance. <code>NIL</code>, with a
+  MARKET-DEFAULT, means &quot;take it from the market&quot;.</p></li>
+<li><p>BOUNDS is (lo hi) in interval-designator form: a real is inclusive, (x)
+  exclusive, <code>NIL</code> unbounded.</p></li>
+<li><p>MARKET-DEFAULT names a function (process market horizon) -&gt; double-float.</p></li>
+<li><p>PARAMETER <code>NIL</code> declares a setting: validated, but not a model parameter
+  (not in PROCESS-PARAMETERS or PARAMETER-VECTOR).</p></li>
+<li><p><code>READER</code> defaults to SLOT-NAME, and the initarg is the keyword SLOT-NAME.</p></li>
+<li><p><a href="http://www.lispworks.com/documentation/HyperSpec/Body/d_type.htm" title="TYPE (MGL-PAX:CLHS DECLARATION)"><code>TYPE</code></a> defaults to <a href="http://www.lispworks.com/documentation/HyperSpec/Body/t_short_.htm" title="DOUBLE-FLOAT (MGL-PAX:CLHS TYPE)"><code>DOUBLE-FLOAT</code></a>, or (<code>OR</code>(<a href="http://www.lispworks.com/documentation/HyperSpec/Body/m_or.htm" title="OR (MGL-PAX:CLHS MGL-PAX:MACRO)"><code>0</code></a> <a href="http://www.lispworks.com/documentation/HyperSpec/Body/t_or.htm" title="OR (MGL-PAX:CLHS TYPE)"><code>1</code></a>) <code>NULL</code>(<a href="http://www.lispworks.com/documentation/HyperSpec/Body/t_null.htm" title="NULL (MGL-PAX:CLHS CLASS)"><code>0</code></a> <a href="http://www.lispworks.com/documentation/HyperSpec/Body/f_null.htm" title="NULL (MGL-PAX:CLHS FUNCTION)"><code>1</code></a>) <code>DOUBLE-FLOAT</code>) when DEFAULT is <code>NIL</code>.</p></li>
+</ul>
+
+<p>MAKE-NAME takes the initargs of NAME and its DEFINE-PROCESS superclasses as
+keywords, passing only those given, so omitted ones keep their defaults. The
+class option (:constructor nil) leaves it out (abstract classes); it signals
+CONSTRUCTOR-COLLISION at load time if MAKE-NAME is already a function it
+did not define for NAME. Steppers, characteristic functions and samplers
+stay ordinary <a href="http://www.lispworks.com/documentation/HyperSpec/Body/m_defmet.htm" title="DEFMETHOD (MGL-PAX:CLHS MGL-PAX:MACRO)"><code>DEFMETHOD</code></a>s.</p>
+
+<p>(define-process heston (stochastic-process) (:state-size 2 :factors 2)
+    ((v0 nil :market-default heston-default-v0 :bounds (0 nil) :doc &quot;Initial variance.&quot;)
+     (kappa 2d0 :bounds ((0) nil) :doc &quot;Mean-reversion speed.&quot;))
+    (:documentation &quot;Heston stochastic volatility.&quot;))</p>
+
+<p>(make-heston :kappa 1.5d0)</p></li>
+</ul>
+<p><a id="x-28FINCL-2FDOCGEN-3A-40DEFINE-PAYOFF-20MGL-PAX-3ASECTION-29"></a>
+<a id="FINCL%2FDOCGEN:@DEFINE-PAYOFF%20MGL-PAX:SECTION"></a></p>
+<p><span class="outer-navigation"><span class="navigation"> <a href="#FINCL%2FDOCGEN:@DEFINE-PROCESS%20MGL-PAX:SECTION" title="define-process">&#8592;</a> <a href="#FINCL%2FDOCGEN:@EXTENDING%20MGL-PAX:SECTION" title="Extending fincl">&#8593;</a> <a href="#FINCL%2FDOCGEN:@DEFINE-PATH-PAYOFF%20MGL-PAX:SECTION" title="define-path-payoff">&#8594;</a> <a href="#FINCL%2FDOCGEN:@DEFINE-PAYOFF%20MGL-PAX:SECTION" title="define-payoff">&#8634;</a></span></span></p>
+<h3><a href="#FINCL%2FDOCGEN:@DEFINE-PAYOFF%20MGL-PAX:SECTION">5.4 define-payoff</a></h3>
+<p>Define a payoff class from a formula of the observable at expiry. Slots are
+<code>(name type &amp;key initform doc fact)</code>; one without an <code>initform</code> is a required
+initarg. The class becomes a clause of <code>make-option</code> taking its slots as
+keywords. Calls and puts with a strike inherit from <code>strike-payoff</code>,
+which supplies <code>phi</code> and <code>strike</code> to the formula.</p>
+<pre><code><span class="code"><span class="paren1">(<span class="code"><i><span class="symbol">define-payoff</span></i> jackpot <span class="paren2">(<span class="code">payoff</span>)</span>
+    <span class="paren2">(<span class="code"><span class="paren3">(<span class="code">top double-float <span class="keyword">:initform</span> 6d0 <span class="keyword">:doc</span> <span class="string">"The face that wins the bonus."</span></span>)</span>
+     <span class="paren3">(<span class="code">bonus double-float <span class="keyword">:fact</span> <span class="keyword">:bonus</span> <span class="keyword">:doc</span> <span class="string">"Paid on top of the face."</span></span>)</span></span>)</span>
+  <span class="paren2">(<span class="code">s</span>)</span>
+  <span class="paren2">(<span class="code">+ s <span class="paren3">(<span class="code"><i><span class="symbol">if</span></i> <span class="paren4">(<span class="code">&gt;= s top</span>)</span> bonus 0d0</span>)</span></span>)</span></span>)</span></span></code></pre>
+<p>Monte Carlo prices any such payoff. Closed-form engines only know the built-in
+ones, so <code>:auto</code> falls back to simulation for new payoffs.</p>
+<p><a id="x-28FINCL-3ADEFINE-PAYOFF-20MGL-PAX-3AMACRO-29"></a>
+<a id="FINCL:DEFINE-PAYOFF%20MGL-PAX:MACRO"></a></p>
+<ul>
+<li><p><span class=reference-bullet><span class=reference><span class="locative-type">[macro]</span> <span class="reference-object"><a href="#FINCL:DEFINE-PAYOFF%20MGL-PAX:MACRO" >FINCL:DEFINE-PAYOFF</a></span></span> <span class="locative-args">NAME SUPERCLASSES SLOTS (OBSERVABLE) &amp;BODY BODY</span></span></p>
+
+<p>Define the payoff class NAME and derive PAYOFF-VALUE and PAYOFF-KERNEL
+from one formula. Each of SLOTS is (slot-name type &amp;key initform reader doc
+fact); without INITFORM the initarg is required, and FACT names the
+construction fact that fills the slot (see MAKE-FROM-FACTS). BODY, optionally preceded by a
+docstring, computes the payoff from OBSERVABLE (a double-float) and may use
+every slot of NAME, and the variables its superclasses declare, as typed
+local variables. PAYOFF-KERNEL reads them once and closes over them, so the
+closure makes no generic call per evaluation.</p>
+
+<p>Inherit from data classes such as CALL-PUT-PAYOFF or STRIKE-PAYOFF, not from
+a payoff with its own formula: engines with a closed form for the parent
+would price the subclass with it. Doing so signals FORMULA-PAYOFF-SUPERCLASS
+at macroexpansion.</p>
+
+<p>(define-payoff digital (call-put-payoff)
+      ((level double-float :doc &quot;Pays 1 beyond this level.&quot;))
+    (s)
+    (if (plusp (* phi (- s level))) 1d0 0d0))</p></li>
+</ul>
+<p><a id="x-28FINCL-2FDOCGEN-3A-40DEFINE-PATH-PAYOFF-20MGL-PAX-3ASECTION-29"></a>
+<a id="FINCL%2FDOCGEN:@DEFINE-PATH-PAYOFF%20MGL-PAX:SECTION"></a></p>
+<p><span class="outer-navigation"><span class="navigation"> <a href="#FINCL%2FDOCGEN:@DEFINE-PAYOFF%20MGL-PAX:SECTION" title="define-payoff">&#8592;</a> <a href="#FINCL%2FDOCGEN:@EXTENDING%20MGL-PAX:SECTION" title="Extending fincl">&#8593;</a> <a href="#FINCL%2FDOCGEN:@DEFINE-CLAUSE%20MGL-PAX:SECTION" title="define-fact and define-clause">&#8594;</a> <a href="#FINCL%2FDOCGEN:@DEFINE-PATH-PAYOFF%20MGL-PAX:SECTION" title="define-path-payoff">&#8634;</a></span></span></p>
+<h3><a href="#FINCL%2FDOCGEN:@DEFINE-PATH-PAYOFF%20MGL-PAX:SECTION">5.5 define-path-payoff</a></h3>
+<p>Define a payoff that depends on the path, from clauses run on each path in
+the order written. In them <code>s</code> is the observable at the current grid point.</p>
+<ul>
+<li><p><code>(:accumulate (var init)...)</code>: variables kept along a path</p></li>
+<li><p><code>(:state var name)</code>: <code>var</code> is the process state element called <code>name</code></p></li>
+<li><p><code>(:start form...)</code>: at the valuation date</p></li>
+<li><p><code>(:on slot (i) form...)</code>: on each date in the date-list slot</p></li>
+<li><p><code>(:every form...)</code>: at every grid point</p></li>
+<li><p><code>(:final form)</code>: the amount paid at expiry</p></li>
+</ul>
+<p><code>(pay amount)</code> inside <code>:on</code> pays on that date, and <code>(stop)</code> ends the path,
+which then pays nothing at expiry. The observation dates become points of the
+simulation grid. Path payoffs are European and priced by Monte Carlo.</p>
+<p>The <code>bust-game</code> will refer to the <code>fair-die</code> state <code>:total</code>, which
+keeps the running total of die rolls. When the die is rolled on a date
+in <code>rolls</code>, check if the die rolls <code>1</code>, the contract goes bust.</p>
+<pre><code><span class="code"><span class="paren1">(<span class="code"><i><span class="symbol">define-path-payoff</span></i> bust-game <span class="paren2">(<span class="code">payoff</span>)</span> <span class="paren2">(<span class="code"><span class="paren3">(<span class="code">rolls list</span>)</span></span>)</span>
+  <span class="paren2">(<span class="code">s</span>)</span>
+  <span class="paren2">(<span class="code"><span class="keyword">:state</span> total <span class="keyword">:total</span></span>)</span>
+  <span class="paren2">(<span class="code"><span class="keyword">:on</span> rolls <span class="paren3">(<span class="code">i</span>)</span>
+    <span class="paren3">(<span class="code">when <span class="paren4">(<span class="code">= s 1d0</span>)</span> <span class="paren4">(<span class="code">stop</span>)</span></span>)</span></span>)</span>
+  <span class="paren2">(<span class="code"><span class="keyword">:final</span> total</span>)</span></span>)</span></span></code></pre>
+<p><a id="x-28FINCL-3ADEFINE-PATH-PAYOFF-20MGL-PAX-3AMACRO-29"></a>
+<a id="FINCL:DEFINE-PATH-PAYOFF%20MGL-PAX:MACRO"></a></p>
+<ul>
+<li><p><span class=reference-bullet><span class=reference><span class="locative-type">[macro]</span> <span class="reference-object"><a href="#FINCL:DEFINE-PATH-PAYOFF%20MGL-PAX:MACRO" >FINCL:DEFINE-PATH-PAYOFF</a></span></span> <span class="locative-args">NAME SUPERCLASSES SLOTS (OBSERVABLE) &amp;BODY CLAUSES</span></span></p>
+
+<p>Define the payoff class NAME (a PATH-PAYOFF) and its PATH-KERNEL from
+CLAUSES. SLOTS are as in DEFINE-PAYOFF; a slot holding dates has type <a href="http://www.lispworks.com/documentation/HyperSpec/Body/t_list.htm" title="LIST (MGL-PAX:CLHS CLASS)"><code>LIST</code></a>.
+Every clause may use the slots and the variables SUPERCLASSES declare (PHI,
+STRIKE) as typed local variables, OBSERVABLE (the observable at the current
+grid point, a double-float), and the latent state variables of <code>:STATE</code>.</p>
+
+<p>(:accumulate (var init) ...)   per-path double-float variables, set to
+                                 INIT at the start of each path
+  (:state var name)              VAR is the state component NAME
+                                 (STATE-INDEX), e.g. (:state v :variance)
+  (:start form ...)              at grid index 0 (the valuation date)
+  (:on date-slot (index) form ...)
+                                 at each date of DATE-SLOT; INDEX is the
+                                 date's position in the slot
+  (:every form ...)              at every grid index
+  (:final form)                  the amount paid at expiry</p>
+
+<p>In <code>:ON</code> clauses, (pay amount) pays AMOUNT on the current date and (pay amount
+i) on date I of the clause's slot. Clauses run in the order written; (stop)
+in any of them ends the path, which then pays nothing at expiry.</p>
+
+<p>(define-path-payoff autocallable (payoff)
+      ((notional double-float) (initial double-float) (barrier double-float)
+       (coupon double-float) (observations list))
+    (s)
+    (:on observations (i)
+      (when (&gt;= s (* barrier initial))
+        (pay (+ notional coupon))
+        (stop)))
+    (:final (min notional (* notional (/ s initial)))))</p></li>
+</ul>
+<p><a id="x-28FINCL-2FDOCGEN-3A-40DEFINE-CLAUSE-20MGL-PAX-3ASECTION-29"></a>
+<a id="FINCL%2FDOCGEN:@DEFINE-CLAUSE%20MGL-PAX:SECTION"></a></p>
+<p><span class="outer-navigation"><span class="navigation"> <a href="#FINCL%2FDOCGEN:@DEFINE-PATH-PAYOFF%20MGL-PAX:SECTION" title="define-path-payoff">&#8592;</a> <a href="#FINCL%2FDOCGEN:@EXTENDING%20MGL-PAX:SECTION" title="Extending fincl">&#8593;</a> <a href="#FINCL%2FDOCGEN:@DICE-EXAMPLE%20MGL-PAX:SECTION" title="A dice game">&#8594;</a> <a href="#FINCL%2FDOCGEN:@DEFINE-CLAUSE%20MGL-PAX:SECTION" title="define-fact and define-clause">&#8634;</a></span></span></p>
+<h3><a href="#FINCL%2FDOCGEN:@DEFINE-CLAUSE%20MGL-PAX:SECTION">5.6 define-fact and define-clause</a></h3>
+<p><code>make-option</code> is built from clauses that set named facts. <code>define-fact</code> declares
+a fact; <code>define-clause</code> adds a clause setting it with <code>publish</code>, and a payoff
+slot with <code>:fact</code> reads it:</p>
+<pre><code><span class="code"><span class="paren1">(<span class="code"><i><span class="symbol">define-fact</span></i> <span class="keyword">:bonus</span> double-float <span class="string">"Paid on top of the top face."</span>
+  <span class="keyword">:coerce</span> #'real-to-double</span>)</span>
+
+<span class="paren1">(<span class="code"><i><span class="symbol">define-clause</span></i> option bonus <span class="paren2">(<span class="code">amount</span>)</span>
+  <span class="paren2">(<span class="code"><span class="keyword">:publishes</span> <span class="keyword">:bonus</span></span>)</span>
+  <span class="string">"Pay AMOUNT on a roll of the top face."</span>
+  <span class="paren2">(<span class="code">publish <span class="keyword">:bonus</span> amount</span>)</span></span>)</span></span></code></pre>
+<p>so <code>(make-option (jackpot) (bonus 10) ...)</code> fills the <code>bonus</code> slot of <code>jackpot</code>.
+A clause lists the facts it may set in <code>(:publishes ...)</code>.</p>
+<p><a id="x-28FINCL-3ADEFINE-FACT-20MGL-PAX-3AMACRO-29"></a>
+<a id="FINCL:DEFINE-FACT%20MGL-PAX:MACRO"></a></p>
+<ul>
+<li><p><span class=reference-bullet><span class=reference><span class="locative-type">[macro]</span> <span class="reference-object"><a href="#FINCL:DEFINE-FACT%20MGL-PAX:MACRO" >FINCL:DEFINE-FACT</a></span></span> <span class="locative-args">NAME TYPE DOCUMENTATION &amp;KEY COERCE</span></span></p>
+
+<p>Register the fact NAME (a keyword) with values of <code>TYPE</code>. <code>COERCE</code>, a function
+designator, normalizes a value before the type check. A name means the same
+thing in every language, so define a fact once and share it.</p>
+
+<p>(define-fact :strike double-float &quot;The option's strike.&quot;
+    :coerce (lambda (x) (float x 1d0)))</p></li>
+</ul>
+<p><a id="x-28FINCL-3ADEFINE-CLAUSE-20MGL-PAX-3AMACRO-29"></a>
+<a id="FINCL:DEFINE-CLAUSE%20MGL-PAX:MACRO"></a></p>
+<ul>
+<li><p><span class=reference-bullet><span class=reference><span class="locative-type">[macro]</span> <span class="reference-object"><a href="#FINCL:DEFINE-CLAUSE%20MGL-PAX:MACRO" >FINCL:DEFINE-CLAUSE</a></span></span> <span class="locative-args">LANGUAGE NAME LAMBDA-LIST &amp;BODY BODY</span></span></p>
+
+<p>Define the clause NAME of LANGUAGE. LAMBDA-LIST receives the clause's
+arguments, already evaluated; if it ends in &amp;CLAUSES VAR (after required
+parameters only), the remaining forms are sub-clauses, bound to VAR as data,
+for the body to run with APPLY-CLAUSES, usually inside WITH-SCOPE. BODY may
+start with a docstring and a (<code>:PUBLISHES</code> fact...) form declaring every fact
+it may set.</p>
+
+<p>(define-clause option expires (when &amp;key from calendar)
+    (:publishes :expiry)
+    &quot;The expiry: a date, or a tenor resolved from FROM.&quot;
+    (publish :expiry (resolve-expiry when :from from :calendar calendar)))</p></li>
+</ul>
+<p><a id="x-28FINCL-2FDOCGEN-3A-40DICE-EXAMPLE-20MGL-PAX-3ASECTION-29"></a>
+<a id="FINCL%2FDOCGEN:@DICE-EXAMPLE%20MGL-PAX:SECTION"></a></p>
+<p><span class="outer-navigation"><span class="navigation"> <a href="#FINCL%2FDOCGEN:@DEFINE-CLAUSE%20MGL-PAX:SECTION" title="define-fact and define-clause">&#8592;</a> <a href="#FINCL%2FDOCGEN:@EXTENDING%20MGL-PAX:SECTION" title="Extending fincl">&#8593;</a> <a href="#FINCL%2FDOCGEN:@DICE-EXAMPLE%20MGL-PAX:SECTION" title="A dice game">&#8634;</a></span></span></p>
+<h3><a href="#FINCL%2FDOCGEN:@DICE-EXAMPLE%20MGL-PAX:SECTION">5.7 A dice game</a></h3>
+<p>Putting the pieces together. Let us simulate our games played
+at our casino and price the contracts we'll write on them.</p>
+<pre><code><span class="code"><span class="paren1">(<span class="code"><i><span class="symbol">define-currency</span></i> <span class="keyword">:chip</span> <span class="keyword">:name</span> <span class="string">"Casino chip"</span> <span class="keyword">:fraction-digits</span> 0</span>)</span>
+
+<span class="paren1">(<span class="code"><i><span class="symbol">define-observance</span></i> <span class="keyword">:previous-weekday</span> <span class="paren2">(<span class="code">date</span>)</span>
+  <span class="paren2">(<span class="code">case <span class="paren3">(<span class="code">day-of-week date</span>)</span>
+    <span class="paren3">(<span class="code">6 <span class="paren4">(<span class="code">date+ date -1</span>)</span></span>)</span>
+    <span class="paren3">(<span class="code">7 <span class="paren4">(<span class="code">date+ date -2</span>)</span></span>)</span>
+    <span class="paren3">(<span class="code">t date</span>)</span></span>)</span></span>)</span>
+
+<span class="paren1">(<span class="code"><i><span class="symbol">define-calendar</span></i> casino <span class="paren2">(<span class="code">weekends-only</span>)</span>
+  <span class="string">"Closed on Christmas Day, and on the 26th, observed on the previous weekday."</span>
+  <span class="paren2">(<span class="code"><span class="keyword">:fixed</span> 12 25</span>)</span>
+  <span class="paren2">(<span class="code"><span class="keyword">:fixed</span> 12 26 <span class="keyword">:observe</span> <span class="keyword">:previous-weekday</span></span>)</span></span>)</span>
+
+<span class="paren1">(<span class="code"><i><span class="symbol">define-process</span></i> fair-die <span class="paren2">(<span class="code">stochastic-process</span>)</span> <span class="paren2">(<span class="code"><span class="keyword">:state-size</span> 2</span>)</span>
+  <span class="paren2">(<span class="code"><span class="paren3">(<span class="code">faces 6d0 <span class="keyword">:bounds</span> <span class="paren4">(<span class="code">2 nil</span>)</span> <span class="keyword">:doc</span> <span class="string">"Number of faces."</span></span>)</span></span>)</span>
+  <span class="paren2">(<span class="code"><span class="keyword">:documentation</span> <span class="string">"A die rolled once per step. Element 0 is the latest roll,
+element 1 the running total."</span></span>)</span></span>)</span>
+
+<span class="paren1">(<span class="code"><i><span class="symbol">defmethod</span></i> initial-state <span class="paren2">(<span class="code"><span class="paren3">(<span class="code">p fair-die</span>)</span> market</span>)</span>
+  <span class="paren2">(<span class="code">declare <span class="paren3">(<span class="code">ignore market</span>)</span></span>)</span>
+  <span class="paren2">(<span class="code">make-array 2 <span class="keyword">:element-type</span> 'double-float <span class="keyword">:initial-element</span> 0d0</span>)</span></span>)</span>
+
+<span class="paren1">(<span class="code"><i><span class="symbol">defmethod</span></i> process-state-names <span class="paren2">(<span class="code"><span class="paren3">(<span class="code">p fair-die</span>)</span></span>)</span> '<span class="paren2">(<span class="code"><span class="keyword">:spot</span> <span class="keyword">:total</span></span>)</span></span>)</span>
+
+<span class="paren1">(<span class="code"><i><span class="symbol">defmethod</span></i> make-stepper <span class="paren2">(<span class="code"><span class="paren3">(<span class="code">p fair-die</span>)</span> market times</span>)</span>
+  <span class="paren2">(<span class="code">declare <span class="paren3">(<span class="code">ignore market times</span>)</span></span>)</span>
+  <span class="paren2">(<span class="code"><i><span class="symbol">let</span></i> <span class="paren3">(<span class="code"><span class="paren4">(<span class="code">faces <span class="paren5">(<span class="code">process-parameter p <span class="keyword">:faces</span></span>)</span></span>)</span></span>)</span>
+    <span class="paren3">(<span class="code">declare <span class="paren4">(<span class="code">type double-float faces</span>)</span></span>)</span>
+    <span class="paren3">(<span class="code"><i><span class="symbol">lambda</span></i> <span class="paren4">(<span class="code">state normals j</span>)</span>
+      <span class="paren4">(<span class="code">declare <span class="paren5">(<span class="code">type <span class="paren6">(<span class="code">simple-array double-float <span class="paren1">(<span class="code">*</span>)</span></span>)</span> state normals</span>)</span> <span class="paren5">(<span class="code">ignore j</span>)</span></span>)</span>
+      <span class="comment">;; Phi(Z) is uniform on (0, 1), so floor(faces U) + 1 is uniform on 1..faces.
+</span>      <span class="paren4">(<span class="code"><i><span class="symbol">let</span></i> <span class="paren5">(<span class="code"><span class="paren6">(<span class="code">roll <span class="paren1">(<span class="code">+ 1d0 <span class="paren2">(<span class="code">min <span class="paren3">(<span class="code">- faces 1d0</span>)</span>
+                              <span class="paren3">(<span class="code">ffloor <span class="paren4">(<span class="code">* faces <span class="paren5">(<span class="code">norm-cdf <span class="paren6">(<span class="code">aref normals 0</span>)</span></span>)</span></span>)</span></span>)</span></span>)</span></span>)</span></span>)</span></span>)</span>
+        <span class="paren5">(<span class="code">setf <span class="paren6">(<span class="code">aref state 0</span>)</span> roll
+              <span class="paren6">(<span class="code">aref state 1</span>)</span> <span class="paren6">(<span class="code">+ <span class="paren1">(<span class="code">aref state 1</span>)</span> roll</span>)</span></span>)</span></span>)</span>
+      nil</span>)</span></span>)</span></span>)</span>
+
+<span class="paren1">(<span class="code"><i><span class="symbol">define-fact</span></i> <span class="keyword">:bonus</span> double-float <span class="string">"Paid on top of the top face."</span>
+  <span class="keyword">:coerce</span> #'real-to-double</span>)</span>
+
+<span class="paren1">(<span class="code"><i><span class="symbol">define-clause</span></i> option bonus <span class="paren2">(<span class="code">amount</span>)</span>
+  <span class="paren2">(<span class="code"><span class="keyword">:publishes</span> <span class="keyword">:bonus</span></span>)</span>
+  <span class="string">"Pay AMOUNT on a roll of the top face."</span>
+  <span class="paren2">(<span class="code">publish <span class="keyword">:bonus</span> amount</span>)</span></span>)</span>
+
+<span class="paren1">(<span class="code"><i><span class="symbol">define-payoff</span></i> jackpot <span class="paren2">(<span class="code">payoff</span>)</span>
+    <span class="paren2">(<span class="code"><span class="paren3">(<span class="code">top double-float <span class="keyword">:initform</span> 6d0 <span class="keyword">:doc</span> <span class="string">"The face that wins the bonus."</span></span>)</span>
+     <span class="paren3">(<span class="code">bonus double-float <span class="keyword">:fact</span> <span class="keyword">:bonus</span> <span class="keyword">:doc</span> <span class="string">"Paid on top of the face."</span></span>)</span></span>)</span>
+  <span class="paren2">(<span class="code">s</span>)</span>
+  <span class="paren2">(<span class="code">+ s <span class="paren3">(<span class="code"><i><span class="symbol">if</span></i> <span class="paren4">(<span class="code">&gt;= s top</span>)</span> bonus 0d0</span>)</span></span>)</span></span>)</span>
+
+<span class="paren1">(<span class="code"><i><span class="symbol">define-path-payoff</span></i> bust-game <span class="paren2">(<span class="code">payoff</span>)</span> <span class="paren2">(<span class="code"><span class="paren3">(<span class="code">rolls list</span>)</span></span>)</span>
+  <span class="paren2">(<span class="code">s</span>)</span>
+  <span class="paren2">(<span class="code"><span class="keyword">:state</span> total <span class="keyword">:total</span></span>)</span>
+  <span class="paren2">(<span class="code"><span class="keyword">:on</span> rolls <span class="paren3">(<span class="code">i</span>)</span>
+    <span class="paren3">(<span class="code">when <span class="paren4">(<span class="code">= s 1d0</span>)</span> <span class="paren4">(<span class="code">stop</span>)</span></span>)</span></span>)</span>
+  <span class="paren2">(<span class="code"><span class="keyword">:final</span> total</span>)</span></span>)</span></span></code></pre>
+<p>Now, pricing two contracts on the die:</p>
+<pre><code><span class="code"><span class="paren1">(<span class="code"><i><span class="symbol">defparameter</span></i> <span class="special">*today*</span> #D<span class="string">"2026-10-26"</span></span>)</span>
+<span class="paren1">(<span class="code"><i><span class="symbol">defparameter</span></i> <span class="special">*market*</span>
+  <span class="paren2">(<span class="code">make-market <span class="keyword">:valuation-date</span> <span class="special">*today*</span>
+               <span class="keyword">:underlyings</span> '<span class="paren3">(<span class="code"><span class="paren4">(<span class="code"><span class="keyword">:die</span> <span class="keyword">:spot</span> 1 <span class="keyword">:currency</span> <span class="keyword">:chip</span> <span class="keyword">:vol</span> 0.2d0</span>)</span></span>)</span>
+               <span class="keyword">:curves</span> '<span class="paren3">(<span class="code"><span class="paren4">(<span class="code"><span class="keyword">:chip-curve</span> <span class="keyword">:rate</span> 0d0</span>)</span></span>)</span>
+               <span class="keyword">:discounting</span> '<span class="paren3">(<span class="code"><span class="paren4">(<span class="code"><span class="keyword">:chip</span> . <span class="keyword">:chip-curve</span></span>)</span></span>)</span></span>)</span></span>)</span>
+<span class="paren1">(<span class="code"><i><span class="symbol">defparameter</span></i> <span class="special">*engine*</span>
+  <span class="paren2">(<span class="code">make-engine <span class="keyword">:mc</span> <span class="keyword">:process</span> <span class="paren3">(<span class="code">make-fair-die</span>)</span> <span class="keyword">:n-paths</span> 200000 <span class="keyword">:n-steps</span> 3</span>)</span></span>)</span>
+
+<span class="comment">;; Pays the last roll, plus 10 chips on a 6: expected 3.5 + 10/6.
+</span><span class="paren1">(<span class="code">price <span class="paren2">(<span class="code">make-option <span class="paren3">(<span class="code">jackpot</span>)</span> <span class="paren3">(<span class="code">bonus 10</span>)</span> <span class="paren3">(<span class="code">currency <span class="keyword">:chip</span></span>)</span>
+                    <span class="paren3">(<span class="code">expires #T<span class="string">"2M"</span> <span class="keyword">:from</span> <span class="special">*today*</span> <span class="keyword">:calendar</span> +casino+</span>)</span></span>)</span>
+       <span class="special">*engine*</span> <span class="special">*market*</span></span>)</span>
+<span class="comment">;; ==&gt; 5.17...
+</span>
+<span class="comment">;; Weekly rolls; pays the total after three rolls unless a 1 shows up.
+</span><span class="paren1">(<span class="code">price <span class="paren2">(<span class="code">make-option <span class="paren3">(<span class="code">bust-game <span class="keyword">:rolls</span> <span class="paren4">(<span class="code">list #D<span class="string">"2026-11-02"</span> #D<span class="string">"2026-11-09"</span> #D<span class="string">"2026-11-16"</span></span>)</span></span>)</span>
+                    <span class="paren3">(<span class="code">underlying <span class="keyword">:die</span></span>)</span> <span class="paren3">(<span class="code">expires #D<span class="string">"2026-11-16"</span></span>)</span></span>)</span>
+       <span class="special">*engine*</span> <span class="special">*market*</span></span>)</span>
+<span class="comment">;; ==&gt; 6.96...  (exactly (5/6)^3 * 12 = 6.944)</span></span></code></pre>
   </div>
 </div>
 <script>$('#page-toc').toc({'selectors': 'h1,h2,h3,h4'});</script>
