@@ -32,12 +32,13 @@ when every check passed."
         'cos-checks 'cos-term-structure-checks 'binomial-checks 'analytic-checks 'parameter-checks
         'error-checks 'condition-hierarchy-checks 'restart-checks 'lsm-basis-checks
         'lbr-reference-checks 'implied-vol-checks 'engine-implied-vol-checks
-        'optimizer-checks)
+        'optimizer-checks 'bivariate-normal-checks)
   "Checks that take seconds, not minutes.")
 
 (defparameter *slow-checks*
   (list 'rates-instrument-checks 'mc-checks 'counter-stream-checks 'antithetic-se-checks 'process-checks 'levy-checks 'selection-test-checks 'term-structure-checks 'clarke-parrott-checks
-        'greeks-checks 'invariant-checks 'option-round-trip-checks 'path-checks 'surface-checks 'fd-checks 'golden-checks)
+        'greeks-checks 'invariant-checks 'option-round-trip-checks 'path-checks 'surface-checks 'fd-checks
+        'dividend-checks 'golden-checks)
   "Monte Carlo-heavy checks, the invariant sweep and the golden values.")
 
 (defun run-tests ()

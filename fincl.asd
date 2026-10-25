@@ -67,6 +67,7 @@
                 :components ((:file "interest-rate")
                              (:file "protocol")
                              (:file "flat")
+                             (:file "dividends")
                              (:file "yield-curves")
                              (:file "rates-vol")
                              (:file "vol-surfaces")))
@@ -154,6 +155,7 @@
                (:file "paths")
                (:file "surfaces")
                (:file "fd")
+               (:file "dividends")
                (:file "readme")
                ;; The runners call the checks above; keep them last.
                (:file "tests"))

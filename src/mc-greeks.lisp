@@ -55,6 +55,10 @@ engine E (GBM): a plist over WHICH with :STANDARD-ERRORS."
     (unless (and (typep x 'european-exercise) (typep process 'gbm))
       (error 'unsupported-combination :exercise x :payoff p :path f :process process
                                       :engine e :market view))
+    (when (option-dividends o view)
+      (refuse-dividends e (format nil "~(~A~) Greeks differentiate GBM paths without the ~
+dividends' jumps; use :METHOD :BUMP" method)
+                        nil))
     (when (and (eq method :pathwise) (not (pathwise-differentiable-p p f)))
       (error 'model-domain-error
              :engine e

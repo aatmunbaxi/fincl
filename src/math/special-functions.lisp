@@ -469,3 +469,89 @@ complement, each with full relative precision.
                     (when (and (<= tail (* eps p-sum)) (<= (* tail q) (* eps q-sum)))
                       (finish)))))
           (values (min 1d0 p-sum) (min 1d0 q-sum)))))))
+
+;;; --------------------------------------------------------------------
+;;; Bivariate normal
+;;; --------------------------------------------------------------------
+
+;;; Gauss-Legendre nodes and weights on [-1, 1], one half each (the rule is
+;;; symmetric), for 6, 12 and 20 points.
+(a:define-constant +bivariate-legendre+
+    '(((0.9324695142031522d0 . 0.1713244923791705d0) (0.6612093864662647d0 . 0.3607615730481384d0)
+       (0.2386191860831970d0 . 0.4679139345726904d0))
+      ((0.9815606342467191d0 . 0.04717533638651177d0) (0.9041172563704750d0 . 0.1069393259953183d0)
+       (0.7699026741943050d0 . 0.1600783285433464d0) (0.5873179542866171d0 . 0.2031674267230659d0)
+       (0.3678314989981802d0 . 0.2334925365383547d0) (0.1252334085114692d0 . 0.2491470458134029d0))
+      ((0.9931285991850949d0 . 0.01761400713915212d0) (0.9639719272779138d0 . 0.04060142980038694d0)
+       (0.9122344282513259d0 . 0.06267204833410906d0) (0.8391169718222188d0 . 0.08327674157670475d0)
+       (0.7463319064601508d0 . 0.1019301198172404d0) (0.6360536807265150d0 . 0.1181945319615184d0)
+       (0.5108670019508271d0 . 0.1316886384491766d0) (0.3737060887154196d0 . 0.1420961093183821d0)
+       (0.2277858511416451d0 . 0.1491729864726037d0) (0.07652652113349733d0 . 0.1527533871307259d0)))
+  :test #'equal)
+
+(defun bivariate-normal-upper (h k r)
+  "P(X > H, Y > K) for standard normals X, Y with correlation R: Genz's
+algorithm (Drezner and Wesolowsky's Gauss-Legendre integral over asin r
+for |R| < 0.925, an asymptotic expansion about |R| = 1 beyond), accurate to
+about 1e-15. A. Genz, \"Numerical computation of rectangular bivariate and
+trivariate normal and t probabilities\", Statistics and Computing 14 (2004)."
+  (declare (double-float h k r))
+  (when (zerop r)
+    (return-from bivariate-normal-upper (* (norm-cdf (- h)) (norm-cdf (- k)))))
+  (let* ((two-pi (* 2d0 pi))
+         (rule (nth (cond ((< (abs r) 0.3d0) 0) ((< (abs r) 0.75d0) 1) (t 2)) +bivariate-legendre+))
+         ;; The full rule on [0, 2]: nodes 1 -/+ x.
+         (nodes (iter (for (x . w) in rule)
+                      (collect `(,(- 1d0 x) . ,w))
+                      (collect `(,(+ 1d0 x) . ,w))))
+         (hk (* h k))
+         (bvn 0d0))
+    (declare (double-float hk bvn))
+    (if (< (abs r) 0.925d0)
+        (let ((hs (* 0.5d0 (+ (* h h) (* k k))))
+              (asr (* 0.5d0 (asin r))))
+          (iter (for (x . w) in nodes)
+                (let ((sn (sin (* asr x))))
+                  (incf bvn (* w (exp (/ (- (* sn hk) hs) (- 1d0 (* sn sn))))))))
+          (setf bvn (+ (/ (* bvn asr) two-pi) (* (norm-cdf (- h)) (norm-cdf (- k))))))
+        (progn
+          (when (minusp r) (setf k (- k) hk (- hk)))
+          (when (< (abs r) 1d0)
+            (let* ((as (- 1d0 (* r r)))
+                   (a (sqrt as))
+                   (bs (expt (- h k) 2))
+                   (asr (* -0.5d0 (+ (/ bs as) hk)))
+                   (c (/ (- 4d0 hk) 8d0))
+                   (d (/ (- 12d0 hk) 80d0)))
+              (when (> asr -100d0)
+                (setf bvn (* a (exp asr) (+ (- 1d0 (/ (* c (- bs as) (- 1d0 (* d bs))) 3d0))
+                                            (* c d as as)))))
+              (when (> hk -100d0)
+                (let ((b (sqrt bs)))
+                  (decf bvn (* (exp (* -0.5d0 hk)) (sqrt two-pi) (norm-cdf (- (/ b a))) b
+                               (- 1d0 (/ (* c bs (- 1d0 (* d bs))) 3d0))))))
+              (let ((a (* 0.5d0 a))
+                    (sum 0d0))
+                (declare (double-float sum))
+                (iter (for (x . w) in nodes)
+                      (let* ((xs (expt (* a x) 2))
+                             (asr (* -0.5d0 (+ (/ bs xs) hk))))
+                        (when (> asr -100d0)
+                          (let* ((sp (+ 1d0 (* c xs (+ 1d0 (* 5d0 d xs)))))
+                                 (rs (sqrt (- 1d0 xs)))
+                                 (ep (/ (exp (/ (* -0.5d0 hk xs) (expt (+ 1d0 rs) 2))) rs)))
+                            (incf sum (* w (exp asr) (- sp ep)))))))
+                (setf bvn (/ (- (* a sum) bvn) two-pi)))))
+          (cond ((plusp r) (incf bvn (norm-cdf (- (max h k)))))
+                ((>= h k) (setf bvn (- bvn)))
+                (t (setf bvn (- (if (minusp h)
+                                    (- (norm-cdf k) (norm-cdf h))
+                                    (- (norm-cdf (- h)) (norm-cdf (- k))))
+                                bvn))))))
+    (max 0d0 (min 1d0 bvn))))
+
+(defun bivariate-norm-cdf (a b rho)
+  "P(X <= A, Y <= B) for standard normals X, Y with correlation RHO.
+
+  (bivariate-norm-cdf 0d0 0d0 0.5d0) => 0.3333333333333333d0"
+  (bivariate-normal-upper (- (float a 1d0)) (- (float b 1d0)) (float rho 1d0)))

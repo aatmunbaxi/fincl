@@ -43,14 +43,17 @@ arbitrage."
                      (arbitrage-t0 c) (arbitrage-t1 c) (arbitrage-variance c)))))
 
 ;;; Market quantities every process needs per interval. Rates enter the
-;;; dynamics only through the forward: log(F(t1)/F(t0)) is exact for any
-;;; deterministic term structure, where (r - q) dt with rates read at dt
-;;; from 0 was not.
+;;; dynamics only through the carry factor: log(C(t1)/C(t0)) is exact for
+;;; any deterministic term structure, where (r - q) dt with rates read at dt
+;;; from 0 was not. Without discrete dividends C is F/S, so the discounted
+;;; observable is a martingale; discrete dividends are jumps the engines
+;;; apply at their ex-dates (DIVIDEND-STEPPER).
 
 (defun log-growth (market t0 t1)
-  "log(F(T1)/F(T0)): the drift of ln S over [T0, T1] before the variance
-correction, in market time."
-  (log (/ (forward-factor market t1) (forward-factor market t0))))
+  "log(C(T1)/C(T0)), C the CARRY-FACTOR: the drift of ln S over [T0, T1]
+before the variance correction, in market time, between discrete dividends.
+Without them it is log(F(T1)/F(T0))."
+  (log (/ (carry-factor market t1) (carry-factor market t0))))
 
 (defun atm-forward-variance (market horizon)
   "Total Black variance to HORIZON at the ATM-forward strike, w(T); 0 at
@@ -67,8 +70,8 @@ HORIZON 0."
         (finally (return dt))))
 
 (defun interval-log-growths (market times)
-  "log(F(TIMES[j+1]) / F(TIMES[j])) for each interval j of the grid TIMES,
-as a (SIMPLE-ARRAY DOUBLE-FLOAT (*))."
+  "LOG-GROWTH over each interval j of the grid TIMES, as a (SIMPLE-ARRAY
+DOUBLE-FLOAT (*))."
   (declare (type (simple-array double-float (*)) times))
   (iter (for (t0 t1) in-intervals times)
         (collect-double (log-growth market t0 t1) into mu length (1- (length times)))
@@ -246,8 +249,93 @@ closure is called once per path per step, so everything that can be hoisted
 belongs in the method body: per-interval drifts, variances and step lengths
 are computed there into typed vectors indexed by J. Rates enter through
 LOG-GROWTH over each interval, so the discounted observable is a martingale
-under any deterministic term structure. A process that is not resolved (see
-RESOLVE-PROCESS) is resolved at the last grid time."))
+under any deterministic term structure. Discrete dividends are not the
+method's concern: an :AROUND method applies them to the closure it returns
+(DIVIDEND-STEPPER). A process that is not resolved (see RESOLVE-PROCESS) is
+resolved at the last grid time."))
+
+;;; --------------------------------------------------------------------
+;;; Discrete dividends (task 21)
+;;; --------------------------------------------------------------------
+
+(defgeneric dividend-model (process)
+  (:documentation "How PROCESS treats discrete cash dividends: :SPOT, the
+price drops by the dividend at its ex-date (floored at 0); or :ESCROWED,
+the process drives S minus the value of the dividends still to go ex before
+expiry. GBM takes either as its DIVIDEND-MODEL setting; every other process
+is :SPOT. Proportional dividends scale the price at their ex-date in both.")
+  (:method ((p stochastic-process)) :spot))
+
+(defun apply-dividend-jumps (s jumps)
+  "S after the (kind . amount) JUMPS in order: proportional ones scale it,
+cash ones subtract (floored at 0)."
+  (declare (double-float s))
+  (dolist (jump jumps s)
+    (setf s (if (eq (car jump) :proportional)
+                (* s (- 1d0 (the double-float (cdr jump))))
+                (max 0d0 (- s (the double-float (cdr jump))))))))
+
+(defun interval-dividend-jumps (events times &key (kinds '(:cash :proportional)))
+  "A simple-vector over the intervals of TIMES: for interval j, the (kind .
+amount) of the EVENTS of KINDS going ex in (TIMES[j], TIMES[j+1]], or NIL."
+  (declare (type (simple-array double-float (*)) times))
+  (let ((jumps (make-array (1- (length times)) :initial-element nil)))
+    (iter (for (t0 t1) in-intervals times)
+          (for j from 0)
+          (setf (svref jumps j)
+                (iter (for e in (dividends-between events t0 t1))
+                      (when (member (dividend-event-kind e) kinds)
+                        (collect (cons (dividend-event-kind e) (dividend-event-amount e)))))))
+    jumps))
+
+(defun dividend-stepper (stepper process market times)
+  "STEPPER, a MAKE-STEPPER closure over TIMES, with MARKET's discrete
+dividends going ex in (0, last time] applied: under the :SPOT model each
+interval's dividends are subtracted at its end (they fall on grid times when
+the engine put their ex-dates on the grid); under :ESCROWED the process steps
+S - R(t), R(t) the cash dividends still to go ex (ESCROWED-DIVIDENDS), and
+proportional ones scale it. STEPPER itself when there are none."
+  (declare (type (simple-array double-float (*)) times) (function stepper))
+  (let* ((horizon (aref times (1- (length times))))
+         (events (dividends-between (discrete-dividends market) 0d0 horizon)))
+    (cond
+      ((null events) stepper)
+      ((eq (dividend-model process) :escrowed)
+       (let ((jumps (interval-dividend-jumps events times :kinds '(:proportional)))
+             (escrow (map 'double-vector (lambda (time) (escrowed-dividends market events time horizon))
+                          times)))
+         (declare (simple-vector jumps) (type double-vector escrow))
+         (lambda (state normals j)
+           (declare (type double-vector state) (fixnum j))
+           (decf (aref state 0) (aref escrow j))
+           (funcall stepper state normals j)
+           (a:when-let ((js (svref jumps j)))
+             (setf (aref state 0) (apply-dividend-jumps (aref state 0) js)))
+           (incf (aref state 0) (aref escrow (1+ j)))
+           nil)))
+      (t
+       (let ((jumps (interval-dividend-jumps events times)))
+         (declare (simple-vector jumps))
+         (lambda (state normals j)
+           (declare (type double-vector state) (fixnum j))
+           (funcall stepper state normals j)
+           (a:when-let ((js (svref jumps j)))
+             (setf (aref state 0) (apply-dividend-jumps (aref state 0) js)))
+           nil))))))
+
+(defun dividend-dates (market horizon &key cum)
+  "The ex-dates of MARKET's discrete dividends going ex in (0, HORIZON], for
+time grids; with CUM also the day before each (if after the valuation date),
+the last on which an exercise still collects the dividend."
+  (let ((today (valuation-date market)))
+    (iter (for e in (dividends-between (discrete-dividends market) 0d0 horizon))
+          (for ex = (dividend-event-date e))
+          (collect ex)
+          (when (and cum (date< today (date+ ex -1)))
+            (collect (date+ ex -1))))))
+
+(defmethod make-stepper :around ((p stochastic-process) market times)
+  (dividend-stepper (call-next-method) p market times))
 
 (defgeneric simulatable-p (process)
   (:documentation "True if PROCESS can generate paths (MAKE-STEPPER). A
@@ -299,10 +387,15 @@ distribution, return a closure
     (lambda (normals) ...) -> observable at TIME
 
 so a European payoff can skip path generation entirely. Return NIL when no
-such shortcut exists; the engine then steps the full path.")
+such shortcut exists, or when discrete dividends go ex by TIME; the engine
+then steps the full path.")
   (:method ((p stochastic-process) market time)
     (declare (ignore market time))
     nil))
+
+(defmethod terminal-sampler :around ((p stochastic-process) market time)
+  (unless (dividends-between (discrete-dividends market) 0d0 time)
+    (call-next-method)))
 
 ;;; --------------------------------------------------------------------
 ;;; Named state components and pathwise discounting (task 19)

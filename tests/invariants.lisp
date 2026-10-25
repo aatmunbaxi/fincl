@@ -6,8 +6,10 @@
 ;;;; monotonicity and convexity in the strike, and American >= Bermudan >=
 ;;;; European. A new engine or process is covered by adding one
 ;;;; TEST-ENGINE-INSTANCE method, or one entry in INVARIANT-PROCESSES.
-;;;; Combinations an engine does not support are recorded in the coverage
-;;;; matrix, not treated as failures.
+;;;; Combinations an engine does not support, or declines with a
+;;;; MODEL-DOMAIN-ERROR (outside its approximation, discrete dividends it
+;;;; does not model), are recorded in the coverage matrix, not treated as
+;;;; failures.
 
 (in-package #:fincl/tests)
 (named-readtables:in-readtable fincl:syntax)
@@ -30,7 +32,8 @@ engine does not take a process and PROCESS is not the one its model fixes
              `(defmethod test-engine-instance ((c (eql ',class)) process)
                 (when (gbm-p process) (make-instance ',class)))))
   (process-free black-scholes-engine)
-  (process-free barone-adesi-whaley-engine))
+  (process-free barone-adesi-whaley-engine)
+  (process-free roll-geske-whaley-engine))
 
 (defmethod test-engine-instance ((c (eql 'merton-series-engine)) process)
   (when (typep process 'merton-jump) (make-instance c :process process)))
@@ -135,10 +138,11 @@ premium."
                        `((,style) (:expires ,*invariant-expiry*))))))
 
 (defun price-or-status (option engine market)
-  "(:ok price se), :unsupported, or (:error message)."
+  "(:ok price se), :unsupported (also for a MODEL-DOMAIN-ERROR, the engine
+declining), or (:error message)."
   (handler-case (multiple-value-bind (v se) (price option engine market)
                   (list :ok v se))
-    (unsupported-combination () :unsupported)
+    ((or unsupported-combination model-domain-error) () :unsupported)
     (error (c) (list :error (princ-to-string c)))))
 
 (defun price-grid (engine market)
@@ -256,13 +260,22 @@ skipped unless all of them priced."
     (iter (for (name . cells) in rows)
           (format t "  ~28A~{ ~10@A~}~%" (string-downcase name) cells))))
 
+(defun dividend-invariant-market ()
+  "A flat market whose underlying pays one cash dividend before
+*INVARIANT-EXPIRY* and no continuous yield, so American calls carry an
+early-exercise premium and Roll-Geske-Whaley applies."
+  (make-bs-market :valuation-date *today* :spot 100 :rate 0.05d0 :vol 0.25d0
+                  :dividend-schedule '(("2027-03-15" 3))))
+
 (defun invariant-markets ()
   "(label market) pairs: a flat market with a dividend yield, the same at zero
-and negative rates, and a market with rate, dividend and vol term structure."
+and negative rates, a market with rate, dividend and vol term structure,
+and a flat market with a discrete cash dividend."
   (list (list "flat" (invariant-market))
         (list "flat r=0" (invariant-market :rate 0))
         (list "flat r=-1%" (invariant-market :rate -0.01d0))
-        (list "piecewise" (make-piecewise-market))))
+        (list "piecewise" (make-piecewise-market))
+        (list "cash dividend" (dividend-invariant-market))))
 
 (defun greek-or-status (option engine market)
   "Delta, gamma and vega as PRICE-OR-STATUS results (:ok value se), or
@@ -272,14 +285,15 @@ and negative rates, and a market with rate, dividend and vol term structure."
              (ses (getf g :standard-errors)))
         (iter (for key in '(:delta :gamma :vega))
               (appending `(,key (:ok ,(getf g key) ,(getf ses key))))))
-    (unsupported-combination () :unsupported)
+    ((or unsupported-combination model-domain-error) () :unsupported)
     (error (c) `(:error ,(princ-to-string c)))))
 
 (defun check-greek-invariants (engine market label)
-  "For an at-the-money call of each style: 0 <= delta <= e^-qT (European) or
-1 (American), gamma >= 0, vega >= 0, up to ENGINE's tolerance."
-  (let ((e-q (* (forward market *invariant-expiry*) (discount-factor market *invariant-expiry*)
-                (/ (spot market)))))
+  "For an at-the-money call of each style: 0 <= delta <= e^-qT (European:
+dF/dS times the discount factor, the carry factor's, which with cash
+dividends exceeds F/S) or 1 (American), gamma >= 0, vega >= 0, up to
+ENGINE's tolerance."
+  (let ((e-q (* (carry-factor market *invariant-expiry*) (discount-factor market *invariant-expiry*))))
     (dolist (style '(:european :american))
       (let ((g (greek-or-status (invariant-option style :call 100) engine market))
             (where (format nil "~(~A~) call K=100" style)))

@@ -82,6 +82,8 @@
    #:market #:make-bs-market
    #:spot #:zero-rate #:dividend-yield #:black-vol
    #:discount-factor #:forward-factor #:forward #:black-variance
+   #:carry-factor #:discrete-dividends #:make-dividend-schedule #:dividend-schedule
+   #:bivariate-norm-cdf
    #:valuation-date #:market-day-counter #:market-time #:derive-market
    ;; term structures and composite markets
    #:term-structure #:yield-curve #:dividend-curve #:black-vol-structure
@@ -178,7 +180,7 @@
    #:merton-jump #:kou-jump #:variance-gamma #:nig #:cgmy #:bates
    ;; engines
    #:engine #:analytic-engine #:black-scholes-engine
-   #:barone-adesi-whaley-engine #:merton-series-engine #:cev-engine #:monte-carlo-engine
+   #:barone-adesi-whaley-engine #:roll-geske-whaley-engine #:merton-series-engine #:cev-engine #:monte-carlo-engine
    #:cos-engine #:n-terms #:truncation #:richardson-dates
    #:binomial-engine #:smooth #:extrapolate
    #:fd-engine #:price-fd #:pde-coefficients

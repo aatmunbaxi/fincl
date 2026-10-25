@@ -537,6 +537,15 @@ the chunking."
         (price-european-by-sampling sampler e market tau (payoff-kernel p))
         (price-by-path-kernel x p f e market))))
 
+;;; Discrete dividends are jumps at ex-dates on the grid (DIVIDEND-STEPPER).
+;;; A continuous barrier's bridge would span a jump, so it is refused.
+(defmethod check-discrete-dividends ((e monte-carlo-engine) o market)
+  (declare (ignore market))
+  (let ((f (option-path o)))
+    (when (and (typep f 'barrier) (null (observation-dates f)) (barrier-bridge e))
+      (refuse-dividends e (concatenate 'string "a continuous barrier's Brownian bridge would cross "
+                                       "a dividend's jump; give the barrier :MONITORING dates")))))
+
 ;;; A continuous barrier needs the process's bridge, unless it is turned off.
 (defmethod price-mc :before ((x european-exercise) (p payoff) (f barrier)
                              (e monte-carlo-engine) market)
@@ -624,8 +633,9 @@ order, so the result does not depend on the chunking."
          (variates (resolve-control-variates x p f e market))
          (specs `((,p ,f) ,@(mapcar (lambda (v) (subseq v 0 2)) variates)))
          (grid (make-time-grid market
-                               :dates (iter (for (payoff path) in specs)
-                                            (appending (instrument-grid-dates x payoff path)))
+                               :dates `(,@(iter (for (payoff path) in specs)
+                                                (appending (instrument-grid-dates x payoff path)))
+                                        ,@(dividend-dates market tau))
                                :n-steps (n-steps e)))
          (times (time-grid-times grid))
          (n-steps (1- (length times)))
@@ -909,12 +919,19 @@ struck payoff, the spot otherwise.")
 (defun price-lsm (x p e market)
   "Longstaff-Schwartz: (values price standard-error) of payoff P with the
 exercise rights of X, on the grid of X's dates at most the span over N-STEPS
-apart (MAKE-TIME-GRID): every Bermudan date is a grid point. With
+apart (MAKE-TIME-GRID): every Bermudan date and dividend ex-date is a grid
+point. With
 LSM-VALUATION :INDEPENDENT the exercise rule fitted on the engine's paths
 values a second, independent path set (another seed), a low-biased estimate."
   (let* ((tau (time-to-expiry x market))
-         (times (time-grid-times (make-time-grid market :dates (exercise-mandatory-dates x)
-                                                        :n-steps (n-steps e))))
+         ;; Ex-dates are grid times, and for American exercise so is the day
+         ;; before each, the last exercise that collects the dividend.
+         (times (time-grid-times (make-time-grid market
+                                                 :dates `(,@(exercise-mandatory-dates x)
+                                                          ,@(dividend-dates
+                                                             market tau
+                                                             :cum (typep x 'american-exercise)))
+                                                 :n-steps (n-steps e))))
          (process (-> e process (resolve-process market tau)))
          (components (or (regressors e) (process-regressors process)))
          (mask (exercise-mask x market times))

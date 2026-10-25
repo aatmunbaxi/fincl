@@ -82,7 +82,13 @@ class: there is no process slot, because a closed form exists only for the
 dynamics it was derived under. Adding Heston's characteristic-function
 solution means adding an engine class and a method, not a parameter."))
 
-(defclass black-scholes-engine (analytic-engine) ()
+(defclass black-scholes-engine (analytic-engine)
+  ((dividend-model :initarg :dividend-model :initform :spot :reader dividend-model
+                   :type (member :spot :escrowed)
+                   :documentation "The model of discrete cash dividends (see GBM's
+DIVIDEND-MODEL): :ESCROWED is Black's formula on the dividend-adjusted
+forward, exact; :SPOT is Bos and Vandermark's approximation. Set from the
+process when automatic selection makes the engine for a GBM."))
   (:metaclass engine-class)
   (:designator :black-scholes)
   (:models gbm)
@@ -93,6 +99,21 @@ solution means adding an engine class and a method, not a parameter."))
   (:designator :baw)
   (:models gbm)
   (:documentation "Quadratic approximation for American vanillas."))
+
+(defclass roll-geske-whaley-engine (analytic-engine)
+  ((dividend-model :initarg :dividend-model :initform :escrowed :reader dividend-model
+                   :type (member :spot :escrowed)
+                   :documentation "Must be :ESCROWED, the model the formula is
+derived under; automatic selection sets it from the process, and :SPOT makes
+the engine decline."))
+  (:metaclass engine-class)
+  (:designator :rgw)
+  (:models gbm)
+  (:documentation "Roll, Geske and Whaley's closed form for an American call
+with one discrete cash dividend under the escrowed model, with no continuous
+dividend yield.
+
+  (make-engine :rgw)"))
 
 (defclass merton-series-engine (analytic-engine)
   ((process :initarg :process :initform (make-instance 'merton-jump) :reader process
@@ -297,7 +318,36 @@ default accepts everything.")
 
 (defmethod validate-pricing-inputs ((o option) engine market)
   (validate-payoff (option-payoff o) market (expiry (option-exercise o)))
-  (validate-path-feature (option-path o) market))
+  (validate-path-feature (option-path o) market)
+  (when (and (typep engine 'engine) (option-dividends o market))
+    (check-discrete-dividends engine o market)))
+
+(defvar *selecting-engine* nil
+  "True while automatic selection tries candidates (PRICE-WITH-MODEL), so an
+engine can decline where it would only approximate what a later candidate
+prices exactly.")
+
+(defun option-dividends (o market)
+  "MARKET's discrete dividends going ex by O's expiry."
+  (dividends-between (discrete-dividends market) 0d0 (time-to-expiry (option-exercise o) market)))
+
+(defun refuse-dividends (engine &optional (detail "it does not model them") (advice t))
+  "Signal MODEL-DOMAIN-ERROR for ENGINE: discrete dividends go ex before the
+expiry, and DETAIL; with ADVICE, name the engines that model them."
+  (error 'model-domain-error
+         :engine engine
+         :reason (format nil "discrete dividends go ex before the expiry, and ~A.~:[~; Price ~
+with :black-scholes (European vanillas), :rgw (an American call, escrowed model), ~
+:binomial, :fd or :mc.~]" detail advice)))
+
+(defgeneric check-discrete-dividends (engine option market)
+  (:documentation "Signal MODEL-DOMAIN-ERROR unless ENGINE models the
+discrete dividends that go ex during OPTION's life in MARKET. PRICE calls it
+only when there are some; the default refuses, so an engine prices with
+discrete dividends only where it applies them.")
+  (:method ((e engine) o market)
+    (declare (ignore o market))
+    (refuse-dividends e)))
 
 (defun restart-applies-p (condition type)
   "For a restart :TEST: offer the restart for conditions of TYPE, and when no

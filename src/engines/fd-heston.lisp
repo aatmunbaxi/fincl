@@ -203,8 +203,13 @@ PROCESS: (values price delta gamma theta-per-day)."
          (s0 (spot market)) (x0 (log s0))
          (kappa (kappa process)) (theta (theta process)) (xi (xi process))
          (rho (rho process)) (v0 (v0 process))
-         (grid-times (time-grid-times (make-time-grid market :dates (exercise-mandatory-dates x)
-                                                             :n-steps (n-time e))))
+         (time-grid (make-time-grid market :dates `(,@(exercise-mandatory-dates x)
+                                                    ,@(dividend-dates market tau))
+                                    :n-steps (n-time e)))
+         (grid-times (time-grid-times time-grid))
+         ;; Discrete dividends under the spot model, as in FD-SOLVE.
+         (jumps (a:when-let ((events (dividends-between (discrete-dividends market) 0d0 tau)))
+                  (grid-dividend-jumps time-grid events '(:cash :proportional))))
          (mask (exercise-mask x market grid-times))
          (american (every (lambda (b) (= b 1)) mask))
          (european (typep x 'european-exercise))
@@ -283,11 +288,19 @@ PROCESS: (values price delta gamma theta-per-day)."
                                             (/ (log-growth market t0 t1) dt) (step-rate market t0 t1)))
                      (smooth (and (plusp (rannacher-steps e))
                                   (or (= (1+ j) (1- (length grid-times)))
-                                      (and (not american) (not european) (= 1 (sbit mask (1+ j))))))))
+                                      (and (not american) (not european) (= 1 (sbit mask (1+ j))))
+                                      (and jumps (svref jumps (1+ j)))))))
                 (if smooth
                     (let ((k (rannacher-steps e)))
                       (dotimes (s k) (adi-step ops (/ dt k) t)))
                     (adi-step ops dt nil))
+                ;; Cross the dividend on every variance line, then exercise on
+                ;; the price before it.
+                (a:when-let ((js (and jumps (svref jumps j))))
+                  (dotimes (jv nv) (fd-dividend-interface xs u (* jv nx) js))
+                  (unless european
+                    (dotimes (k n) (setf (aref u k) (max (aref u k) (aref payoff k))))
+                    (when lambdas (fill lambdas 0d0))))
                 (when (and (= 1 (sbit mask j)) (not american) (not european))
                   (dotimes (k n) (setf (aref u k) (max (aref u k) (aref payoff k)))))
                 (when (= j 1) (setf snapshot (copy-seq u)))))))

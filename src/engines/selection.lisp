@@ -39,11 +39,12 @@
   (some (lambda (model) (typep process model)) (engine-class-models class)))
 
 (defun make-engine (key &rest settings)
-  "The engine designated by KEY (:black-scholes, :baw, :binomial, :cos, :mc,
-:merton-series, :cev, or any class's (:designator ...)) with SETTINGS, its
+  "The engine designated by KEY (:black-scholes, :baw, :rgw, :binomial, :cos,
+:fd, :mc, :merton-series, :cev, or any class's (:designator ...)) with SETTINGS, its
 initargs, evaluated. :PROCESS goes to engines that take one; an engine whose
-model is fixed (Black-Scholes, BAW) accepts a process only of its model, with
-no parameters set (it prices with the market's data).
+model is fixed (Black-Scholes, BAW, RGW) accepts a process only of its model,
+with no parameters set (it prices with the market's data), and takes the
+process's DIVIDEND-MODEL setting if it has one of its own.
 
   (make-engine :binomial :n-steps 4000)
   (make-engine :cos :process (make-heston :xi 0.5d0) :n-terms 512)"
@@ -72,7 +73,11 @@ or build the market with that :vol"
                    ;; Unqualified, whatever package the caller is in.
                    (let ((*package* (find-package '#:fincl)))
                      (write-to-string (process-form process) :pretty nil :case :downcase))))))
-      (setf settings (a:remove-from-plist settings :process)))
+      (setf settings (a:remove-from-plist settings :process))
+      ;; The fixed-model engine still follows the process's treatment of
+      ;; discrete dividends.
+      (when (and (member :dividend-model initargs) (not (getf settings :dividend-model)))
+        (setf settings `(:dividend-model ,(dividend-model process) ,@settings))))
     (iter (for (initarg nil) in-plist settings)
           (unless (member initarg initargs)
             (signal-invalid-argument 'settings initarg 'keyword
@@ -274,7 +279,8 @@ standard-error engine)."
                 (warn 'engine-fallback :instrument option :process process
                                        :declined (reverse declined)))
               (handler-case
-                  (multiple-value-bind (npv se) (price option engine market)
+                  (multiple-value-bind (npv se) (let ((*selecting-engine* t))
+                                                  (price option engine market))
                     (return-from price-with-model (values npv se engine)))
                 ((or unsupported-combination model-domain-error) ()
                   (push designator declined))))))
@@ -307,10 +313,15 @@ automatic selection runs once, on MARKET."
 (defun control-variate-price (x payoff path pricer e market)
   "The price on MARKET of the variate (X PAYOFF PATH): by PRICER, a function
 of (option market) or an engine designator, or with NIL by automatic
-selection for E's process, Monte Carlo excluded."
+selection for E's process, Monte Carlo excluded. With discrete dividends
+before the expiry a European goes to finite differences first: the closed
+form is only an approximation under the spot dividend model."
   (let ((option (make-instance 'option :payoff payoff :exercise x :path path)))
     (float (cond ((functionp pricer) (funcall pricer option market))
                  (pricer (values (price option pricer market)))
+                 ((option-dividends option (pricing-market market option))
+                  (with-engines ((:european :fd) (:fallback nil))
+                    (values (price option (process e) market))))
                  (t (with-engines ((:fallback nil))
                       (values (price option (process e) market)))))
            1d0)))

@@ -3,7 +3,10 @@
 ;;;;   dS = (r - q) S dt + sigma S dW
 ;;;;
 ;;;; Exactly samplable in log space, so both the stepper and the terminal
-;;;; shortcut are free of discretization error.
+;;;; shortcut are free of discretization error. With discrete cash dividends
+;;;; the DIVIDEND-MODEL setting says what follows these dynamics: the price,
+;;;; which drops at each ex-date (:SPOT), or the price less the dividends to
+;;;; come (:ESCROWED).
 
 (in-package #:fincl)
 
@@ -20,9 +23,19 @@ is NIL follows the full term structure w(t)."
             :doc "Constant volatility. NIL follows the market's ATM-forward Black
 variance w(t): the variance of ln S over [t0, t1] is w(t1) - w(t0), so every
 ATM European is repriced, whatever the vol term structure. RESOLVE-PROCESS
-keeps it NIL."))
+keeps it NIL.")
+   (dividend-model :spot :parameter nil :type (member :spot :escrowed)
+                   :doc "Discrete cash dividends under :SPOT (the default): S
+follows GBM between ex-dates and drops by each dividend at its ex-date,
+floored at 0. Under :ESCROWED: S minus the value of the cash dividends still
+to go ex before expiry follows GBM, so a European is Black's formula on the
+dividend-adjusted forward. The escrowed model is simpler but puts the vol on
+a smaller quantity, so its vol is not the spot model's; :SPOT is the
+realistic one."))
   (:documentation "Black-Scholes dynamics, with the market's rate, dividend
-and (by default) vol term structures."))
+and (by default) vol term structures.
+
+  (make-gbm :vol 0.2d0 :dividend-model :escrowed)"))
 
 ;;; NIL vol is not "unresolved": it names the term-structure model, which
 ;;; one constant cannot represent.

@@ -176,7 +176,9 @@ simulation under GBM (mc-greeks.lisp).
 ;;; --------------------------------------------------------------------
 
 (defmethod greeks ((o option) (e black-scholes-engine) market &key (which *greek-keys*) bumps)
-  (if (european-vanilla-p o)
+  ;; The closed form is Black's formula on the forward; with discrete
+  ;; dividends the forward is not proportional to the spot, so bump.
+  (if (and (european-vanilla-p o) (null (option-dividends o (pricing-market market o))))
       (black-scholes-greeks o e market which)
       (call-next-method o e market :which which :bumps bumps)))
 
@@ -246,7 +248,9 @@ first time step, per calendar day); the others by bumping."
                           (typep (option-payoff o) 'vanilla-payoff)
                           (typep (option-exercise o) '(or american-exercise bermudan-exercise))
                           (typep (option-path o) 'path-independent)
-                          (typep (process e) 'gbm)))
+                          (typep (process e) 'gbm)
+                          ;; Under dividends the nodes are not S u^k.
+                          (null (option-dividends o (pricing-market market o)))))
          (nodes (and from-nodes (binomial-node-greeks o e market)))
          (bumped (let ((rest (if from-nodes (set-difference which node-keys) which)))
                    (and rest (bump-greeks o e market :which rest :bumps bumps)))))

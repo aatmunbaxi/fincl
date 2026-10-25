@@ -91,7 +91,8 @@ upper limit.
 (defgeneric implied-volatility (instrument price engine market &key bracket)
   (:documentation "The flat Black volatility of INSTRUMENT's underlying at
 which ENGINE prices INSTRUMENT at PRICE in MARKET. European vanillas use
-IMPLIED-BLACK-VOL directly, whatever the engine. Anything else is inverted
+IMPLIED-BLACK-VOL directly, whatever the engine, unless discrete dividends go
+ex before the expiry. Anything else is inverted
 by Brent's method over vols in BRACKET (default (1d-4 5d0)), re-pricing with
 the underlying's vol replaced by a flat one, so MARKET must be a
 COMPOSITE-MARKET. If the engine cannot price at the low end (a pricing
@@ -103,7 +104,9 @@ or above the high end's signals PRICE-OUT-OF-BOUNDS.
   (implied-volatility american-put 4.48 (make-instance 'barone-adesi-whaley-engine) m)"))
 
 (defmethod implied-volatility ((o option) price engine market &key (bracket '(1d-4 5d0)))
-  (if (european-vanilla-p o)
+  ;; With discrete dividends only the escrowed model is Black's formula on
+  ;; the forward, so the engine's own model is inverted instead.
+  (if (and (european-vanilla-p o) (null (option-dividends o (pricing-market market o))))
       (let* ((m (pricing-market market o))
              (x (option-exercise o))
              (p (option-payoff o)))

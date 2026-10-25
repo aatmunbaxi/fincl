@@ -48,6 +48,52 @@ relative precision far out of the money.
   (values (black-scholes (phi p) m (strike p) (expiry x)) nil))
 
 ;;; --------------------------------------------------------------------
+;;; Discrete dividends (task 21)
+;;; --------------------------------------------------------------------
+
+;;; Under the escrowed model S minus the dividends to come is lognormal, so
+;;; Black's formula on the dividend-adjusted FORWARD is exact: the method
+;;; above. Under the spot model there is no closed form.
+(defun bos-vandermark (phi market strike expiry)
+  "Bos and Vandermark's (2002) price of a European call (PHI = 1) or put
+under the spot dividend model: each cash dividend's value D_i, carried to
+today, is split by its ex-time t_i in [0, T] into a near part (T - t_i)/T D_i
+taken from the spot and a far part t_i/T D_i added to the strike, both grown
+to T, and Black's formula prices the rest at the market's vol for STRIKE.
+M. Bos and S. Vandermark, \"Finessing fixed dividends\", Risk (January 2002)."
+  (let* ((tau (market-time market expiry))
+         (events (dividends-between (discrete-dividends market) 0d0 tau))
+         (terms (escrowed-dividend-terms market events 0d0 tau))
+         (growth (* (carry-factor market tau) (proportional-dividend-factor events 0d0 tau)))
+         (near (iter (for (ex-time . value) in terms) (sum (* value (/ (- tau ex-time) tau)))))
+         (far (iter (for (ex-time . value) in terms) (sum (* value (/ ex-time tau))))))
+    (black-formula phi (* (- (spot market) near) growth) (+ strike (* far growth))
+                   (discount-factor market tau) (black-variance market strike tau))))
+
+(defmethod price-analytic ((x european-exercise) (p vanilla-payoff)
+                           (f path-independent) (e black-scholes-engine)
+                           (m market))
+  (if (and (eq (dividend-model e) :spot)
+           (find :cash (dividends-between (discrete-dividends m) 0d0 (time-to-expiry x m))
+                 :key #'dividend-event-kind))
+      (values (bos-vandermark (phi p) m (strike p) (expiry x)) nil)
+      (call-next-method)))
+
+(defmethod check-discrete-dividends ((e black-scholes-engine) o market)
+  (unless (and (typep (option-exercise o) 'european-exercise)
+               (typep (option-payoff o) 'vanilla-payoff)
+               (typep (option-path o) 'path-independent))
+    (refuse-dividends e "its closed forms with discrete dividends are for European vanillas"))
+  ;; Bos-Vandermark is an approximation (about 1e-2): automatic selection
+  ;; takes finite differences instead, as it takes the tree before BAW.
+  (when (and *selecting-engine* (eq (dividend-model e) :spot)
+             (find :cash (option-dividends o market) :key #'dividend-event-kind))
+    (refuse-dividends e (concatenate 'string "under the spot model its formula (Bos-Vandermark) "
+                                     "is an approximation, so automatic selection prefers finite "
+                                     "differences")
+                      nil)))
+
+;;; --------------------------------------------------------------------
 ;;; Barriers: Reiner-Rubinstein, with Broadie-Glasserman-Kou for discrete
 ;;; monitoring
 ;;; --------------------------------------------------------------------
@@ -264,6 +310,94 @@ monitoring; price with Monte Carlo." s h)))
                            (* a (expt (/ s critical) qi)))
                         (* phi (- s k)))
                     nil)))))))
+
+;;; --------------------------------------------------------------------
+;;; Roll-Geske-Whaley: an American call with one cash dividend (task 21)
+;;; --------------------------------------------------------------------
+
+;;; Under the escrowed model with no continuous yield and rates >= 0, an
+;;; American call is exercised, if at all, just before the ex-date t1. With
+;;; S' = S - PV(D) lognormal, the price is a European on S' plus the value
+;;; of that exercise right: a compound option, in bivariate normals. The
+;;; formula is Whaley's (1981) with his correction of Geske's sign, written
+;;; with the curves' discount factors P and carry factors C so that it holds
+;;; for deterministic term structures (flat ones give the textbook form):
+;;;
+;;;   C = S' C1 P1 N(b1) + S' CT PT M(a1, -b1; -sqrt(t1/T))
+;;;       - K PT M(a2, -b2; -sqrt(t1/T)) - (K - D1) P1 N(b2)
+;;;
+;;; a1 = [ln(S' CT/K) + v T/2]/sqrt(v T), b1 = [ln(S' C1/I) + v t1/2]/sqrt(v t1),
+;;; a2, b2 one standard deviation less, D1 the dividend's drop, and I the
+;;; escrowed price at t1 where holding and exercising are worth the same.
+(defun roll-geske-whaley (market strike tau t1 drop variance-rate)
+  "Price of an American call struck at STRIKE expiring at TAU (market time),
+with one cash dividend dropping the price by DROP at T1, under the escrowed
+model at the variance rate VARIANCE-RATE. R. Roll (1977), R. Geske (1979)
+and R. E. Whaley, \"On the valuation of American call options on stocks
+with known dividends\", J. Financial Economics 9 (1981)."
+  (let* ((k (float strike 1d0))
+         (c1 (carry-factor market t1)) (ct (carry-factor market tau))
+         (p1 (discount-factor market t1)) (pt (discount-factor market tau))
+         (s* (- (spot market) (/ drop c1)))
+         (v variance-rate)
+         (rest (* v (- tau t1))))
+    (flet ((european ()
+             (black-formula 1d0 (* s* ct) k pt (* v tau)))
+           (hold-minus-exercise (i)
+             ;; At t1: holding the call on the escrowed price I against
+             ;; exercising on the price before the dividend, I + DROP.
+             (- (black-formula 1d0 (/ (* i ct) c1) k (/ pt p1) rest) (- (+ i drop) k))))
+      (cond
+        ((>= drop k)
+         ;; Exercise just before t1 at any price.
+         (* p1 (- (+ (* s* c1) drop) k)))
+        ((and (>= (* ct pt) (* c1 p1)) (<= drop (* k (- 1d0 (/ pt p1)))))
+         ;; The dividend never pays for the strike's interest: never exercised.
+         (european))
+        (t
+         (let* ((critical (solve-brent #'hold-minus-exercise (* 1d-8 k) k :expand-hi t))
+                (sd (sqrt (* v tau))) (sd1 (sqrt (* v t1)))
+                (a1 (/ (+ (log (/ (* s* ct) k)) (* 0.5d0 v tau)) sd)) (a2 (- a1 sd))
+                (b1 (/ (+ (log (/ (* s* c1) critical)) (* 0.5d0 v t1)) sd1)) (b2 (- b1 sd1))
+                (rho (- (sqrt (/ t1 tau)))))
+           (+ (* s* c1 p1 (norm-cdf b1))
+              (* s* ct pt (bivariate-norm-cdf a1 (- b1) rho))
+              (- (* k pt (bivariate-norm-cdf a2 (- b2) rho)))
+              (- (* (- k drop) p1 (norm-cdf b2))))))))))
+
+(defmethod price-analytic ((x american-exercise) (p vanilla-payoff) (f path-independent)
+                           (e roll-geske-whaley-engine) (m market))
+  (let* ((tau (time-to-expiry x m))
+         (events (dividends-between (discrete-dividends m) 0d0 tau)))
+    (flet ((decline (reason)
+             (error 'model-domain-error :engine e :reason reason)))
+      (cond ((not (eq (dividend-model e) :escrowed))
+             (decline "it assumes the escrowed dividend model; give the process :dividend-model :escrowed"))
+            ((not (eq (kind p) :call))
+             (decline "it prices calls only"))
+            ((not (and (= 1 (length events)) (eq (dividend-event-kind (first events)) :cash)))
+             (decline "it needs exactly one cash dividend going ex before the expiry"))
+            ((not (zerop (dividend-yield m tau)))
+             (decline "it needs no continuous dividend yield"))
+            ((or (> (discount-factor m tau) 1d0)
+                 (> (discount-factor m tau) (discount-factor m (dividend-event-time (first events)))))
+             (decline "with negative rates a call may be exercised away from the ex-date")))
+      (values (roll-geske-whaley m (strike p) tau (dividend-event-time (first events))
+                                 (dividend-event-amount (first events))
+                                 (/ (black-variance m (strike p) tau) tau))
+              nil))))
+
+(defmethod check-discrete-dividends ((e roll-geske-whaley-engine) o market)
+  (declare (ignore o market))
+  (unless (eq (dividend-model e) :escrowed)
+    (refuse-dividends e "it assumes the escrowed dividend model")))
+
+;;; A closed form, before the tree; it declines all but its one case. Like
+;;; Black-Scholes it prices with the market's vol, so not for a process with
+;;; its own.
+(defmethod engine-candidates append ((designator (eql :rgw)) (x american-exercise) (p vanilla-payoff)
+                                     (f path-independent) (process gbm))
+  (unless (explicit-parameters process) '((9 :rgw))))
 
 ;;; --------------------------------------------------------------------
 ;;; Merton's jump-diffusion series

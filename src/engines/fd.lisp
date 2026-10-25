@@ -16,6 +16,15 @@
 ;;;; truncated at the barrier, a knock-in two coupled layers. Exercise rights
 ;;;; come from EXERCISE-MASK: Ikonen-Toivanen splitting over consecutive
 ;;;; exercise times (American), a projection at isolated ones (Bermudan).
+;;;;
+;;;; Discrete dividends (task 21): ex-dates are grid times. Under the spot
+;;;; model the value just before an ex-date is the value after it at the
+;;;; price the dividend leaves, V(x, t-) = V(ln(e^x - D), t+), by a natural
+;;;; cubic spline in x on the grid; exercise is then checked on the price
+;;;; before the dividend, and the scheme restarts with Rannacher steps.
+;;;; Under the escrowed model (GBM) the grid is in the price less the
+;;;; dividends to come, R(t), and exercise pays on the price, so the
+;;;; exercise value moves with t.
 
 (in-package #:fincl)
 
@@ -234,12 +243,38 @@ V = max(V~ - dt lambda, g) and lambda = max(0, lambda + (g - V~)/dt)."
                 (setf (aref v i) tilde))))
     v))
 
-(defun fd-roll-back (xs times layers coefficients &key (theta 0.5d0) (rannacher-steps 2) mask smoothing)
+(defun fd-dividend-interface (xs values offset jumps)
+  "Replace the values at VALUES[OFFSET + i], over the log-price nodes XS, by
+the values just before the dividend JUMPS: the value after them at the price
+they leave, by a natural cubic spline in x, flat beyond the grid (a price
+floored at 0 takes the lowest node's value)."
+  (declare (type double-vector xs values) (fixnum offset))
+  (let* ((n (length xs))
+         (line (subseq values offset (+ offset n)))
+         (after (make-interpolator :natural-cubic xs line :extrapolation :flat)))
+    (dotimes (i n values)
+      (let ((s (apply-dividend-jumps (exp (aref xs i)) jumps)))
+        (setf (aref values (+ offset i))
+              (if (plusp s) (float (funcall after (log s)) 1d0) (aref line 0)))))))
+
+(defun grid-dividend-jumps (grid events kinds)
+  "A simple-vector over GRID's time indices: at the index of each of EVENTS'
+ex-dates (mandatory dates of GRID), the (kind . amount) of those of KINDS."
+  (let ((jumps (make-array (length (time-grid-times grid)) :initial-element nil)))
+    (dolist (e events jumps)
+      (when (member (dividend-event-kind e) kinds)
+        (let ((j (grid-index-of grid (dividend-event-date e))))
+          (setf (svref jumps j)
+                (append (svref jumps j) `((,(dividend-event-kind e) . ,(dividend-event-amount e))))))))))
+
+(defun fd-roll-back (xs times layers coefficients &key (theta 0.5d0) (rannacher-steps 2) mask smoothing
+                                                     before-step)
   "Roll LAYERS back from TIMES's last time to 0 over the grid XS.
 COEFFICIENTS is (lambda (t0 t1)) => (values drift-fn diffusion-fn rate) for
 each step. MASK (a bit vector over time indices, or NIL) marks exercise
 times; SMOOTHING marks the times after which the step is replaced by
-RANNACHER-STEPS fully implicit substeps. At each step, in order: the scheme
+RANNACHER-STEPS fully implicit substeps. At each step, in order:
+BEFORE-STEP (a function of the target time index J, if given), the scheme
 (with boundaries), each layer's events, then the exercise projection.
 Returns the layers' values at time index 1 (for theta), as a list of
 copies."
@@ -254,6 +289,7 @@ copies."
                  (smooth (and smoothing (plusp rannacher-steps) (= 1 (sbit smoothing (1+ j)))))
                  (substeps (if smooth rannacher-steps 1))
                  (dt (/ (- t1 t0) substeps)))
+            (when before-step (funcall before-step j))
             (multiple-value-bind (drift-fn diffusion-fn rate) (funcall coefficients t0 t1)
               (dotimes (i n)
                 (let ((x (aref xs i)))
@@ -300,9 +336,20 @@ by FINITE-DIFFERENCE-WEIGHTS."
   "Value of the option (X P F) under the resolved PROCESS by E's 1-D scheme:
 (values price delta gamma theta-per-day)."
   (let* ((tau (time-to-expiry x market))
-         (s0 (spot market))
-         (x0 (log s0))
-         (grid (make-time-grid market :dates (instrument-grid-dates x p f) :n-steps (n-time e)))
+         (dividends (dividends-between (discrete-dividends market) 0d0 tau))
+         (escrowed (and dividends (eq (dividend-model process) :escrowed)))
+         ;; The grid's price: the spot, or under the escrowed model the spot
+         ;; less the dividends to come.
+         (s0 (if escrowed
+                 (- (spot market) (escrowed-dividends market dividends 0d0 tau))
+                 (spot market)))
+         (x0 (progn (unless (plusp s0)
+                      (error 'model-domain-error :engine e
+                                                 :reason "the cash dividends to come exceed the spot"))
+                    (log s0)))
+         (grid (make-time-grid market :dates `(,@(instrument-grid-dates x p f)
+                                               ,@(dividend-dates market tau))
+                               :n-steps (n-time e)))
          (times (time-grid-times grid))
          (n-times (length times))
          (mask (exercise-mask x market times))
@@ -345,10 +392,32 @@ by FINITE-DIFFERENCE-WEIGHTS."
       (let* ((n (length xs))
              (payoff (map 'double-vector (lambda (x) (funcall kernel (exp x))) xs))
              (intrinsic (and (not (typep x 'european-exercise)) payoff))
-             (smoothing (let ((bits (make-array n-times :element-type 'bit :initial-element 0)))
+             (jumps (and dividends
+                     (grid-dividend-jumps grid dividends
+                                          (if escrowed '(:proportional) '(:cash :proportional)))))
+         ;; Under the escrowed model, the exercise value at time index J: on
+         ;; the price just before or just after a dividend going ex then,
+         ;; whichever pays more.
+         (escrow-after (and escrowed
+                            (map 'double-vector
+                                 (lambda (time) (escrowed-dividends market dividends time tau))
+                                 times)))
+         (escrow-before (and escrowed
+                             (map 'double-vector
+                                  (lambda (time) (escrowed-dividends market dividends time tau :cum t))
+                                  times)))
+         (intrinsic-at (lambda (j)
+                         (map 'double-vector
+                              (lambda (x)
+                                (max (funcall kernel (+ (exp x) (aref escrow-after j)))
+                                     (funcall kernel (+ (exp x) (aref escrow-before j)))))
+                              xs)))
+         (smoothing (let ((bits (make-array n-times :element-type 'bit :initial-element 0)))
                           (setf (sbit bits (1- n-times)) 1)
                           (unless american (bit-ior bits mask bits))
                           (when monitoring (bit-ior bits monitoring bits))
+                          (when jumps
+                            (dotimes (j n-times) (when (svref jumps j) (setf (sbit bits j) 1))))
                           bits))
              (rebate (and barrier (barrier-rebate barrier)))
              (monitor
@@ -411,11 +480,27 @@ by FINITE-DIFFERENCE-WEIGHTS."
                                                      (funcall monitor values
                                                               (lambda (i) (aref (fd-layer-values vanilla) i))))))))))))
              (result (a:lastcar layers))
-             (snapshot (fd-roll-back xs times layers
-                                     (lambda (t0 t1) (pde-coefficients process market t0 t1))
-                                     :theta (float (fd-theta e) 1d0)
-                                     :rannacher-steps (rannacher-steps e)
-                                     :mask mask :smoothing smoothing)))
+             (snapshot
+               (progn
+                 (when jumps
+                   ;; Cross the dividend, then exercise on the price before it.
+                   (let ((layer (first layers)))
+                     (push (lambda (j values)
+                             (a:when-let ((js (svref jumps j)))
+                               (fd-dividend-interface xs values 0 js)
+                               (a:when-let ((g (fd-layer-intrinsic layer)))
+                                 (dotimes (i n) (setf (aref values i) (max (aref values i) (aref g i))))
+                                 (fill (fd-layer-multipliers layer) 0d0))))
+                           (fd-layer-events layer))))
+                 (fd-roll-back xs times layers
+                               (lambda (t0 t1) (pde-coefficients process market t0 t1))
+                               :theta (float (fd-theta e) 1d0)
+                               :rannacher-steps (rannacher-steps e)
+                               :mask mask :smoothing smoothing
+                               :before-step (and escrowed intrinsic
+                                                 (lambda (j)
+                                                   (setf (fd-layer-intrinsic (first layers))
+                                                         (funcall intrinsic-at j))))))))
         (multiple-value-bind (v vx vxx)
             (grid-value xs (fd-layer-values result) x0 (fd-layer-lo result) (fd-layer-hi result))
           (values v
@@ -432,6 +517,11 @@ ENGINE's scheme for the option (EXERCISE PAYOFF PATH) under the resolved
 PROCESS.")
   (:method (x p f process (e fd-engine) market)
     (fd-solve x p f process e market)))
+
+(defmethod check-discrete-dividends ((e fd-engine) o market)
+  (declare (ignore market))
+  (unless (typep (option-path o) 'path-independent)
+    (refuse-dividends e "its dividend steps are for options without a path feature")))
 
 (defmethod price-fd ((x exercise) (p payoff) (f path-independent) (process stochastic-process)
                      (e fd-engine) market)
@@ -457,6 +547,9 @@ PROCESS.")
              `(defmethod engine-candidates append ((designator (eql :fd)) (x ,exercise) (p vanilla-payoff)
                                                    (f ,path) (process ,process))
                 '((,priority :fd)))))
+  ;; Europeans under GBM, after Black-Scholes and COS: both decline
+  ;; spot-model cash dividends under automatic selection (task 21).
+  (candidate european-exercise path-independent gbm 25)
   (candidate american-exercise path-independent gbm)
   (candidate bermudan-exercise path-independent gbm)
   (candidate exercise path-independent cev)
