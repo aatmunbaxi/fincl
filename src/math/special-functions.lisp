@@ -349,11 +349,81 @@ X > 0 (K_-nu = K_nu). Relative accuracy about 1e-15.
   "log Gamma(X) for X > 0, as a double-float."
   (float (sf:log-gamma (float x 1d0)) 1d0))
 
+(defconstant +gamma-series-max-shape+ 1d5
+  "Above this shape the series and continued fraction of REGULARIZED-GAMMA
+need thousands of terms near X = A; SF:INCOMPLETE-GAMMA's asymptotic
+expansion takes over.")
+
+(declaim (inline flush-subnormal))
+(defun flush-subnormal (y)
+  "Y, or 0 if it is below the least normalized double: a subnormal keeps
+too few bits to be a relative-precision result, and callers (the noncentral
+chi-square recursion) start afresh from 0."
+  (declare (double-float y))
+  (if (< (abs y) least-positive-normalized-double-float) 0d0 y))
+
+(defun gamma-series (a x)
+  "P(A, X) for X < A + 1: x^a e^-x / Gamma(a + 1) times sum_n x^n /
+((a + 1) ... (a + n)), the prefix by POISSON-DENSITY. NIL if the series has
+not converged after 20,000 terms."
+  (declare (double-float a x) (optimize speed))
+  (let ((sum 1d0) (term 1d0))
+    (declare (double-float sum term))
+    (iter (declare (declare-variables))
+          (for (the fixnum n) from 1 to 20000)
+          (setf term (* term (/ x (+ a n))))
+          (incf sum term)
+          (when (< term (* sum 1d-17))
+            (return-from gamma-series (flush-subnormal (* (poisson-density a x) sum)))))
+    nil))
+
+(defun gamma-continued-fraction (a x)
+  "Q(A, X) for X >= A + 1: x^a e^-x / Gamma(a) times Legendre's continued
+fraction 1/(x + 1 - a - 1 (1 - a)/(x + 3 - a - ...)), by the modified Lentz
+method. NIL if it has not converged after 20,000 terms."
+  (declare (double-float a x) (optimize speed))
+  (let* ((tiny 1d-300)
+         (b (+ x 1d0 (- a)))
+         (c (/ tiny))
+         (d (/ b))
+         (h d))
+    (declare (double-float tiny b c d h))
+    (iter (declare (declare-variables))
+          (for (the fixnum i) from 1 to 20000)
+          (let ((an (* (- i) (- i a))))
+            (declare (double-float an))
+            (incf b 2d0)
+            (setf d (+ (* an d) b))
+            (when (< (abs d) tiny) (setf d tiny))
+            (setf c (+ b (/ an c)))
+            (when (< (abs c) tiny) (setf c tiny))
+            (setf d (/ d))
+            (let ((delta (* d c)))
+              (declare (double-float delta))
+              (setf h (* h delta))
+              (when (< (abs (- delta 1d0)) 1d-16)
+                (return-from gamma-continued-fraction
+                  (flush-subnormal (* a (poisson-density a x) h)))))))
+    nil))
+
 (defun regularized-gamma (a x)
   "(values P(A, X) Q(A, X)), the regularized incomplete gamma functions, as
-double-floats (SF:INCOMPLETE-GAMMA returns integers in some branches)."
-  (multiple-value-bind (p q) (sf:incomplete-gamma (float a 1d0) (float x 1d0))
-    (values (float p 1d0) (float q 1d0))))
+double-floats: the series for P below X = A + 1 and the continued fraction
+for Q above, each with the other as its complement (which is not small in
+that region, so it keeps its relative precision); SF:INCOMPLETE-GAMMA beyond
++GAMMA-SERIES-MAX-SHAPE+ or if they do not converge.
+
+  (regularized-gamma 2d0 1d0) => 0.2642411176571153d0, 0.7357588823428847d0"
+  (let ((a (float a 1d0)) (x (float x 1d0)))
+    (flet ((fallback ()
+             (multiple-value-bind (p q) (sf:incomplete-gamma a x)
+               (values (float p 1d0) (float q 1d0)))))
+      (cond ((<= x 0d0) (values 0d0 1d0))
+            ((> a +gamma-series-max-shape+) (fallback))
+            ((< x (+ a 1d0))
+             (a:if-let ((p (gamma-series a x))) (values p (- 1d0 p)) (fallback)))
+            (t
+             (a:if-let ((q (gamma-continued-fraction a x))) (values (- 1d0 q) q) (fallback)))))))
 
 (defun stirling-error (x)
   "log Gamma(X + 1) - ((X + 1/2) log X - X + log(2 pi)/2), the error of
