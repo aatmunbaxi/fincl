@@ -171,16 +171,19 @@ closure call (< 40)" lookups (- lookups calls))
       (values a b c d))))
 
 (defun dense-solve (a b c d &key cyclic)
+  "The tridiagonal (or, with CYCLIC, cyclic) system as a dense one, solved by
+the test suite's Gaussian elimination."
   (let* ((n (length d))
-         (m (magicl:zeros (list n n))))
-    (dotimes (i n)
-      (setf (magicl:tref m i i) (aref b i))
-      (when (> i 0) (setf (magicl:tref m i (1- i)) (aref a i)))
-      (when (< i (1- n)) (setf (magicl:tref m i (1+ i)) (aref c i))))
-    (when cyclic
-      (setf (magicl:tref m 0 (1- n)) (aref a 0)
-            (magicl:tref m (1- n) 0) (aref c (1- n))))
-    (magicl::storage (magicl:linear-solve m (magicl:from-array (copy-seq d) (list n 1))))))
+         (m (make-array (* n n) :element-type 'double-float :initial-element 0d0)))
+    (flet ((put (i j x) (setf (aref m (+ (* i n) j)) x)))
+      (dotimes (i n)
+        (put i i (aref b i))
+        (when (> i 0) (put i (1- i) (aref a i)))
+        (when (< i (1- n)) (put i (1+ i) (aref c i))))
+      (when cyclic
+        (put 0 (1- n) (aref a 0))
+        (put (1- n) 0 (aref c (1- n)))))
+    (dense-gauss-solve m n d)))
 
 (defun vector-relative-error (x reference)
   (/ (iter (for i below (length x)) (maximize (abs (- (aref x i) (aref reference i)))))
@@ -192,7 +195,7 @@ closure call (< 40)" lookups (- lookups calls))
     (dolist (n '(10 100 1000))
       (multiple-value-bind (a b c d) (random-dominant-system n state)
         (let ((x (solve-tridiagonal! a b (copy-seq c) (copy-seq d))))
-          (check-that (format nil "n = ~D: Thomas = magicl:linear-solve to 1e-12 (~,1E)" n
+          (check-that (format nil "n = ~D: Thomas = dense Gaussian elimination to 1e-12 (~,1E)" n
                               (vector-relative-error x (dense-solve a b c d)))
                       (< (vector-relative-error x (dense-solve a b c d)) 1d-12)))))
     (multiple-value-bind (a b c d) (random-dominant-system 10000 state)

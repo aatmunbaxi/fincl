@@ -1,9 +1,8 @@
-;;;; math/linear-algebra.lisp --- least squares and banded solves on typed arrays
+;;;; math/linear-algebra.lisp --- least squares, banded solves and symmetric
+;;;; eigendecomposition on typed arrays
 ;;;;
-;;;; Typed (SIMPLE-ARRAY DOUBLE-FLOAT (*)) throughout. Per the array-backend
-;;;; decision (task 03, phase 4), this is also the only file that may use
-;;;; magicl, and only for dense factorizations large enough for LAPACK to
-;;;; pay; nothing here needs it yet.
+;;;; Typed (SIMPLE-ARRAY DOUBLE-FLOAT (*)) throughout, in Lisp: fincl uses no
+;;;; BLAS or LAPACK (task 22 removed magicl).
 ;;;;
 ;;;; Least squares is solved by QR, never by the normal equations X'X b =
 ;;;; X'y, which square the condition number. Rows are folded into an upper
@@ -283,3 +282,100 @@ length n; neither is modified. Signals RANK-DEFICIENT on a pivot below
                                                   (sum (* (aref m i j) (aref x j)))))
                               (aref m i i))))
     x))
+
+;;; --------------------------------------------------------------------
+;;; Symmetric eigendecomposition (task 22)
+;;; --------------------------------------------------------------------
+
+(defun jacobi-rotate! (a v n p q c s)
+  "A <- J' A J and V <- V J for the rotation J of (C, S) in the (P, Q) plane,
+in place, the N x N matrices column-major."
+  (declare (type double-vector a v) (fixnum n p q) (double-float c s) (optimize speed))
+  (macrolet ((at (m i j) `(aref ,m (the fixnum (+ ,i (the fixnum (* ,j n)))))))
+    (dotimes (k n)
+      (let ((akp (at a k p)) (akq (at a k q)))
+        (setf (at a k p) (- (* c akp) (* s akq))
+              (at a k q) (+ (* s akp) (* c akq)))))
+    (dotimes (k n)
+      (let ((apk (at a p k)) (aqk (at a q k)))
+        (setf (at a p k) (- (* c apk) (* s aqk))
+              (at a q k) (+ (* s apk) (* c aqk)))))
+    (dotimes (k n)
+      (let ((vkp (at v k p)) (vkq (at v k q)))
+        (setf (at v k p) (- (* c vkp) (* s vkq))
+              (at v k q) (+ (* s vkp) (* c vkq))))))
+  nil)
+
+(defun symmetric-eigen (matrix n &key (max-sweeps 100))
+  "(values eigenvalues eigenvectors) of the symmetric N x N MATRIX (a
+column-major DOUBLE-VECTOR of N^2; only its values are read, it is not
+changed): the eigenvalues ascending in a DOUBLE-VECTOR, and the eigenvectors
+as the columns of a column-major DOUBLE-VECTOR, orthonormal, in the same
+order. Cyclic Jacobi rotations; an off-diagonal entry negligible next to
+both diagonal entries it couples (adding 100 times it changes neither) is
+set to 0, and the sweeps stop when every off-diagonal entry is 0
+(Numerical Recipes' jacobi). Accurate to a few ulps of the largest
+eigenvalue; O(n^3) per sweep, a handful of sweeps. Signals
+CONVERGENCE-FAILURE after MAX-SWEEPS.
+
+  (symmetric-eigen (make-array 4 :element-type 'double-float
+                                 :initial-contents '(2d0 1d0 1d0 2d0))
+                   2)
+  => #(1.0d0 3.0d0), the eigenvectors (1 -1)/sqrt 2 and (1 1)/sqrt 2"
+  (check-input matrix double-vector "a column-major DOUBLE-VECTOR")
+  (check-input n (integer 1) "a positive dimension")
+  (unless (= (length matrix) (* n n))
+    (signal-invalid-argument 'matrix matrix 'double-vector (format nil "~D entries, an N x N matrix" (* n n))))
+  (let ((a (copy-seq matrix))
+        (v (make-array (* n n) :element-type 'double-float :initial-element 0d0)))
+    (declare (type double-vector a v) (fixnum n))
+    (dotimes (i n) (setf (aref v (+ i (* i n))) 1d0))
+    (macrolet ((at (m i j) `(aref ,m (+ ,i (* ,j n)))))
+      (progn
+        (iter (for sweep from 1)
+              (when (iter (for j from 1 below n)
+                          (always (iter (for i below j) (always (zerop (at a i j))))))
+                (finish))
+              (when (> sweep max-sweeps)
+                (error 'convergence-failure
+                       :context (format nil "Jacobi eigendecomposition after ~D sweeps" max-sweeps)))
+              (dotimes (p (1- n))
+                (declare (fixnum p))
+                (iter (declare (declare-variables))
+                      (for (the fixnum q) from (1+ p) below n)
+                      (let* ((apq (at a p q))
+                             (g (* 100d0 (abs apq))))
+                        (declare (double-float apq g))
+                        (if (and (= (+ (abs (at a p p)) g) (abs (at a p p)))
+                                 (= (+ (abs (at a q q)) g) (abs (at a q q))))
+                            (setf (at a p q) 0d0 (at a q p) 0d0)
+                          ;; The rotation that zeroes A[p,q] (Golub and Van Loan 8.4).
+                          (let* ((theta (/ (- (at a q q) (at a p p)) (* 2d0 apq)))
+                                 (tt (/ (float-sign theta 1d0) (+ (abs theta) (sqrt (1+ (* theta theta))))))
+                                 (c (/ (sqrt (1+ (* tt tt)))))
+                                 (s (* tt c)))
+                            (declare (double-float theta tt c s))
+                            (jacobi-rotate! a v n p q c s))))))))
+      ;; Sort ascending, eigenvectors along.
+      (let* ((order (sort (a:iota n) #'< :key (lambda (i) (at a i i))))
+             (values (make-array n :element-type 'double-float))
+             (vectors (make-array (* n n) :element-type 'double-float)))
+        (iter (for i in order) (for col from 0)
+              (setf (aref values col) (at a i i))
+              (dotimes (k n) (setf (at vectors k col) (at v k i))))
+        (values values vectors)))))
+
+(defun repair-positive-semidefinite (matrix n &key (floor 0d0))
+  "The symmetric N x N MATRIX (column-major DOUBLE-VECTOR) with its
+eigenvalues below FLOOR raised to FLOOR: V max(Lambda, FLOOR) V', the
+nearest positive-semidefinite matrix in the Frobenius norm when FLOOR is 0
+(Higham 1988). For covariance and correlation estimates that came out
+slightly indefinite. Returns a new vector."
+  (multiple-value-bind (lambdas vectors) (symmetric-eigen matrix n)
+    (let ((out (make-array (* n n) :element-type 'double-float :initial-element 0d0)))
+      (dotimes (k n out)
+        (let ((l (max (aref lambdas k) (float floor 1d0))))
+          (dotimes (j n)
+            (dotimes (i n)
+              (incf (aref out (+ i (* j n)))
+                    (* l (aref vectors (+ i (* k n))) (aref vectors (+ j (* k n))))))))))))

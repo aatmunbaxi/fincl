@@ -12,7 +12,8 @@
            #:run-binomial-tests #:run-math-tests #:run-invariant-tests
            #:run-golden-tests #:run-fast-tests #:run-levy-tests #:run-rates-tests #:run-selection-tests
            #:run-readme-check #:run-rates-instrument-tests
-           #:run-path-tests #:run-surface-tests #:run-fd-tests #:run-dividend-tests))
+           #:run-path-tests #:run-surface-tests #:run-fd-tests #:run-dividend-tests
+           #:run-portfolio-tests))
 
 (in-package #:fincl/tests)
 (named-readtables:in-readtable fincl:syntax)
@@ -56,6 +57,27 @@
 (defun binomial (n-steps &rest args)
   (apply #'make-instance 'binomial-engine :n-steps n-steps args))
 
+
+(defun dense-gauss-solve (a n b)
+  "The solution of A x = B, A an N x N row-major vector, by Gaussian
+elimination with partial pivoting: the test suite's own dense oracle,
+independent of fincl's solvers."
+  (let ((m (map '(simple-array double-float (*)) (lambda (x) (float x 1d0)) a))
+        (x (map '(simple-array double-float (*)) (lambda (x) (float x 1d0)) b)))
+    (flet ((at (i j) (aref m (+ (* i n) j))))
+      (dotimes (k n)
+        (let ((pivot (iter (for i from k below n) (finding i maximizing (abs (at i k))))))
+          (unless (= pivot k)
+            (dotimes (j n) (rotatef (aref m (+ (* k n) j)) (aref m (+ (* pivot n) j))))
+            (rotatef (aref x k) (aref x pivot))))
+        (iter (for i from (1+ k) below n)
+              (let ((factor (/ (at i k) (at k k))))
+                (iter (for j from k below n) (decf (aref m (+ (* i n) j)) (* factor (at k j))))
+                (decf (aref x i) (* factor (aref x k))))))
+      (iter (for i from (1- n) downto 0)
+            (setf (aref x i) (/ (- (aref x i) (iter (for j from (1+ i) below n) (sum (* (at i j) (aref x j)))))
+                                (at i i))))
+      x)))
 
 (defun read-fixture (name)
   "The forms of tests/fixtures/NAME, read with double-float defaults."

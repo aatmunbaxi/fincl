@@ -7,7 +7,6 @@
                "num-utils"
                "special-functions"
                "statistics"
-               "magicl"
                "random-state"
                "lparallel"
                "trivia"
@@ -119,12 +118,15 @@
                (:file "implied-volatility")
                (:file "greeks")
                (:file "mc-greeks")
+               (:file "portfolio")
+               (:file "risk")
+               (:file "snapshot")
                (:file "calibration"))
   :in-order-to ((test-op (test-op "fincl/tests"))))
 
 (defsystem "fincl/tests"
   :description "Tests for fincl"
-  :depends-on ("fincl" "lparallel" "closer-mop" "magicl" "bordeaux-threads" "iterate")
+  :depends-on ("fincl" "lparallel" "closer-mop" "bordeaux-threads" "iterate")
   :pathname "tests/"
   :serial t
   :components ((:file "package")
@@ -156,6 +158,7 @@
                (:file "surfaces")
                (:file "fd")
                (:file "dividends")
+               (:file "portfolio")
                (:file "readme")
                ;; The runners call the checks above; keep them last.
                (:file "tests"))

@@ -297,7 +297,7 @@ independent uniforms plus a dominant diagonal band. Returns (values rows y)."
     (fincl::qr-solve acc)))
 
 (defun normal-equations-fit (rows y n)
-  "The oracle: (X'X) b = X'y solved by magicl/LAPACK."
+  "The oracle: (X'X) b = X'y solved by dense Gaussian elimination."
   (let ((xtx (make-array (* n n) :element-type 'double-float :initial-element 0d0))
         (xty (make-array n :element-type 'double-float :initial-element 0d0)))
     (iter (for row in rows) (for yi in y)
@@ -305,8 +305,7 @@ independent uniforms plus a dominant diagonal band. Returns (values rows y)."
                (incf (aref xty r) (* (aref row r) yi))
                (dotimes (c n)
                  (incf (aref xtx (+ (* r n) c)) (* (aref row r) (aref row c))))))
-    (magicl::storage (magicl:linear-solve (magicl:from-array xtx (list n n) :layout :row-major)
-                                          (magicl:from-array xty (list n))))))
+    (dense-gauss-solve xtx n xty)))
 
 (defun max-relative-difference (a b)
   (iter (for x in-vector a) (for y in-vector b)
@@ -315,7 +314,7 @@ independent uniforms plus a dominant diagonal band. Returns (values rows y)."
 (defun linear-algebra-checks ()
   (format t "~&Math: least squares by QR~%")
   (let ((state (sb-ext:seed-random-state 11)))
-    (check-that "QR = normal equations (magicl) on 20 random well-conditioned problems"
+    (check-that "QR = normal equations (Gaussian elimination) on 20 random well-conditioned problems"
                 (iter (repeat 20)
                       (always (multiple-value-bind (rows y) (random-least-squares 200 5 state)
                                 (< (max-relative-difference (qr-fit rows y 5)

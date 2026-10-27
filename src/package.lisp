@@ -84,6 +84,22 @@
    #:discount-factor #:forward-factor #:forward #:black-variance
    #:carry-factor #:discrete-dividends #:make-dividend-schedule #:dividend-schedule
    #:bivariate-norm-cdf
+   ;; portfolios and risk (task 22)
+   #:holding #:make-holding
+   #:portfolio-position #:make-position #:derive-position #:position-instrument #:position-quantity
+   #:position-engine #:position-tags
+   #:portfolio #:make-portfolio #:portfolio-name #:portfolio-members #:portfolio-positions
+   #:portfolio-long #:portfolio-short #:portfolio-by-tag
+   #:applicable-engines #:select-engine #:engine-preference #:*default-engines*
+   #:price-portfolio #:portfolio-result #:portfolio-result-results #:portfolio-value
+   #:position-result #:position-result-position #:position-result-unit-price
+   #:position-result-standard-error #:position-result-engine #:position-result-condition
+   #:position-result-value
+   #:scenario #:make-scenario #:scenario-name #:scenario-bumps #:scenario-age #:apply-scenario
+   #:parallel-shift-scenarios #:spot-vol-grid #:historical-scenarios #:revalue #:scenario-pnl
+   #:historical-var #:expected-shortfall #:factor-sensitivities #:delta-normal-var
+   #:repair-positive-semidefinite #:curve-delta-ladder #:vega-ladder #:explain-pnl
+   #:snapshot-form #:write-snapshot #:read-snapshot
    #:valuation-date #:market-day-counter #:market-time #:derive-market
    ;; term structures and composite markets
    #:term-structure #:yield-curve #:dividend-curve #:black-vol-structure

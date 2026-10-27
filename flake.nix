@@ -16,48 +16,12 @@
         let
           inherit (pkgs) lib;
 
-          # magicl's CFFI definitions dlopen the UNVERSIONED names
-          # "libblas.so" / "liblapack.so" (and .so.3 as a fallback). nixpkgs
-          # ships the versioned sonames in the default output and the
-          # unversioned symlinks in "dev", so build a small compatibility
-          # directory holding exactly the names magicl looks for, and put it
-          # on the loader path. blas/lapack here are the nixpkgs wrappers,
-          # which resolve to OpenBLAS by default.
-          #
-          # macOS: magicl prefers the Accelerate framework, so this directory
-          # is harmless there; the dylib names differ and are found via the
-          # system framework path.
-          blasCompat = pkgs.runCommand "magicl-blas-compat" { } ''
-            mkdir -p $out/lib
-            link() {   # link <soname-base> <package-dir>
-              base=$1
-              dir=$2
-              for ext in so so.3 dylib; do
-                if [ -e "$dir/lib/$base.$ext" ]; then
-                  if [ "$ext" = dylib ]; then
-                    ln -sf "$dir/lib/$base.$ext" "$out/lib/$base.dylib"
-                  else
-                    ln -sf "$dir/lib/$base.$ext" "$out/lib/$base.so"
-                  fi
-                  return 0
-                fi
-              done
-              echo "warning: $base not found under $dir/lib" >&2
-            }
-            link libblas ${pkgs.blas}
-            link liblapack ${pkgs.lapack}
-            link libopenblas ${pkgs.openblas}
-          '';
-
-          # Everything that gets dlopen'd at runtime by CFFI: BLAS/LAPACK for
-          # magicl, libffi for CFFI itself, and cephes for Lisp-Stat's
-          # distributions system (it builds its own shared object on first
-          # load, which needs a compiler present).
+          # Everything that gets dlopen'd at runtime by CFFI: libffi for CFFI
+          # itself, and cephes for Lisp-Stat's distributions system (it
+          # builds its own shared object on first load, which needs a
+          # compiler present). fincl uses no BLAS or LAPACK (task 22 removed
+          # magicl), so there is no loader shim for them.
           runtimeLibs = [
-            blasCompat
-            pkgs.blas
-            pkgs.lapack
-            pkgs.openblas
             pkgs.libffi
             pkgs.zlib
           ];
@@ -79,10 +43,8 @@
             packages = with pkgs; [
               sbcl
 
-              # Toolchain: cephes.cl and magicl/ext-expokit compile C and
-              # Fortran sources on first load.
+              # Toolchain: cephes.cl compiles C sources on first load.
               gcc
-              gfortran
               gnumake
               pkg-config
 
@@ -105,7 +67,6 @@
               export CL_SOURCE_REGISTRY="$PWD//:''${CL_SOURCE_REGISTRY:-}"
 
               echo "fincl dev shell — SBCL $(sbcl --version | cut -d' ' -f2)"
-              echo "BLAS/LAPACK: ${blasCompat}/lib"
               echo
               echo "  sbcl                       # REPL; M-x sly-connect from Emacs"
               echo "  (ql:quickload :fincl)"
