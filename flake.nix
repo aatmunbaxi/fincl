@@ -28,13 +28,18 @@
 
           nativeLibPath = lib.makeLibraryPath runtimeLibs;
 
-          # Python side of the fincl-viz developer aid. py4cl runs this
-          # interpreter as a subprocess; numpy receives Lisp arrays and
-          # matplotlib renders them. Not needed by fincl itself.
+          # Python side of the fincl-viz developer aid: viz/render.py renders
+          # the Plotly JSON fincl-viz writes (plotly, and kaleido for images).
+          # Not needed by fincl itself.
           pythonEnv = pkgs.python3.withPackages (ps: [
-            ps.numpy
-            ps.matplotlib
+            ps.plotly
+            ps.kaleido
           ]);
+
+          # Kaleido 0.2's Chromium has no WebGL of its own in nixpkgs, so 3-D
+          # traces need EGL from Mesa's software renderer. viz/render.py hands
+          # this to kaleido alone, leaving GL for everything else untouched.
+          eglVendor = "${pkgs.mesa}/share/glvnd/egl_vendor.d/50_mesa.json";
         in
         {
           default = pkgs.mkShell {
@@ -48,7 +53,7 @@
               gnumake
               pkg-config
 
-              # Plotting for fincl-viz (py4cl -> matplotlib).
+              # Plotting for fincl-viz (Plotly JSON -> viz/render.py).
               pythonEnv
 
               # Convenience.
@@ -65,6 +70,7 @@
               # anywhere in the tree. This must be $PWD and not ./. — inside a
               # flake, ./. is the read-only /nix/store copy of the source.
               export CL_SOURCE_REGISTRY="$PWD//:''${CL_SOURCE_REGISTRY:-}"
+              export FINCL_VIZ_EGL_VENDOR="${eglVendor}"
 
               echo "fincl dev shell — SBCL $(sbcl --version | cut -d' ' -f2)"
               echo

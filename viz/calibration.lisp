@@ -9,7 +9,7 @@
 ;;;; prices from PRICE, vols from IMPLIED-VOLATILITY.
 ;;;;
 ;;;;   (ql:quickload :fincl-viz)
-;;;;   (fincl-viz::calibration-demo)   ; writes two PNGs under *OUTPUT-DIRECTORY*
+;;;;   (fincl-viz::calibration-demo)   ; writes two figures under *OUTPUT-DIRECTORY*
 
 (in-package #:fincl-viz)
 (named-readtables:in-readtable fincl:syntax)
@@ -74,78 +74,53 @@ flat, symmetric smile.")
 ;;; Drawing
 ;;; --------------------------------------------------------------------
 
-(defparameter *truth-color* "#2a78d6" "Categorical slot 1 (blue): the true model.")
-(defparameter *model-color* "#eb6834" "Categorical slot 2 (orange): the fitted model.")
-
-(defun define-surface-helpers ()
-  "Python helpers for 3-D surface panels: a single-hue blue ramp for vols
-and a blue-gray-red diverging map, centred on 0, for errors."
-  (py4cl:python-exec "
-from matplotlib.colors import LinearSegmentedColormap
-_fincl_seq = LinearSegmentedColormap.from_list(
-    'fincl_blue', ['#cde2fb', '#86b6ef', '#3987e5', '#256abf', '#184f95', '#0d366b'])
-_fincl_div = LinearSegmentedColormap.from_list('fincl_div', ['#2a78d6', '#f0efec', '#e34948'])
-def _fincl_surface(rows, cols, index, xs, ys, z, title, kind, zlim, zlabel):
-    ax = plt.subplot(rows, cols, index, projection='3d')
-    X, Y = np.meshgrid(np.array(xs, dtype=float), np.array(ys, dtype=float))
-    Z = np.array(z, dtype=float)
-    if kind == 'error':
-        m = max(float(np.abs(Z).max()), 1e-3)
-        surface = ax.plot_surface(X, Y, Z, cmap=_fincl_div, vmin=-m, vmax=m,
-                                  linewidth=0, antialiased=True)
-        ax.set_zlim(-m, m)
-    else:
-        surface = ax.plot_surface(X, Y, Z, cmap=_fincl_seq, vmin=zlim[0], vmax=zlim[1],
-                                  linewidth=0, antialiased=True)
-        ax.set_zlim(zlim[0], zlim[1])
-    ax.set_xlabel('strike', fontsize=9)
-    ax.set_ylabel('years to expiry', fontsize=9)
-    ax.set_zlabel(zlabel, fontsize=9)
-    ax.tick_params(labelsize=8)
-    ax.set_title(title, fontsize=11)
-    ax.view_init(elev=25, azim=-125)
-    plt.colorbar(surface, ax=ax, shrink=0.55, pad=0.12)
-"))
-
-(defun surface-panel (index z title &key (kind "vol") zlim (zlabel "implied vol (%)"))
-  "Draw Z (rows per expiry, in percent) as 3-D panel INDEX of a 2 x 3 grid."
-  (py4cl:python-call "_fincl_surface" 2 3 index *surface-strikes*
-                     (mapcar (lambda (m) (/ m 12d0)) *surface-months*)
-                     z title kind (or zlim '(0 1)) zlabel))
-
 (defun percent (surface) (mapcar (lambda (row) (mapcar (lambda (v) (* 100 v)) row)) surface))
 
-(defun plot-calibration-stage (name title truth model model-label market model-process)
-  "Truth and MODEL surfaces (lists of vol rows) side by side with their
-difference, over smiles of both at *SMILE-MONTHS*."
-  (begin-figure :size '(19 11))
-  (define-surface-helpers)
+(defun surface-panel (z title &key (colorscale :sequential) zlim (zlabel "implied vol (%)"))
+  "Z (a row per expiry of *SURFACE-MONTHS*, in percent) over *SURFACE-STRIKES*
+as a 3-D panel coloured by the theme's COLORSCALE over ZLIM, (lo hi)."
+  (destructuring-bind (lo hi) zlim
+    (panel (list (surface-trace *surface-strikes* (mapcar (lambda (m) (/ m 12d0)) *surface-months*) z
+                                :style `(:colorscale ,(theme-colorscale colorscale)
+                                         :cmin ,lo :cmax ,hi)))
+           :title title :xlabel "strike" :ylabel "years to expiry" :zlabel zlabel
+           :scene `(:zaxis (:range (,lo ,hi)) :camera (:eye ,(camera-eye 25 -125))))))
+
+(defun smile-panel (months model-label market model-process)
+  "The truth's and MODEL-PROCESS's smiles MONTHS out, in percent."
+  (flet ((smile% (process)
+           (mapcar (lambda (v) (* 100 v))
+                   (model-smile process market months *surface-strikes*))))
+    (panel (list (line-trace *surface-strikes* (smile% *true-model*) :name "ground truth"
+                             :style `(:line (:color ,(theme-color :truth) :width 2)))
+                 (line-trace *surface-strikes* (smile% model-process) :name model-label
+                             :style `(:line (:color ,(theme-color :model) :width 2 :dash "dash"))))
+           :title (format nil "~D-month smile" months)
+           :xlabel "strike" :ylabel "implied vol (%)")))
+
+(define-plot calibration-stage (title truth model model-label market model-process)
+  "Truth and MODEL surfaces (lists of vol rows over *SURFACE-MONTHS* x
+*SURFACE-STRIKES*) side by side with their difference, over smiles of both at
+*SMILE-MONTHS*. Truth and model share one vol range; the difference is
+coloured symmetrically about 0.
+
+  (plot-calibration-stage \"Initial guess\" truth guess \"Guess\" market *initial-guess*
+                          :name \"calibration-before\")"
   (let* ((truth% (percent truth))
          (model% (percent model))
-         (all (append (alexandria:flatten truth%) (alexandria:flatten model%)))
-         (zlim `(,(floor (reduce #'min all)) ,(ceiling (reduce #'max all)))))
-    (surface-panel 1 truth% "Ground truth (Heston)" :zlim zlim)
-    (surface-panel 2 model% model-label :zlim zlim)
-    (surface-panel 3 (mapcar (lambda (m tr) (mapcar #'- m tr)) model% truth%)
-                   (format nil "~A minus truth" model-label)
-                   :kind "error" :zlabel "vol points"))
-  (alexandria:doplist (index months (alexandria:mappend #'list '(4 5 6) *smile-months*))
-        (plt "subplot" 2 3 index)
-        (draw-series *surface-strikes*
-                     `(("ground truth" ,(mapcar (lambda (v) (* 100 v))
-                                                (model-smile *true-model* market months *surface-strikes*))
-                        :style (:color ,*truth-color* :linewidth 2))
-                       (,model-label ,(mapcar (lambda (v) (* 100 v))
-                                              (model-smile model-process market months *surface-strikes*))
-                        :style (:color ,*model-color* :linewidth 2 :linestyle "--"))))
-        (plt "title" (format nil "~D-month smile" months) :fontsize 11)
-        (plt "xlabel" "strike")
-        (plt "ylabel" "implied vol (%)")
-        (plt "grid" :alpha 0.3)
-        (plt "legend" :fontsize 9))
-  (plt "suptitle" title :fontsize 13)
-  (plt "tight_layout" :rect '(0 0 1 0.95))
-  (finish-figure name))
+         (error% (mapcar (lambda (m tr) (mapcar #'- m tr)) model% truth%))
+         (all (append (a:flatten truth%) (a:flatten model%)))
+         (zlim `(,(floor (reduce #'min all)) ,(ceiling (reduce #'max all))))
+         (half-range (max 1d-3 (reduce #'max (mapcar #'abs (a:flatten error%))))))
+    (panel-grid
+     `(,(surface-panel truth% "Ground truth (Heston)" :zlim zlim)
+       ,(surface-panel model% model-label :zlim zlim)
+       ,(surface-panel error% (format nil "~A minus truth" model-label)
+                       :colorscale :diverging :zlim `(,(- half-range) ,half-range)
+                       :zlabel "vol points")
+       ,@(mapcar (lambda (months) (smile-panel months model-label market model-process))
+                 *smile-months*))
+     :columns 3 :cell-width 600 :cell-height 480 :title title)))
 
 (defun process-summary (process market)
   (format nil "~{~(~A~) ~,3F~^, ~}"
@@ -154,23 +129,23 @@ difference, over smiles of both at *SMILE-MONTHS*."
 
 (defun calibration-demo ()
   "Plot the true model's surface against the initial guess's, calibrate the
-guess to the true model's prices, and plot again. Returns the two PNG
+guess to the true model's prices, and plot again. Returns the two figures'
 pathnames and CALIBRATE's report."
   (with-pricing-kernel ()
     (let* ((market (calibration-market))
            (truth (model-surface *true-model* market))
            (before (plot-calibration-stage
-                    "calibration-before"
                     (format nil "Before calibration. Truth: ~A. Guess: ~A"
                             (process-summary *true-model* market)
                             (process-summary *initial-guess* market))
                     truth (model-surface *initial-guess* market) "Initial guess" market
-                    *initial-guess*)))
+                    *initial-guess*
+                    :name "calibration-before")))
       (multiple-value-bind (fitted report)
           (calibrate *initial-guess* market (calibration-quotes market) :engine :cos)
         (let ((after (plot-calibration-stage
-                      "calibration-after"
                       (format nil "After calibration to 35 quotes (vol RMSE ~,1,,,,,'eE). Fitted: ~A"
                               (getf report :rmse) (process-summary fitted market))
-                      truth (model-surface fitted market) "Calibrated" market fitted)))
+                      truth (model-surface fitted market) "Calibrated" market fitted
+                      :name "calibration-after")))
           (values `(,before ,after) report))))))

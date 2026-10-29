@@ -7,7 +7,7 @@
 ;;;; fincl's internals.
 ;;;;
 ;;;;   (ql:quickload :fincl-viz)
-;;;;   (fincl-viz::greeks-demo)   ; writes the PNGs under *OUTPUT-DIRECTORY*
+;;;;   (fincl-viz::greeks-demo)   ; writes the figures under *OUTPUT-DIRECTORY*
 
 (in-package #:fincl-viz)
 (named-readtables:in-readtable fincl:syntax)
@@ -50,57 +50,59 @@
 (defun greek-on (option engine markets key)
   (mapcar (lambda (m) (getf (greeks option engine m :which `(,key)) key)) markets))
 
-(defun panel (title xlabel xs ys-for &key (ylabel "price"))
-  "A panel with one series per demo option: YS-FOR maps (option engine) to
-the values over XS."
+(defun option-panel (title xlabel xs ys-for &key (ylabel "price"))
+  "A panel spec (see SERIES-PANEL) with one series per demo option: YS-FOR
+maps (option engine) to the values over XS."
   `(:title ,title :xlabel ,xlabel :ylabel ,ylabel :xs ,xs
     :series ,(mapcar (lambda (o)
                        (destructuring-bind (label option engine) o
                          `(,label ,(funcall ys-for option engine))))
                      (demo-options))))
 
-(defun plot-price-vs-inputs ()
+(define-plot price-vs-inputs ()
   "Price against spot, volatility, the interest rate and time to expiry."
   (let* ((m (demo-market))
          (spots (grid 60 140))
          (vols (grid 0.05d0 0.6d0))
          (rates (grid -0.01d0 0.10d0))
          (days (mapcar #'round (grid 7 730))))
-    (plot-panels
-     "price-vs-inputs"
-     `(,(panel "Price vs spot" "spot" spots
-               (lambda (o e) (prices-on o e (scenario-markets m '(:spot :spx) spots 100))))
-       ,(panel "Price vs volatility" "volatility" vols
-               (lambda (o e) (prices-on o e (scenario-markets m '(:vol :spx) vols 0.2d0))))
-       ,(panel "Price vs interest rate" "rate" rates
-               (lambda (o e) (prices-on o e (scenario-markets m '(:curve :usd) rates 0.04d0))))
-       ;; The same contract with every expiry from a week to two years.
-       (:title "Price vs time to expiry" :xlabel "years to expiry" :ylabel "price"
-        :xs ,(mapcar (lambda (d) (/ d 365d0)) days)
-        :series (("European call" ,(mapcar (lambda (d)
-                                              (price (make-option (call 100) (expires (expiring-in d)))
+    (panel-grid
+     (mapcar
+      #'series-panel
+      `(,(option-panel "Price vs spot" "spot" spots
+                       (lambda (o e) (prices-on o e (scenario-markets m '(:spot :spx) spots 100))))
+        ,(option-panel "Price vs volatility" "volatility" vols
+                       (lambda (o e) (prices-on o e (scenario-markets m '(:vol :spx) vols 0.2d0))))
+        ,(option-panel "Price vs interest rate" "rate" rates
+                       (lambda (o e) (prices-on o e (scenario-markets m '(:curve :usd) rates 0.04d0))))
+        ;; The same contract with every expiry from a week to two years.
+        (:title "Price vs time to expiry" :xlabel "years to expiry" :ylabel "price"
+         :xs ,(mapcar (lambda (d) (/ d 365d0)) days)
+         :series (("European call" ,(mapcar (lambda (d)
+                                               (price (make-option (call 100) (expires (expiring-in d)))
+                                                      :black-scholes m))
+                                             days))
+                  ("European put" ,(mapcar (lambda (d)
+                                              (price (make-option (put 100) (expires (expiring-in d)))
                                                      :black-scholes m))
                                             days))
-                 ("European put" ,(mapcar (lambda (d)
-                                             (price (make-option (put 100) (expires (expiring-in d)))
-                                                    :black-scholes m))
-                                           days))
-                 ("American put" ,(mapcar (lambda (d)
-                                             (price (make-option (put 100) (american) (expires (expiring-in d)))
-                                                    :binomial m))
-                                           days)))))
+                  ("American put" ,(mapcar (lambda (d)
+                                              (price (make-option (put 100) (american) (expires (expiring-in d)))
+                                                     :binomial m))
+                                            days))))))
      :title "One-year options struck at 100 (spot 100, vol 20%, r 4%, q 1%)")))
 
-(defun plot-greeks-vs-spot ()
-  "Delta, gamma, vega, theta and rho across spot."
+(define-plot greeks-vs-spot ()
+  "Delta, gamma, vega, theta, rho and dividend rho across spot."
   (let* ((m (demo-market))
          (spots (grid 60 140))
          (markets (scenario-markets m '(:spot :spx) spots 100)))
-    (plot-panels
-     "greeks-vs-spot"
+    (panel-grid
      (mapcar (lambda (spec)
                (destructuring-bind (key title ylabel) spec
-                 (panel title "spot" spots (lambda (o e) (greek-on o e markets key)) :ylabel ylabel)))
+                 (series-panel
+                  (option-panel title "spot" spots (lambda (o e) (greek-on o e markets key))
+                                :ylabel ylabel))))
              '((:delta "Delta" "dV/dS")
                (:gamma "Gamma" "d2V/dS2")
                (:vega "Vega" "dV/dvol (per unit vol)")
@@ -110,7 +112,7 @@ the values over XS."
      :title "Greeks of one-year options struck at 100"
      :columns 3)))
 
-(defun plot-greeks-vs-expiry ()
+(define-plot greeks-vs-expiry ()
   "How an at-the-money call's Greeks evolve as expiry approaches."
   (let* ((m (demo-market))
          (days (mapcar #'round (grid 7 730)))
@@ -118,12 +120,11 @@ the values over XS."
          (calls (mapcar (lambda (d) (make-option (call 100) (expires (expiring-in d)))) days)))
     (flet ((greek (key)
              (mapcar (lambda (o) (getf (greeks o :black-scholes m :which `(,key)) key)) calls)))
-      (plot-panels
-       "greeks-vs-expiry"
+      (panel-grid
        (mapcar (lambda (spec)
                  (destructuring-bind (key title) spec
-                   `(:title ,title :xlabel "years to expiry" :xs ,years
-                     :series (("ATM call" ,(greek key))))))
+                   (series-panel `(:title ,title :xlabel "years to expiry" :xs ,years
+                                   :series (("ATM call" ,(greek key)))))))
                '((:delta "Delta") (:gamma "Gamma") (:vega "Vega") (:theta "Theta (per day)")))
        :title "At-the-money call: Greeks against time to expiry"))))
 
@@ -142,7 +143,7 @@ forward, calls above) priced with ENGINE, expiring in DAYS."
                 (implied-volatility option (price option engine market) :black-scholes market)))
             strikes)))
 
-(defun plot-smiles ()
+(define-plot smiles ()
   "Implied-vol smiles of Heston (stochastic vol, negative correlation) and
 Merton (jumps) prices, by expiry, against the flat Black-Scholes vol."
   (let* ((m (demo-market))
@@ -156,14 +157,14 @@ Merton (jumps) prices, by expiry, against the flat Black-Scholes vol."
              (mapcar (lambda (e) (destructuring-bind (days label) e
                                    `(,label ,(smile engine m strikes days))))
                      expiries)))
-      (plot-panels
-       "volatility-smiles"
-       `((:title "Heston: v0 = theta = 4%, kappa 1.5, xi 0.5, rho -0.7"
-          :xlabel "strike" :ylabel "Black implied vol" :xs ,strikes
-          :series ,(smiles heston))
-         (:title "Merton jumps: 0.5 a year, mean -10%, vol 15%"
-          :xlabel "strike" :ylabel "Black implied vol" :xs ,strikes
-          :series ,(smiles merton)))
+      (panel-grid
+       (mapcar #'series-panel
+               `((:title "Heston: v0 = theta = 4%, kappa 1.5, xi 0.5, rho -0.7"
+                  :xlabel "strike" :ylabel "Black implied vol" :xs ,strikes
+                  :series ,(smiles heston))
+                 (:title "Merton jumps: 0.5 a year, mean -10%, vol 15%"
+                  :xlabel "strike" :ylabel "Black implied vol" :xs ,strikes
+                  :series ,(smiles merton))))
        :title "Volatility smiles from model prices (spot 100; flat Black-Scholes vol would be a line)"))))
 
 (defun greeks-demo ()
@@ -172,3 +173,30 @@ Merton (jumps) prices, by expiry, against the flat Black-Scholes vol."
         (plot-greeks-vs-spot)
         (plot-greeks-vs-expiry)
         (plot-smiles)))
+
+;;; --------------------------------------------------------------------
+;;; Extending fincl-viz: a plot built only from its exported functions
+;;; --------------------------------------------------------------------
+
+(define-plot call-price-surface (&key (strike 100) (vol 0.2d0) (rate 0.04d0)
+                                      (spots (grid 60 140 33)) (days (grid 7 730 25)))
+  "Black-Scholes price of a European call struck at STRIKE over spot x time
+to expiry, on flat markets with VOL and RATE.
+
+  (fincl-viz::plot-call-price-surface :vol 0.3d0 :layout '(:height 700))"
+  (let* ((days (mapcar #'round days))
+         (prices (mapcar (lambda (d)
+                           (let ((option (make-option (call strike) (expires (expiring-in d)))))
+                             (mapcar (lambda (s)
+                                       (price option :black-scholes
+                                              (make-bs-market :valuation-date *today* :spot s
+                                                              :rate rate :vol vol)))
+                                     spots)))
+                         days)))
+    (panel-grid
+     (list (panel (list (surface-trace spots (mapcar (lambda (d) (/ d 365d0)) days) prices
+                                       :style `(:colorscale ,(theme-colorscale :sequential))))
+                  :xlabel "spot" :ylabel "years to expiry" :zlabel "price"
+                  :scene `(:camera (:eye ,(camera-eye 25 -125)))))
+     :title (format nil "Call struck at ~A: vol ~,0F%, rate ~,1F%"
+                    strike (* 100 vol) (* 100 rate)))))
