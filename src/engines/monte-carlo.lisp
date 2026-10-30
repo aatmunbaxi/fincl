@@ -17,11 +17,30 @@
 ;;; Parallel plumbing
 ;;; --------------------------------------------------------------------
 
+(defvar *serial-pricing* nil
+  "True inside work that already runs in parallel, such as the clauses of
+SIMULATE: fincl's own parallel maps then run in the calling thread and
+WITH-PRICING-KERNEL makes no kernel, so no nested parallel work starts.")
+
+(defun parallel-map (type function &rest sequences)
+  "LP:PMAP of FUNCTION over SEQUENCES, or MAP in this thread under
+*SERIAL-PRICING* or with no kernel. The result is the same either way."
+  (if (or *serial-pricing* (null lp:*kernel*))
+      (apply #'map type function sequences)
+      (apply #'lp:pmap type function sequences)))
+
+(defun parallel-mapc (function &rest lists)
+  "LP:PMAPC, or MAPC in this thread as PARALLEL-MAP decides."
+  (if (or *serial-pricing* (null lp:*kernel*))
+      (apply #'mapc function lists)
+      (apply #'lp:pmapc function lists)))
+
 (defmacro with-pricing-kernel ((&key workers) &body body)
   "Run BODY with an lparallel kernel, creating a temporary one if none is
-active. A long-running session should make one kernel and keep it."
+active (and none under *SERIAL-PRICING*, where BODY runs serially). A
+long-running session should make one kernel and keep it."
   (a:with-gensyms (w)
-    `(if lp:*kernel*
+    `(if (or lp:*kernel* *serial-pricing*)
          (progn ,@body)
          (let* ((,w (or ,workers (cpu-count)))
                 (lp:*kernel* (lp:make-kernel ,w)))
@@ -454,7 +473,7 @@ Returns the FINISH values in chunk order, whatever the worker count.
                                  (funcall visit partner j mirror))))
                    (funcall finish))))))
       (with-pricing-kernel ()
-        (lp:pmap 'list #'run-chunk ranges (a:iota (length ranges)))))))
+        (parallel-map 'list #'run-chunk ranges (a:iota (length ranges)))))))
 
 (defun simulate-state-paths (engine market tau components &key times)
   "One PATH-MATRIX per state component in COMPONENTS (indices into the state
@@ -521,7 +540,7 @@ the chunking."
                                                           (funcall sampler anti-normals))))))
                          (setf (aref samples i) v)))))))
       (with-pricing-kernel ()
-        (lp:pmapc #'run-chunk ranges (a:iota (length ranges))))
+        (parallel-mapc #'run-chunk ranges (a:iota (length ranges))))
       (summarize-samples engine samples :discount (discount-factor market tau)))))
 
 ;;; Any payoff and path feature: a payoff that needs only the observable at
@@ -752,7 +771,7 @@ order, so the result does not depend on the chunking."
                                              (* 0.5d0 (+ v (the double-float (path-value 1 k mirror))))
                                              v)))))))))))))
       (with-pricing-kernel ()
-        (lp:pmapc #'run-chunk ranges (a:iota (length ranges))))
+        (parallel-mapc #'run-chunk ranges (a:iota (length ranges))))
       (summarize-samples e (if variates
                                (control-variate-samples
                                 samples (mapcar (lambda (v)
@@ -872,7 +891,7 @@ in-the-money-count)."
                        (qr-add-row! acc basis (aref cashflows i))))
                acc)))
       (let ((total (make-qr-accumulator n-basis)))
-        (dolist (acc (lp:pmap 'list #'run-chunk ranges))
+        (dolist (acc (parallel-map 'list #'run-chunk ranges))
           (qr-merge! total acc))
         (values total (qr-accumulator-rows total))))))
 
@@ -1014,7 +1033,7 @@ result of the last fitting sweep (in-sample valuation)."
              (declare (type simple-vector datas) (fixnum n-basis col-offset)
                       (type function make-filler)
                       (type (simple-array double-float (*)) beta))
-             (lp:pmapc
+             (parallel-mapc
               (lambda (range)
                 (let ((basis (make-array n-basis :element-type 'double-float))
                       (values (make-array (length datas) :element-type 'double-float))

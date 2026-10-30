@@ -121,6 +121,7 @@
                (:file "portfolio")
                (:file "risk")
                (:file "snapshot")
+               (:file "simulation")
                (:file "calibration"))
   :in-order-to ((test-op (test-op "fincl/tests"))))
 
@@ -159,6 +160,7 @@
                (:file "fd")
                (:file "dividends")
                (:file "portfolio")
+               (:file "simulation")
                (:file "readme")
                ;; The runners call the checks above; keep them last.
                (:file "tests"))

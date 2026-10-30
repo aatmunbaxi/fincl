@@ -131,7 +131,7 @@ result does not depend on the number of workers.
                                              (- (float (price (position-instrument p) e m) 1d0) base))
                                         (error (c) (list p (scenario-name scenario) c)))))))))
                (if lp:*kernel*
-                   (lp:pmap 'vector #'column scenarios)
+                   (parallel-map 'vector #'column scenarios)
                    (map 'vector #'column scenarios)))))
       (iter (for column in-vector columns) (for j from 0)
             (iter (for x in column) (for i from 0)

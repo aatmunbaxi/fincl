@@ -415,7 +415,7 @@ order) and :PARAMETERS (name value ...).
                       (values (if serial
                                   (mapcar (lambda (q) (model-value q trial-engine)) quotes)
                                   (with-pricing-kernel ()
-                                    (lp:pmap 'list (lambda (q) (model-value q trial-engine)) quotes)))))
+                                    (parallel-map 'list (lambda (q) (model-value q trial-engine)) quotes)))))
                  (map 'double-vector (lambda (value target q) (* (sqrt (quote-weight q)) (- value target)))
                       values targets quotes))))
       (let* ((x (handler-bind ((convergence-failure #'use-best))

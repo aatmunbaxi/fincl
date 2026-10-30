@@ -412,6 +412,19 @@ order: element 0, the observable, is :SPOT.
         (cons :spot (iter (for i from 1 below (process-state-size p))
                           (collect (a:make-keyword (format nil "STATE-~D" i))))))))
 
+(defgeneric spot-loadings (process)
+  (:documentation "The loadings of the Brownian motion driving PROCESS's
+observable on its factors, a DOUBLE-VECTOR of length PROCESS-FACTORS with
+unit norm: W = sum_k loading_k Z_k in the continuous-time limit. Correlating
+two processes' observables at c correlates their factors i and j at c a_i
+b_j (SIMULATE's :CORRELATION). The default puts it all on factor 0.
+
+  (spot-loadings (make-heston :rho -0.6d0)) => #(-0.6d0 0.8d0)")
+  (:method ((p stochastic-process))
+    (let ((v (make-array (process-factors p) :element-type 'double-float :initial-element 0d0)))
+      (setf (aref v 0) 1d0)
+      v)))
+
 (defun state-index (process designator)
   "The state-vector index of the component DESIGNATOR names: a keyword from
 PROCESS-STATE-NAMES, or a list whose first element is one (task 23 adds the

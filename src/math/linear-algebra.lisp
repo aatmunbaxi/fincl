@@ -379,3 +379,26 @@ slightly indefinite. Returns a new vector."
             (dotimes (i n)
               (incf (aref out (+ i (* j n)))
                     (* l (aref vectors (+ i (* k n))) (aref vectors (+ j (* k n))))))))))))
+
+(defun cholesky-factor (matrix n)
+  "The lower-triangular L with L L' = MATRIX, a symmetric N x N column-major
+DOUBLE-VECTOR, as a new column-major DOUBLE-VECTOR (zeros above the
+diagonal). If MATRIX is not positive definite: (values NIL k), K the first
+pivot that is not positive.
+
+  (cholesky-factor (coerce '(1d0 0.6d0 0.6d0 1d0) 'double-vector) 2)
+  => #(1.0d0 0.6d0 0.0d0 0.8d0), NIL"
+  (declare (type double-vector matrix) (fixnum n))
+  (let ((l (make-array (* n n) :element-type 'double-float :initial-element 0d0)))
+    (dotimes (j n (values l nil))
+      (let ((pivot (- (aref matrix (+ j (* j n)))
+                      (iter (for k below j) (sum (expt (aref l (+ j (* k n))) 2))))))
+        (unless (> pivot 0d0)
+          (return (values nil j)))
+        (let ((d (sqrt pivot)))
+          (setf (aref l (+ j (* j n))) d)
+          (iter (for i from (1+ j) below n)
+                (setf (aref l (+ i (* j n)))
+                      (/ (- (aref matrix (+ i (* j n)))
+                            (iter (for k below j) (sum (* (aref l (+ i (* k n))) (aref l (+ j (* k n)))))))
+                         d))))))))

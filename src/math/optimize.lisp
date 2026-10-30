@@ -333,7 +333,7 @@ count. Returns (values x fx generations)."
          (values (make-array np :element-type 'double-float)))
     (flet ((evaluate-all (points)
              (if lp:*kernel*
-                 (lp:pmap 'vector g points)
+                 (parallel-map 'vector g points)
                  (map 'vector g points))))
       ;; Generation 0: X0 and uniform points in the box.
       (setf (aref members 0) (copy-seq x0))

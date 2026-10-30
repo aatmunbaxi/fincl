@@ -114,6 +114,37 @@ or a portfolio.
     (check-input m (or portfolio-position portfolio) "a position or a portfolio"))
   (make-instance 'portfolio :name name :members members))
 
+(defgeneric same-instrument-p (a b)
+  (:documentation "True if instruments A and B are the same contract, so that
+ADJUST-POSITION adds to an existing position. Options are compared by
+identity; holdings by underlying and currency.")
+  (:method (a b) (eq a b))
+  (:method ((a holding) (b holding))
+    (and (eq (instrument-underlying a) (instrument-underlying b))
+         (eq (instrument-currency a) (instrument-currency b)))))
+
+(defun adjust-position (portfolio instrument &key by to)
+  "A copy of PORTFOLIO whose top-level position in INSTRUMENT (see
+SAME-INSTRUMENT-P) has its quantity moved BY a real, or set TO one; with no
+such position, one is appended with quantity BY or TO. Exactly one of BY and
+TO. PORTFOLIO is unchanged.
+
+  (adjust-position book (make-holding :underlying :spx) :to -0.53d0)   ; rebalance a hedge"
+  (check-input portfolio portfolio "a portfolio")
+  (unless (and (or by to) (not (and by to)))
+    (signal-invalid-argument 'by by 'real "exactly one of :BY and :TO, a real"))
+  (let* ((members (portfolio-members portfolio))
+         (old (find-if (lambda (m) (and (typep m 'portfolio-position)
+                                        (same-instrument-p (position-instrument m) instrument)))
+                       members)))
+    (apply #'make-portfolio (portfolio-name portfolio)
+           (if old
+               (substitute (derive-position old :quantity (if to
+                                                               (float to 1d0)
+                                                               (+ (position-quantity old) by)))
+                           old members)
+               `(,@members ,(make-position instrument :quantity (or to by)))))))
+
 (defun portfolio-positions (portfolio)
   "Every position in PORTFOLIO's tree, depth first, in order."
   (iter (for m in (portfolio-members portfolio))
@@ -340,7 +371,7 @@ workers.
   (check-input portfolio portfolio "a portfolio")
   (let* ((positions (portfolio-positions portfolio))
          (results (if (and parallel lp:*kernel*)
-                      (lp:pmap 'vector (lambda (p) (price-position p market engine policy)) positions)
+                      (parallel-map 'vector (lambda (p) (price-position p market engine policy)) positions)
                       (map 'vector (lambda (p) (price-position p market engine policy)) positions))))
     (make-portfolio-result portfolio results)))
 

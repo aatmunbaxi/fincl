@@ -52,6 +52,18 @@ martingale correction) or :FULL-TRUNCATION (Euler)."))
 expiry first; the one-year fallback serves direct callers such as plots."
   (or (v0 process) (heston-default-v0 process market horizon)))
 
+(defmethod spot-loadings ((p heston))
+  ;; Quadratic-exponential: factor 0 drives the variance and factor 1 the
+  ;; spot's own shock, W = rho Z0 + sqrt(1 - rho^2) Z1. Full truncation
+  ;; drives the spot with factor 0. Bates's jump factors load nothing.
+  (let ((v (make-array (process-factors p) :element-type 'double-float :initial-element 0d0))
+        (rho (float (rho p) 1d0)))
+    (ecase (scheme p)
+      (:quadratic-exponential (setf (aref v 0) rho
+                                    (aref v 1) (sqrt (max 0d0 (- 1d0 (* rho rho))))))
+      (:full-truncation (setf (aref v 0) 1d0)))
+    v))
+
 (defmethod process-regressors ((p heston)) '(0 1))
 (defmethod process-state-names ((p heston)) '(:spot :variance))   ; spot and variance
 

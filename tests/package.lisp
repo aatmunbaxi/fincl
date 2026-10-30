@@ -13,7 +13,7 @@
            #:run-golden-tests #:run-fast-tests #:run-levy-tests #:run-rates-tests #:run-selection-tests
            #:run-readme-check #:run-rates-instrument-tests
            #:run-path-tests #:run-surface-tests #:run-fd-tests #:run-dividend-tests
-           #:run-portfolio-tests))
+           #:run-portfolio-tests #:run-simulation-tests))
 
 (in-package #:fincl/tests)
 (named-readtables:in-readtable fincl:syntax)

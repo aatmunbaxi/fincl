@@ -100,6 +100,13 @@
    #:historical-var #:expected-shortfall #:factor-sensitivities #:delta-normal-var
    #:repair-positive-semidefinite #:curve-delta-ladder #:vega-ladder #:explain-pnl
    #:snapshot-form #:write-snapshot #:read-snapshot
+   #:adjust-position #:same-instrument-p
+   ;; market path simulation (task 29)
+   #:simulate #:map-simulated-paths #:market-at-state #:simulation-underlyings
+   #:simulation-result #:simulation-output-names #:simulation-values #:simulation-mean
+   #:simulation-standard-error #:simulation-quantile #:simulation-summary
+   #:simulation-statistic #:simulation-dates #:simulation-held #:simulation-state-names
+   #:path-markets #:spot-loadings
    #:valuation-date #:market-day-counter #:market-time #:derive-market
    ;; term structures and composite markets
    #:term-structure #:yield-curve #:dividend-curve #:black-vol-structure

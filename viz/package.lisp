@@ -3,6 +3,9 @@
 (defpackage #:fincl-viz
   (:use #:cl #:fincl #:iterate)
   (:shadowing-import-from #:fincl #:minimize)
+  ;; FINCL:SIMULATE is the path-simulation macro; this package's SIMULATE is
+  ;; its own plotting helper.
+  (:shadow #:simulate)
   (:local-nicknames (#:a #:alexandria) (#:jzon #:com.inuoe.jzon))
   (:export
    ;; Output
