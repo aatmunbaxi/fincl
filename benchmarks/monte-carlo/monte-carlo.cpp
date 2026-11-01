@@ -75,6 +75,7 @@ int main(int argc, char** argv) {
                    option->setPricingEngine(MakeMCBarrierEngine<PseudoRandom>(blackScholes())
                                                 .withSteps(252)
                                                 .withSamples(samples)
+                                                .withBrownianBridge()
                                                 .withAntitheticVariate()
                                                 .withSeed(seed));
                    return npvWithError(option);

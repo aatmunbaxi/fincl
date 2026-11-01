@@ -162,11 +162,19 @@ size, the bytes consed per call, and SAMPLE-STATISTICS."
           :consed ,(round consed (* n-samples batch))
           ,@(sample-statistics samples))))))
 
+(defun call-with-workers (n thunk)
+  "Call THUNK with an lparallel kernel of N workers. With one worker it runs
+in the calling thread, as QuantLib does: no kernel, and pricing serial."
+  (if (= n 1)
+      (let ((fincl::*serial-pricing* t))
+        (funcall thunk))
+      (let ((lp:*kernel* (lp:make-kernel n :name "fincl-benchmarks")))
+        (unwind-protect (funcall thunk)
+          (lp:end-kernel :wait t)))))
+
 (defmacro with-workers ((n) &body body)
-  "Run BODY with an lparallel kernel of N workers."
-  `(let ((lp:*kernel* (lp:make-kernel ,n :name "fincl-benchmarks")))
-     (unwind-protect (progn ,@body)
-       (lp:end-kernel :wait t))))
+  "Run BODY with N workers (see CALL-WITH-WORKERS)."
+  `(call-with-workers ,n (lambda () ,@body)))
 
 (defun run-lisp-benchmark (benchmark &key quick (min-batch 1) (workers 1))
   "Set BENCHMARK up (timed once) and MEASURE it with WORKERS lparallel

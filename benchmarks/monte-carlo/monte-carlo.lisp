@@ -14,7 +14,8 @@
 (in-package #:fincl/benchmarks)
 
 (defun mc (&rest settings)
-  (apply #'make-engine :mc :n-paths 100000 :seed 42 settings))
+  ;; QuantLib's PseudoRandom draws normals by inverse transform.
+  (apply #'make-engine :mc :n-paths 100000 :seed 42 :sampler :inverse-transform settings))
 
 (define-benchmark "mc-european-gbm"
     (:group :monte-carlo :title "European call, GBM" :engine "mc (counter)"
@@ -29,9 +30,9 @@
      :inputs (equity-inputs :kind "call") :work '(:paths 100000 :steps 1)
      :kind :statistical :parallel t
      :reference (price o :black-scholes m)
-     :notes "QuantLib's Sobol estimate has no valid standard error (its sample
-standard deviation ignores the low discrepancy), so the verdict uses fincl's,
-from 16 randomizations; neither side uses antithetics")
+     :notes "QuantLib's Sobol sequence is unscrambled, so its value carries no
+sampling error and its sample standard deviation is not a valid standard error;
+the verdict uses fincl's, from 16 randomizations. Neither side uses antithetics")
     ((m (equity-market)) (o (vanilla :call)) (e (mc :rng :sobol :antithetic nil)))
   (priced o e m))
 
@@ -68,8 +69,8 @@ Asian, fincl with the regression coefficient")
      :work '(:paths 100000 :steps 252)
      :kind :statistical :parallel t
      :reference (price o :black-scholes m)
-     :notes "QuantLib samples the crossing with a uniform per step, fincl weights
-by the survival probability")
+     :notes "both cross the barrier between steps by the Brownian-bridge
+probability")
     ((m (equity-market)) (o (barrier-option :call :down-and-out 90)) (e (mc :n-steps 252)))
   (priced o e m))
 
