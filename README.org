@@ -31,6 +31,8 @@ code. Think of it more as a cookbook.
 - Monte Carlo Simulations :: Thread-invariant RNG, antithetic variables, control variates.
 - Bond and rate instrument pricing :: Fixed-rate bonds, interest swaps, swaptions.
 - Volatility calibration :: Calibrate stochastic processes to quoted option strip.
+- Scenario simulation  :: Path generation used to simulate local variables along
+  paths; summary statistics outputted with plot generation with =fincl-viz=
 
 *And extensible by the user.*
 
