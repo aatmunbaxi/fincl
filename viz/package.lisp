@@ -3,9 +3,6 @@
 (defpackage #:fincl-viz
   (:use #:cl #:fincl #:iterate)
   (:shadowing-import-from #:fincl #:minimize)
-  ;; FINCL:SIMULATE is the path-simulation macro; this package's SIMULATE is
-  ;; its own plotting helper.
-  (:shadow #:simulate)
   (:local-nicknames (#:a #:alexandria) (#:jzon #:com.inuoe.jzon))
   (:export
    ;; Output
@@ -15,12 +12,13 @@
    #:*theme* #:theme-color #:theme-colorscale #:merge-spec #:configure-figure
    #:line-trace #:scatter-trace #:bar-trace #:error-trace #:surface-trace
    #:vline #:hline #:matrix-traces #:histogram-density
-   #:panel #:panel-grid #:camera-eye #:define-plot
-   ;; Simulation
-   #:uniform-draws #:simulate #:state-component #:engine-paths #:instantaneous-vol
-   ;; Plots
-   #:plot-series #:plot-array #:plot-panels
-   #:plot-paths #:plot-engine-paths #:plot-terminal #:plot-log-returns #:plot-convergence
-   #:series-figure #:array-figure #:panels-figure
-   #:paths-figure #:engine-paths-figure #:terminal-figure #:log-returns-figure
-   #:convergence-figure))
+   #:%panel #:%panel-grid #:camera-eye #:define-plot
+   ;; Plot: layers, panels, grids
+   #:plot #:plot-figure #:panel #:grid #:layer #:make-layer #:layer-traces
+   #:paths #:mean-line #:band #:statistic #:histogram #:default-layers
+   #:reference-line
+   #:with-theme #:*roles* #:*max-plotted-paths*
+   #:missing-plot-data #:incompatible-layers #:unknown-role #:too-many-paths
+   ;; Plots of a process
+   #:plot-paths #:plot-terminal #:plot-log-returns
+   #:paths-figure #:terminal-figure #:log-returns-figure))

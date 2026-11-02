@@ -10,9 +10,8 @@
                (:file "figure")
                (:file "output")
                (:static-file "render.py")
-               (:file "viz")
-               (:file "greeks")
-               (:file "calibration"))
+               (:file "plot")
+               (:file "viz"))
   :in-order-to ((test-op (test-op "fincl-viz/tests"))))
 
 (defsystem "fincl-viz/tests"

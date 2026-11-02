@@ -2,7 +2,7 @@
 ;;;;
 ;;;; Nothing here knows about fincl. A trace is a plist of Plotly trace
 ;;;; attributes; a panel is the traces of one pair of axes or one 3-D scene;
-;;;; PANEL-GRID lays panels out as one figure (:data traces :layout plist).
+;;;; %PANEL-GRID lays panels out as one figure (:data traces :layout plist).
 ;;;; Configuration is MERGE-SPEC throughout: *THEME* under every figure, the
 ;;;; plot's own layout over it, and the user's :LAYOUT, :CONFIG and :STYLE on
 ;;;; top (DEFINE-PLOT).
@@ -60,13 +60,22 @@ BASE's. A NIL OVERRIDE as a whole leaves BASE.
     :config (:displaylogo nil)
     :colors (:truth "#2a78d6" :model "#eb6834" :mean "#1f1f1f" :forward "#e34948"
              :reference "#e34948" :secondary "#8c8c8c")
+    :roles (:paths (:color :truth :width 0.8 :opacity 0.6)
+            :mean (:color :mean :width 2)
+            :band (:color :truth :opacity 0.2)
+            :statistic (:color :model :width 1.5)
+            :histogram (:color :truth :opacity 0.6)
+            :reference (:color :reference :width 1.5 :dash "dash")
+            :marker (:color :forward :width 1.5 :dash "dot"))
     :colorscales (:sequential ((0 "#cde2fb") (0.2 "#86b6ef") (0.4 "#3987e5")
                                (0.6 "#256abf") (0.8 "#184f95") (1 "#0d366b"))
                   :diverging ((0 "#2a78d6") (0.5 "#f0efec") (1 "#e34948"))))
   "Presentation shared by every figure. :LAYOUT is merged under each figure's
 layout and :CONFIG under its config; :COLORS and :COLORSCALES are the named
 colours and Plotly colorscales plots refer to through THEME-COLOR and
-THEME-COLORSCALE. Restyle every plot with one SETF, e.g.
+THEME-COLORSCALE; :ROLES maps each layer role of PLOT (see *ROLES*) to
+its :COLOR (a named colour or a CSS string), :WIDTH, :DASH and :OPACITY.
+Restyle every plot with one SETF, or a few with WITH-THEME, e.g.
 
   (setf (getf (getf *theme* :colors) :truth) \"black\")")
 
@@ -181,12 +190,12 @@ the sum of height x width is 1."
 (defun axis-title (label)
   (when label `(:title (:text ,label))))
 
-(defun panel (traces &key title xlabel ylabel zlabel xaxis yaxis scene)
+(defun %panel (traces &key title xlabel ylabel zlabel xaxis yaxis scene)
   "The traces of one pair of axes, or of one 3-D scene when a trace is 3-D
 (a :SURFACE). XLABEL, YLABEL and ZLABEL title the axes; XAXIS, YAXIS and
 SCENE are Plotly axis and scene attributes merged over them.
 
-  (panel (list (line-trace xs ys :name \"delta\")) :title \"Delta\" :xlabel \"spot\")"
+  (%panel (list (line-trace xs ys :name \"delta\")) :title \"Delta\" :xlabel \"spot\")"
   `(:traces ,traces :title ,title
     :xaxis ,(merge-spec (axis-title xlabel) xaxis)
     :yaxis ,(merge-spec (axis-title ylabel) yaxis)
@@ -215,7 +224,7 @@ SCENE are Plotly axis and scene attributes merged over them.
       (:hline `(:type "line" :xref ,(format nil "~A domain" xref) :x0 0 :x1 1
                 :yref ,yref :y0 ,(getf trace :y) :y1 ,(getf trace :y) ,@(when line `(:line ,line)))))))
 
-(defun panel-grid (panels &key (columns (min 2 (length panels))) title
+(defun %panel-grid (panels &key (columns (min 2 (length panels))) title
                                (cell-width (if (rest panels) 560 1000))
                                (cell-height (if (rest panels) 400 600)))
   "One figure of PANELS (see PANEL) in a grid of COLUMNS, filled by rows;
@@ -225,8 +234,8 @@ top-left corner; a 3-D panel gets its own scene, with each surface's colorbar
 beside it. VLINE and HLINE pseudo-traces become layout shapes. A single
 panel's title is the figure's when TITLE is NIL.
 
-  (panel-grid (list (panel (list (line-trace xs deltas)) :title \"Delta\")
-                    (panel (list (line-trace xs gammas)) :title \"Gamma\"))
+  (%panel-grid (list (%panel (list (line-trace xs deltas)) :title \"Delta\")
+                    (%panel (list (line-trace xs gammas)) :title \"Gamma\"))
               :columns 2 :title \"Greeks\")"
   (let* ((n (length panels))
          (single (= n 1))
@@ -305,7 +314,7 @@ panel's title is the figure's when TITLE is NIL.
   "Plotly's scene.camera.eye for matplotlib's view_init(ELEVATION, AZIMUTH),
 in degrees, at DISTANCE from the centre.
 
-  (panel traces :scene `(:camera (:eye ,(camera-eye 25 -125))))"
+  (%panel traces :scene `(:camera (:eye ,(camera-eye 25 -125))))"
   (let ((e (* elevation (/ pi 180))) (a (* azimuth (/ pi 180))))
     `(:x ,(* distance (cos e) (cos a))
       :y ,(* distance (cos e) (sin a))
@@ -352,7 +361,7 @@ returns the file's pathname followed by BODY's further values:
   (define-plot squares (n)
     \"The squares of 0 .. N-1.\"
     (let ((xs (alexandria:iota n)))
-      (panel-grid (list (panel (list (line-trace xs (mapcar (lambda (x) (* x x)) xs)
+      (%panel-grid (list (%panel (list (line-trace xs (mapcar (lambda (x) (* x x)) xs)
                                                  :name \"x^2\")))))))
   (plot-squares 10 :layout '(:yaxis (:type \"log\")) :display :html)"
   (multiple-value-bind (required optional rest) (a:parse-ordinary-lambda-list lambda-list)

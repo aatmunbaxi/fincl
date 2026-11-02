@@ -7,6 +7,8 @@
   (make-bs-market :valuation-date *today* :spot 100 :rate rate :vol 0.2d0
                   :dividend-schedule dividend-schedule))
 
+(defvar sim-special-market nil)
+
 (defun sim-quarterly-dates ()
   (list #D"2026-12-24" #D"2027-03-24" #D"2027-06-24" #D"2027-09-24"))
 
@@ -224,6 +226,41 @@ as the Asian path kernel computes them."
                                      (mapcar (lambda (dm) (price call :black-scholes (cdr dm)))
                                              (rest (path-markets r path)))))))
     (check-error "an unstored path is refused" (path-markets r 7) invalid-argument))
+  ;; :keep evaluates k, so a variable works.
+  (let* ((m (sim-market))
+         (n-show 3)
+         (r (simulate ((make-gbm) m (list #D"2027-09-24") :n-paths 50 :keep (:quantiles (:paths n-show)))
+              (:final (:x 1d0)))))
+    (check-equal "(:paths n-show) with a variable stores n-show paths"
+                 3 (count-if #'identity (fincl::simulation-store-kept-states (fincl::simulation-result-store r)))))
+  ;; A clause may name its market with a global (special) variable.
+  (let* ((m (sim-market))
+         (r (simulate ((make-gbm) m (list #D"2027-09-24") :n-paths 20)
+              (:accumulate (x 0d0))
+              (:every (date sim-special-market) (setf x (spot sim-special-market)))
+              (:final (:x x)))))
+    (check-that "a special variable names the date's market in a clause"
+                (every (lambda (x) (> x 0d0)) (simulation-values r :x))))
+  ;; Accessors for plotting.
+  (let* ((m (sim-market))
+         (r (simulate ((make-gbm) m (sim-quarterly-dates) :n-paths 200 :keep (:quantiles (:paths 4)))
+              (:state s :spot)
+              (:every (date) (record :s s))
+              (:final (:s s)))))
+    (check-equal "simulation-recorded-names" '(:s) (simulation-recorded-names r))
+    (check-equal "simulation-kept-paths" 4 (simulation-kept-paths r))
+    (check-that "simulation-quantiles-p: recorded name yes, other no"
+                (and (simulation-quantiles-p r :s) (not (simulation-quantiles-p r :other))))
+    (let ((path (simulation-path-state r 2 :spot)))
+      (check-equal "simulation-path-state has a value per simulation date"
+                   (length (simulation-dates r)) (length path))
+      (check-that "its first value is the spot and the last is the output"
+                  (and (= (aref path 0) 100d0)
+                       (= (aref path (1- (length path))) (aref (simulation-values r :s) 2)))))
+    (check-error "simulation-path-state of an unstored path" (simulation-path-state r 9 :spot) invalid-argument)
+    (check-equal "no kept paths: 0"
+                 0 (simulation-kept-paths (simulate ((make-gbm) m (sim-quarterly-dates) :n-paths 10)
+                                            (:final (:x 1d0))))))
   ;; Quantiles.
   (let* ((m (sim-market))
          (r (simulate ((make-gbm) m (list #D"2027-09-24") :n-paths 40000 :keep :quantiles)
@@ -346,14 +383,17 @@ as the Asian path kernel computes them."
   (let* ((market (sim-market))
          (dates (every-n-days 30))
          (call (make-option (call 100) (expires #D"2027-09-24")))
+         (*package* (find-package :fincl/tests))
          (r (eval `(let ((market ,market) (dates ',dates) (call ,call) (expiry #D"2027-09-24"))
                      (declare (ignorable market dates call expiry))
-                     ,(let ((doc (documentation 'simulate 'function))
-                            (*package* (find-package :fincl/tests)))
+                     ,(let ((doc (documentation 'simulate 'function)))
                         (read-from-string (subseq doc (search "(simulate ((make-gbm)" doc))))))))
     (check-that "SIMULATE's docstring example runs and returns :hedged and :unhedged outputs"
                 (and (typep r 'simulation-result)
                      (equal '(:hedged :unhedged) (simulation-output-names r))))
+    (check-that "... and records the :balance by date"
+                (and (equal '(:balance) (simulation-recorded-names r))
+                     (= (length (simulation-dates r)) (length (simulation-statistic r :balance :mean)))))
     (check-that "... and the hedge reduces the P&L's spread"
                 (< (sample-sd (simulation-values r :hedged)) (sample-sd (simulation-values r :unhedged)))))
   (check-that "MAP-SIMULATED-PATHS's docstring example runs: 1000 terminal spots"

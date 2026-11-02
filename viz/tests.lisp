@@ -156,7 +156,7 @@
 (defun grid-checks ()
   (format t "~&PANEL-GRID~%")
   (let* ((line (fincl-viz::line-trace #(0 1) #(0 1)))
-         (figure (panel-grid (iter (for i below 6) (collect (panel (list line (vline 0.5)))))
+         (figure (%panel-grid (iter (for i below 6) (collect (%panel (list line (vline 0.5)))))
                              :columns 3 :title "grid"))
          (layout (getf figure :layout))
          (cells (iter (for k from 1 to 6)
@@ -181,8 +181,8 @@
     (check-equal "panel legends" "legend6" (getf (aref (getf figure :data) 5) :legend)))
   (let* ((surface (surface-trace #(0 1) #(0 1) #2A((0 1) (1 2))))
          (line (fincl-viz::line-trace #(0 1) #(0 1)))
-         (figure (panel-grid `(,@(iter (repeat 3) (collect (panel (list surface))))
-                               ,@(iter (repeat 3) (collect (panel (list line)))))
+         (figure (%panel-grid `(,@(iter (repeat 3) (collect (%panel (list surface))))
+                               ,@(iter (repeat 3) (collect (%panel (list line)))))
                              :columns 3))
          (layout (getf figure :layout))
          (data (getf figure :data)))
@@ -204,58 +204,219 @@
 (defun simulation-plot-checks ()
   (format t "~&Simulation plots~%")
   (let ((m *viz-market*) (heston (make-heston)))
-    (multiple-value-bind (times states) (simulate heston m :n-paths 5 :n-steps 20)
-      (let* ((figure (paths-figure heston m :n-paths 5 :n-steps 20))
-             (ys (state-component states 0))
-             (paths (remove "sample mean" (remove "forward" (getf figure :data) :key (lambda (tr) (getf tr :name)) :test #'equal)
-                            :key (lambda (tr) (getf tr :name)) :test #'equal)))
-        (check-equal "a line per path" 5 (length paths))
-        (check-that "path lines are the simulated states"
-                    (iter (for trace in-vector paths) (for i from 0)
-                          (always (and (equalp times (getf trace :x))
-                                       (equalp (fincl-viz::matrix-column ys i) (getf trace :y))))))
-        (check-that "mean is ROW-MEANS" (equalp (fincl-viz::row-means ys) (getf (trace-named figure "sample mean") :y)))
-        (check-that "forward is FORWARD-CURVE" (equalp (fincl-viz::forward-curve m times) (getf (trace-named figure "forward") :y)))
-        (check-equal "one legend entry for the paths" 0
-                     (count-if (lambda (tr) (getf tr :showlegend)) paths)))
-      (let ((figure (paths-figure heston m :n-paths 5 :n-steps 20 :component 1 :kind :scatter)))
-        (check-that "variance as dots, no forward"
-                    (and (not (trace-named figure "forward"))
-                         (eq :markers (getf (aref (getf figure :data) 0) :mode))
-                         (= 105 (length (getf (aref (getf figure :data) 0) :y)))))))
-    (multiple-value-bind (figure mean forward) (terminal-figure (make-gbm) m :n-paths 2000 :n-steps 1 :bins 40)
+    (let* ((figure (paths-figure heston m :n-paths 5 :n-dates 20))
+           (lines (remove-if (lambda (tr) (member (getf tr :name) '("sample mean" "forward") :test #'equal))
+                             (getf figure :data))))
+      (check-equal "a line per path" 5 (length lines))
+      (check-equal "a point per date, and the valuation date" 21 (length (getf (aref lines 0) :y)))
+      (check-that "the forward is the market's"
+                  (let ((fwd (trace-named figure "forward")))
+                    (< (abs (- (aref (getf fwd :y) 19) (forward m (make-date 2027 9 24)))) 1d-9)))
+      (check-equal "one legend entry for the paths" 1
+                   (count-if (lambda (tr) (getf tr :showlegend)) lines))
+      (check-that "variance has no forward"
+                  (not (trace-named (paths-figure heston m :n-paths 5 :n-dates 20 :component :variance)
+                                    "forward"))))
+    (multiple-value-bind (figure mean forward) (terminal-figure (make-gbm) m :n-paths 2000 :bins 40)
       (let* ((bars (trace-named figure "simulated"))
-             (centers (getf bars :x)) (heights (getf bars :y)) (width (getf bars :width))
-             (sample (fincl-viz::terminal-sample (make-gbm) m 1d0 1 2000 42 :counter)))
+             (centers (getf bars :x)) (heights (getf bars :y)) (width (getf bars :width)))
         (check-equal "BINS bins" 40 (length heights))
         (check-that "heights integrate to 1" (< (abs (- 1 (* width (reduce #'+ heights)))) 1d-12))
-        (check-that "bins span [min, max]"
-                    (and (< (abs (- (aref centers 0) (+ (reduce #'min sample) (/ width 2)))) 1d-9)
-                         (< (abs (- (aref centers 39) (- (reduce #'max sample) (/ width 2)))) 1d-9)))
+        (check-that "bins are equally spaced" (< (abs (- (- (aref centers 1) (aref centers 0)) width)) 1d-9))
         (check-that "forward marked" (= 1 (length (getf (getf figure :layout) :shapes))))
         (check-that "mean near forward" (< (abs (- mean forward)) 1))))
-    (let ((option (make-option (call 100) (expires (make-date 2027 9 24)))))
-      (multiple-value-bind (figure results) (convergence-figure option m :path-counts '(1000 4000) :n-steps 5
-                                                                         :reference 10.45d0)
-        (let ((trace (trace-named figure "MC, 2 SE")))
-          (check-that "same prices as PRICE"
-                      (equal results
-                             (mapcar (lambda (n) (multiple-value-bind (v se)
-                                                     (price option (make-engine :mc :process (make-gbm) :n-paths n :n-steps 5 :seed 42) m)
-                                                   `(,n ,v ,se)))
-                                     '(1000 4000))))
-          (check-that "error bars are 2 SE"
-                      (equal (getf (getf trace :error-y) :array) (mapcar (lambda (r) (* 2 (third r))) results)))
-          (check-equal "log axis" "log" (getf (getf (getf figure :layout) :xaxis) :type))
-          (check-that "reference line" (trace-named figure "reference")))))
-    (let ((figure (log-returns-figure (make-garch) m)))
+    (let ((figure (log-returns-figure heston m)))
       (check-that "two panels sharing time"
                   (and (getf (getf figure :layout) :xaxis2)
                        (equal "x" (getf (getf (getf figure :layout) :xaxis2) :matches)))))))
 
+(defun plot-dates ()
+  (list (make-date 2026 12 24) (make-date 2027 3 24) (make-date 2027 6 24) (make-date 2027 9 24)))
+
+(defun sample-result (&key (keep '(:quantiles (:paths 6))) (n-paths 400))
+  "A GBM run over four dates: the spot recorded as :SPOT, outputs :SPOT and :PNL."
+  (let ((keep keep))
+    (simulate ((make-gbm) *viz-market* (plot-dates) :n-paths n-paths :keep keep)
+      (:state s :spot)
+      (:every (date) (record :spot s))
+      (:final (:spot s) (:pnl (- s 100))))))
+
+(defun trace-names (figure)
+  (map 'list (lambda (trace) (getf trace :name)) (getf figure :data)))
+
+(defun same-doubles (a b)
+  "True if the double vectors A and B are equal, NaNs (no data) matching."
+  (and (= (length a) (length b))
+       (every (lambda (x y) (or (and (sb-ext:float-nan-p x) (sb-ext:float-nan-p y)) (= x y))) a b)))
+
+(defun layer-checks ()
+  (format t "~&Layers and PLOT~%")
+  (let* ((r (sample-result))
+         (dates (fincl::simulation-dates r)))
+    ;; An overlay is one panel with each layer's traces.
+    (let* ((figure (plot-figure (paths r :n 4) (mean-line r :spot)))
+           (data (getf figure :data)))
+      (check-equal "overlay: 4 path traces and a mean line" 5 (length data))
+      (check-that "all on the one pair of axes"
+                  (every (lambda (trace) (equal "x" (getf trace :xaxis))) data))
+      (check-that "path traces are the stored states, by date"
+                  (and (equalp (getf (aref data 1) :y) (simulation-path-state r 1 :spot))
+                       (equalp (getf (aref data 1) :x) (map 'vector #'fincl-viz::date-label dates))))
+      (check-that "the mean is the recorded mean"
+                  (same-doubles (getf (aref data 4) :y) (simulation-statistic r :spot :mean)))
+      (check-equal "one legend entry for the paths" '(t nil nil nil)
+                   (map 'list (lambda (trace) (getf trace :showlegend)) (subseq data 0 4))))
+    ;; Bands.
+    (let ((band-traces (getf (plot-figure (band r :spot :quantiles '(0.1d0 0.9d0))) :data)))
+      (check-equal "a band is two traces, the upper filled to the lower" '("tonexty")
+                   (remove nil (map 'list (lambda (trace) (getf trace :fill)) band-traces)))
+      (check-that "band edges are the quantiles"
+                  (and (same-doubles (getf (aref band-traces 0) :y) (simulation-statistic r :spot :quantile 0.1d0))
+                       (same-doubles (getf (aref band-traces 1) :y) (simulation-statistic r :spot :quantile 0.9d0)))))
+    ;; Histograms and markers.
+    (let* ((figure (plot-figure (histogram r :pnl :bins 20 :var 0.95d0 :es 0.95d0)))
+           (bars (trace-named figure "pnl")))
+      (check-equal "bins" 20 (length (getf bars :y)))
+      (check-equal "VaR and ES markers are shapes" 2 (length (getf (getf figure :layout) :shapes)))
+      (check-that "the VaR marker is the 5% quantile of the P&L"
+                  (< (abs (- (getf (aref (getf (getf figure :layout) :shapes) 0) :x0)
+                             (simulation-quantile r :pnl 0.05d0)))
+                     1d-9)))
+    ;; Grids.
+    (let ((figure (plot-figure (grid (panel (paths r :n 3)) (panel (statistic r :spot :statistic :std-dev))
+                                     (panel (histogram r :spot))))))
+      (check-that "three panels: three pairs of axes"
+                  (and (getf (getf figure :layout) :xaxis3) (not (getf (getf figure :layout) :xaxis4)))))
+    (check-equal "shared-x links the later panels' x axes" "x"
+                 (getf (getf (getf (plot-figure (grid (panel (mean-line r :spot)) (panel (band r :spot))
+                                                      :shared-x t))
+                                   :layout)
+                             :xaxis2)
+                       :matches))
+    (check-that "(plot r) draws the paths, the recorded name and the outputs"
+                (let ((figure (plot-figure r)))
+                  (and (getf (getf figure :layout) :xaxis4) (not (getf (getf figure :layout) :xaxis5)))))
+    ;; Errors.
+    (check-error "a time layer and a value layer in one panel"
+                 (panel (mean-line r :spot) (histogram r :pnl)) incompatible-layers)
+    (check-that "its report names both layers"
+                (let ((text (handler-case (panel (mean-line r :spot) (histogram r :pnl))
+                              (incompatible-layers (c) (princ-to-string c)))))
+                  (and (search "mean of spot" text) (search "histogram" text :test (function char-equal)))))
+    (let ((bare (sample-result :keep nil)))
+      (check-error "paths of a result that kept none" (paths bare :n 3) missing-plot-data)
+      (check-that "the report names the addition"
+                  (search "This result kept no paths: add :keep (:paths 3) to the SIMULATE call that made it."
+                          (handler-case (paths bare :n 3) (missing-plot-data (c) (princ-to-string c)))))
+      (check-error "a band without quantiles" (band bare :spot) missing-plot-data)
+      (check-error "a name that was not recorded" (mean-line r :nope) missing-plot-data)
+      (check-error "an output that does not exist" (histogram r :nope) missing-plot-data)
+      (check-that "a result with only outputs and records draws histograms and means"
+                  (getf (plot-figure bare) :data)))
+    (check-error "more paths than the limit" (paths r :n 31) too-many-paths)
+    (let ((many (sample-result :keep '(:paths 40))))
+      (check-error "a result that kept 40 paths needs :n" (paths many) too-many-paths)
+      (check-equal "with :n 30 it draws 30" 30
+                   (length (getf (plot-figure (paths many :n 30)) :data))))
+    (check-error "an object with no layers" (plot-figure 42) invalid-argument)))
+
+(defun first-trace (figure)
+  (aref (getf figure :data) 0))
+
+(defun path-colors (figure)
+  "The line colours of FIGURE's path traces, without repeats."
+  (remove-duplicates (map 'list #'line-color (remove "paths" (getf figure :data)
+                                                      :key (lambda (trace) (getf trace :name))
+                                                      :test-not #'equal))
+                     :test #'equal))
+
+(defun line-color (trace)
+  (getf (getf trace :line) :color))
+
+(defun style-checks ()
+  (format t "~&Roles and styles~%")
+  (let* ((r (sample-result))
+         (truth (theme-color :truth)) (model (theme-color :model)) (secondary (theme-color :secondary)))
+    (flet ((colors (figure) (map 'list #'line-color (getf figure :data))))
+      (check-equal "the theme's role colour by default" `(,truth)
+                   (remove-duplicates (colors (plot-figure (paths r :n 2))) :test #'equal))
+      (check-equal "a role override in :style applies in every panel" `(,model)
+                   (path-colors (plot-figure (grid (panel (paths r :n 2)) (panel (paths r :n 2) (mean-line r :spot)))
+                                             :style '(:paths (:color :model)))))
+      (check-equal "the other role is untouched" (theme-color :mean)
+                   (line-color (trace-named (plot-figure (paths r :n 2) (mean-line r :spot)
+                                                         :style '(:paths (:color :model)))
+                                            "mean of spot")))
+      (check-equal "a raw CSS colour works" "hotpink"
+                   (line-color (first-trace (plot-figure (paths r :n 1) :style '(:paths (:color "hotpink"))))))
+      (check-equal "with-theme changes the role for every plot inside" `(,secondary)
+                   (remove-duplicates
+                    (colors (with-theme '(:roles (:paths (:color :secondary))) (plot-figure (paths r :n 2))))
+                    :test #'equal))
+      (check-equal "and nothing outside it" `(,truth)
+                   (progn (with-theme '(:roles (:paths (:color :secondary))) nil)
+                          (remove-duplicates (colors (plot-figure (paths r :n 2))) :test #'equal)))
+      (check-equal ":style beats with-theme" `(,model)
+                   (remove-duplicates
+                    (colors (with-theme '(:roles (:paths (:color :secondary)))
+                              (plot-figure (paths r :n 2) :style '(:paths (:color :model)))))
+                    :test #'equal))
+      (check-equal "a panel's :style beats the plot's" `(,secondary)
+                   (remove-duplicates
+                    (colors (plot-figure (panel (paths r :n 2) :style '(:paths (:color :secondary)))
+                                         :style '(:paths (:color :model))))
+                    :test #'equal))
+      (check-equal "a panel's :style leaves other panels alone" `(,model ,truth)
+                   (colors (plot-figure (grid (panel (paths r :n 1) :style '(:paths (:color :model)))
+                                              (panel (paths r :n 1))))))
+      (check-equal "the layer's keyword beats :style" "black"
+                   (line-color (first-trace (plot-figure (paths r :n 1 :color "black")
+                                                         :style '(:paths (:color :model))))))
+      (check-equal "a layer name in :style beats its role" "green"
+                   (line-color (first-trace (plot-figure (paths r :n 1 :name "fan")
+                                                         :style '(:paths (:color :model) "fan" (:color "green"))))))
+      (check-equal "width and opacity from the role" '(0.8 0.6)
+                   (let ((trace (first-trace (plot-figure (paths r :n 1)))))
+                     `(,(getf (getf trace :line) :width) ,(getf trace :opacity))))
+      (check-equal "the layer's :raw is the last word" 0.1
+                   (getf (first-trace (plot-figure (paths r :n 1 :raw '(:opacity 0.1))
+                                                   :style '(:paths (:opacity 0.9))))
+                         :opacity))
+      (check-that "a band's fill takes the role's colour and opacity"
+                  (search "rgba(42,120,214,0.5" 
+                          (getf (aref (getf (plot-figure (band r :spot) :style '(:band (:opacity 0.5))) :data) 1)
+                                :fillcolor))))
+    (check-error "an unknown role in :style" (plot-figure (paths r :n 1) :style '(:path (:color :model))) unknown-role)
+    (check-error "an unknown role in with-theme" (with-theme '(:roles (:fan (:color :model))) 1) unknown-role)
+    (check-error "an unknown colour name" (plot-figure (paths r :n 1) :style '(:paths (:color :grey))) invalid-argument)
+    (check-error "a style that is not a plist" (plot-figure (paths r :n 1) :style '(1 2 3)) invalid-argument)
+    (check-error "make-layer with an unknown role" (make-layer :fan :time (lambda (style) style)) unknown-role)))
+
+(defun plottable-checks ()
+  (format t "~&Other plottables and the marginal layout~%")
+  (let ((r (sample-result)))
+    ;; Marginal.
+    (let* ((figure (plot-figure (grid (panel (paths r :n 3))
+                                      (panel (histogram r :spot :horizontal t :var 0.95d0))
+                                      :marginal t)))
+           (layout (getf figure :layout))
+           (bars (trace-named figure "spot")))
+      (check-equal "marginal: the histogram's bars are horizontal" "h" (getf bars :orientation))
+      (check-equal "its y axis follows the first panel's" "y" (getf (getf layout :yaxis2) :matches))
+      (check-that "and the right panel is narrow"
+                  (let ((d1 (getf (getf layout :xaxis) :domain)) (d2 (getf (getf layout :xaxis2) :domain)))
+                    (< (- (second d2) (first d2)) (- (second d1) (first d1)))))
+      (check-equal "its VaR marker is a horizontal line" "y2"
+                   (getf (aref (getf layout :shapes) 0) :yref)))
+    (check-error "a marginal grid has two panels"
+                 (grid (panel (paths r :n 1)) :marginal t) invalid-argument)
+    (check-that "a reference line shares a panel with either kind of axis"
+                (and (panel (mean-line r :spot) (reference-line 100))
+                     (panel (histogram r :pnl) (reference-line 0 :axis :x))))))
+
 (defun configuration-checks ()
   (format t "~&Configuration~%")
-  (let* ((figure (panel-grid (list (panel (list (fincl-viz::line-trace #(0 1) #(0 1) :name "a")
+  (let* ((figure (%panel-grid (list (%panel (list (fincl-viz::line-trace #(0 1) #(0 1) :name "a")
                                                 (fincl-viz::line-trace #(0 1) #(1 0) :name "b"))))))
          (base (configure-figure figure)))
     (check-that "no options, no change"
@@ -278,77 +439,21 @@
     (check-equal ":title" "T" (getf (getf (getf (configure-figure figure :title "T") :layout) :title) :text)))
   (let ((*output-directory* #p"/tmp/fincl-viz-tests/"))
     (check-equal ":display and :name" "json"
-                 (pathname-type (plot-series '(0 1) '(("a" (0 1))) :name "config" :display :json)))
+                 (pathname-type (plot-paths (make-heston) *viz-market* :n-paths 2 :n-dates 5 :name "config" :display :json)))
     (let ((json (a:read-file-into-string #p"/tmp/fincl-viz-tests/config.json")))
       (check-that "theme under the figure" (search "\"colorway\"" json)))))
 
-(defun calibration-checks ()
-  (format t "~&Calibration figure~%")
-  (let* ((market (fincl-viz::calibration-market))
-         (truth (fincl-viz::model-surface fincl-viz::*true-model* market))
-         (guess (fincl-viz::model-surface fincl-viz::*initial-guess* market))
-         (figure (fincl-viz::calibration-stage-figure "stage" truth guess "Guess" market
-                                                      fincl-viz::*initial-guess*))
-         (data (getf figure :data))
-         (layout (getf figure :layout))
-         (surfaces (remove :surface data :key (lambda (tr) (getf tr :type)) :test-not #'eq)))
-    (check-that "three scenes, three 2-D panels"
-                (and (= 3 (length surfaces)) (getf layout :scene3) (getf layout :xaxis3) (not (getf layout :xaxis4))))
-    (check-that "truth and model share their range"
-                (and (= (getf (aref surfaces 0) :cmin) (getf (aref surfaces 1) :cmin))
-                     (= (getf (aref surfaces 0) :cmax) (getf (aref surfaces 1) :cmax))))
-    (check-that "error surface symmetric about 0"
-                (= (getf (aref surfaces 2) :cmin) (- (getf (aref surfaces 2) :cmax))))
-    (check-that "error surface is model minus truth, in percent"
-                (< (abs (- (first (first (getf (aref surfaces 2) :z)))
-                           (* 100 (- (first (first guess)) (first (first truth))))))
-                   1d-9))
-    (check-equal "camera" (camera-eye 25 -125) (getf (getf (getf layout :scene) :camera) :eye))
-    (check-equal "smiles" 6 (count-if (lambda (tr) (getf tr :xaxis)) data))))
-
-(defun pricing-checks ()
-  (format t "~&Pricing figures~%")
-  (let* ((figure (fincl-viz::greeks-vs-spot-figure))
-         (m (fincl-viz::demo-market))
-         (spots (fincl-viz::grid 60 140))
-         (markets (fincl-viz::scenario-markets m '(:spot :spx) spots 100))
-         (call (second (first (fincl-viz::demo-options)))))
-    (check-that "six panels" (getf (getf figure :layout) :xaxis6))
-    (check-that "delta series is GREEKS' delta"
-                (same-values-p (fincl-viz::greek-on call :black-scholes markets :delta)
-                               (getf (find "European call" (traces-on figure "x") :key (lambda (tr) (getf tr :name)) :test #'equal) :y))))
-  (let ((figure (fincl-viz::smiles-figure)))
-    (check-equal "two panels of four smiles" '(4 4)
-                 (list (length (traces-on figure "x")) (length (traces-on figure "x2"))))))
-
 (defparameter *all-plots*
-  `(("series" ,(lambda (&rest k) (apply #'plot-series '(0 1 2) '(("a" (0 1 4)) ("b" (0 2 3))) k)))
-    ("array" ,(lambda (&rest k) (apply #'plot-array (fincl-viz::random-uniforms 50) :kind :bar k)))
-    ("panels" ,(lambda (&rest k) (apply #'plot-panels '((:xs (0 1) :series (("a" (0 1))) :title "A")
-                                                        (:xs (0 1) :series (("b" (1 0))) :title "B"))
-                                        k)))
-    ("paths" ,(lambda (&rest k) (apply #'plot-paths (make-heston) *viz-market* :n-steps 50 k)))
-    ("engine-paths" ,(lambda (&rest k) (apply #'plot-engine-paths
-                                              (make-engine :mc :process (make-garch) :n-paths 20 :n-steps 252)
-                                              *viz-market* k)))
-    ("terminal" ,(lambda (&rest k) (apply #'plot-terminal (make-heston :rho -0.8d0) *viz-market* :n-steps 50 k)))
-    ("log-returns" ,(lambda (&rest k) (apply #'plot-log-returns (make-garch) *viz-market* k)))
-    ("convergence" ,(lambda (&rest k) (let ((o (make-option (call 100) (expires (make-date 2027 9 24)))))
-                                        (apply #'plot-convergence o *viz-market* :path-counts '(1000 4000 16000)
-                                               :reference (price o :black-scholes *viz-market*) k))))
-    ("price-vs-inputs" ,(lambda (&rest k) (apply #'fincl-viz::plot-price-vs-inputs k)))
-    ("greeks-vs-spot" ,(lambda (&rest k) (apply #'fincl-viz::plot-greeks-vs-spot k)))
-    ("greeks-vs-expiry" ,(lambda (&rest k) (apply #'fincl-viz::plot-greeks-vs-expiry k)))
-    ("smiles" ,(lambda (&rest k) (apply #'fincl-viz::plot-smiles k)))
-    ("call-price-surface" ,(lambda (&rest k) (apply #'fincl-viz::plot-call-price-surface :vol 0.3d0
-                                                    :layout '(:height 700) k)))
-    ("calibration-stage"
-     ,(lambda (&rest k)
-        (let ((market (fincl-viz::calibration-market)))
-          (apply #'fincl-viz::plot-calibration-stage "Initial guess"
-                 (fincl-viz::model-surface fincl-viz::*true-model* market)
-                 (fincl-viz::model-surface fincl-viz::*initial-guess* market)
-                 "Initial guess" market fincl-viz::*initial-guess* k)))))
+  `(("paths" ,(lambda (&rest k) (apply #'plot-paths (make-heston) *viz-market* k)))
+    ("terminal" ,(lambda (&rest k) (apply #'plot-terminal (make-heston :rho -0.8d0) *viz-market* k)))
+    ("log-returns" ,(lambda (&rest k) (apply #'plot-log-returns (make-heston) *viz-market* k)))
+    ("layers-default" ,(lambda (&rest k) (apply #'plot (sample-result) k)))
+    ("layers-marginal" ,(lambda (&rest k)
+                          (let ((r (sample-result)))
+                            (apply #'plot (grid (panel (paths r :n 6) (band r :spot))
+                                                (panel (histogram r :spot :horizontal t))
+                                                :marginal t)
+                                   k)))))
   "(name function): FUNCTION calls a PLOT- function with its keyword arguments.")
 
 (defun all-plots-checks (&key (displays '(:json :html :png)) (directory #p"/tmp/fincl-viz-tests/plots/"))
@@ -370,9 +475,10 @@
   (merge-checks)
   (grid-checks)
   (configuration-checks)
+  (layer-checks)
+  (style-checks)
+  (plottable-checks)
   (simulation-plot-checks)
-  (pricing-checks)
-  (calibration-checks)
   (all-plots-checks)
   (format t "~&~:[~D failure~:P~;All fincl-viz checks passed~*~]~%" (zerop *failures*) *failures*)
   (zerop *failures*))

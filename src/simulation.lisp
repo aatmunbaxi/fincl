@@ -1,4 +1,4 @@
-;;;; simulation.lisp --- market path simulation (task 29)
+b;;;; simulation.lisp --- market path simulation (task 29)
 ;;;;
 ;;;; Steps one or more underlyings along simulated paths with the process
 ;;;; protocol the Monte Carlo engine uses (MAKE-STEPPER on a MAKE-TIME-GRID
@@ -458,6 +458,21 @@ slots, except the quantile tables, made on first use under LOCK."
                                     ":QUANTILES, :STATES, (:PATHS k), or a list of them"))))
     (values quantiles paths states)))
 
+(defun keep-form (keep)
+  "The form building the :KEEP designator at run time: the keywords are
+literal, K in (:PATHS k) is evaluated.
+
+  (keep-form '(:quantiles (:paths n))) => (list :quantiles (list :paths n))
+
+A variable (or NIL) is evaluated as it stands."
+  (flet ((item (i)
+           (if (and (consp i) (eq (first i) :paths) (= 2 (length i)))
+               `(list :paths ,(second i))
+               `',i)))
+    (cond ((or (keywordp keep) (and (consp keep) (eq (first keep) :paths))) (item keep))
+          ((consp keep) `(list ,@(mapcar #'item keep)))
+          (t keep))))
+
 (defun make-simulation-store (plan keep)
   (multiple-value-bind (quantiles paths states) (parse-keep keep)
     (let* ((n-total (simulation-n-total plan))
@@ -659,6 +674,37 @@ simulation date from the valuation date on.
           (for date in (simulation-dates plan))
           (when states (collect (cons date (simulation-market plan k states)))))))
 
+(defun simulation-recorded-names (result)
+  "The names RESULT recorded with RECORD, keywords or lists, in printed order."
+  (recorded-names (simulation-result-statistics result)))
+
+(defun simulation-kept-paths (result)
+  "How many paths RESULT stored the states of (:KEEP (:PATHS k) or :STATES):
+paths 0 .. n-1 can be read with SIMULATION-PATH-STATE."
+  (let ((store (simulation-result-store result)))
+    (if (simulation-store-kept-states store) (simulation-store-kept-paths store) 0)))
+
+(defun simulation-quantiles-p (result name)
+  "True if RESULT kept the values recorded under NAME for quantiles
+(:KEEP :QUANTILES), so that SIMULATION-STATISTIC can give :QUANTILE."
+  (and (gethash name (simulation-store-quantile-tables (simulation-result-store result))) t))
+
+(defun simulation-path-state (result path name &optional underlying)
+  "State component NAME (see SIMULATION-STATE-NAMES) of stored PATH at each of
+(SIMULATION-DATES RESULT), a DOUBLE-VECTOR with NaN at a date the path had
+already stopped.
+
+  (simulation-path-state r 0 :spot)"
+  (let ((plan (simulation-result-plan result))
+        (dates (kept-dates result path :states)))
+    (multiple-value-bind (leg index) (simulation-state-location plan name underlying)
+      (iter (for states in-vector dates)
+            (collect-double (if states
+                                (aref (the double-vector (svref states leg)) index)
+                                (quiet-nan))
+                            into v length (length dates))
+            (finally (return v))))))
+
 (defun simulation-state-names (process)
   "The names a :STATE clause may use for PROCESS, a process or a list of
 (underlying process) pairs: the process's state names, or (component
@@ -798,39 +844,100 @@ evaluated; anything else is evaluated as it is."
                 (getf options :record)
                 (getf options :engine :auto))))))
 
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun special-variable-name-p (symbol)
+    "True if SYMBOL is declaimed special, so a clause cannot make it a symbol macro."
+    (eq :special (sb-int:info :variable :kind symbol))))
+
 (defmacro simulate ((process market dates &rest options) &body clauses)
-  "Simulate paths of PROCESS from MARKET's valuation date to the last of DATES,
-run the clauses' logic on each path, and return a SIMULATION-RESULT.
+  "Simulate paths of PROCESS from MARKET's valuation date through DATES, run
+the clauses' logic on every path, and return a SIMULATION-RESULT. DATES is an
+ascending list of dates after the valuation date; the last is the end of every
+path.
 
-PROCESS is a process or a list of (underlying process) pairs. OPTIONS:
-  :n-paths 10000  :seed 42  :rng :counter (or :sobol, or a random-state
-  designator)  :antithetic NIL  :n-steps / :max-dt (grid fill between dates;
-  default one step per gap)  :correlation (see MAP-SIMULATED-PATHS)
-  :keep (:quantiles, :states, (:paths k), or a list)
-  :market-from-state (a function like MARKET-AT-STATE).
+PROCESS is a process, or a literal list of (underlying process) pairs for
+several underlyings, e.g. ((:spx (make-gbm)) (:vix (make-heston))). OPTIONS:
+  :n-paths 10000     paths simulated.
+  :seed 42           the random seed.
+  :rng :counter      :counter (a path's draws do not depend on N-PATHS, chunks
+                     or workers), :sobol, or a random-state designator.
+  :antithetic NIL    pair each path with its mirror image; statistics and
+                     SIMULATION-SUMMARY then work on pair means.
+  :n-steps :max-dt   fill the gaps between DATES with extra steps (default one
+                     step per gap); the clauses still run only on DATES.
+  :correlation       spot correlations between underlyings, as in
+                     MAP-SIMULATED-PATHS.
+  :keep              what to store for later: :QUANTILES (per-date quantiles of
+                     every recorded name), (:PATHS k) (states and held values of
+                     the first k paths; k is evaluated), :STATES, or a list of
+                     these.
+  :market-from-state a function building a date's market from the simulated
+                     states, replacing MARKET-AT-STATE.
 
-Clauses, run in the order written at each date:
-  (:accumulate (var init) ...)  per-path double-float variables, reset to INIT
-  (:hold (var init) ...)        per-path Lisp objects, INIT evaluated per path
+Optional clauses. :ACCUMULATE and :HOLD may repeat and :FINAL appears
+once; the logic clauses run in the order written.
+  (:accumulate (var init) ...)
+                     per-path DOUBLE-FLOAT variables, reset to INIT on every
+                     path (an integer INIT is coerced; assigning a non-double
+                     is an error).
+  (:hold (var init) ...)
+                     per-path variables of any type; INIT is evaluated afresh
+                     on every path, so (:hold (v (make-array 5))) gives each
+                     path its own array. Readable later with SIMULATION-HELD
+                     for the kept paths.
   (:portfolio var [init] &key record engine)
-                                a per-path PORTFOLIO; RECORD lists :VALUE and
-                                Greek keys recorded as (var-keyword key)
+                     VAR is a per-path PORTFOLIO (INIT, default empty), changed
+                     with ADJUST-POSITION and priced with ENGINE. RECORD lists
+                     :VALUE and Greek keys; each is recorded every date under
+                     the name (var-keyword key), e.g. (:book :delta). Without
+                     :FINAL the one output is :VALUE.
   (:state var name [underlying])
-                                VAR is the state component NAME (see
-                                SIMULATION-STATE-NAMES), a double
-  (:start [(market)] form ...)  at the valuation date
+                     VAR is bound to the double-float state component NAME
+                     (:spot, :variance, ... see SIMULATION-STATE-NAMES) at the
+                     current date.
+  (:start [(market)] form ...)
+                     at the valuation date, before the first step. The optional
+                     (market) binds that date's market. RECORD here goes to the
+                     valuation date, the first of SIMULATION-DATES.
   (:every (date [market]) form ...)
-                                at each of DATES
+                     at every date of DATES. DATE is bound to the date, MARKET
+                     to the market on it with the simulated spots.
   (:on date-list (i [market]) form ...)
-                                at the dates of DATE-LIST, I the position
-  (:final (name form) ...)      named per-path outputs, after the last date
-                                or (stop); (:final form) is (:final (:value form))
-In clauses, (record name value) adds VALUE to the per-date statistic NAME and
-(stop) ends the path. MARKET is the date's market (MARKET-AT-STATE), built
-only if used. Clauses must not start parallel work (pricing in them is
-serial). The function underneath is MAP-SIMULATED-PATHS.
+                     at the dates of DATE-LIST (a subset of DATES), I being the
+                     date's position in the list.
+  (:final (name form) ...)
+                     one clause: named per-path outputs, evaluated after the
+                     last date (or after STOP) from the final state; NAME is a
+                     keyword. (:final form) is (:final (:value form)).
+MARKET is built only if the
+clause uses it, and a global special variable may serve as its name. Clause
+code runs serially: pricing inside it starts no parallel work. An error in
+a clause is re-signalled in the caller.
 
-  ;; A short CALL delta-hedged on DATES, which end on its EXPIRY.
+Inside :START, :EVERY and :ON bodies two local macros are available, matched by
+name in any package:
+  (record name value)  adds the real VALUE to the statistic NAME at the current
+                       date. NAME is a keyword. The statistic at a date is
+                       over all the values recorded under NAME at it. The
+                       streamed statistics are the mean, standard deviation, minimum,
+                       maximum and count (quantiles also with :KEEP :QUANTILES);
+                       individual values are not stored. It returns VALUE.
+  (stop)               ends the path: its later dates run no clauses and
+                       record nothing, and :FINAL still runs.
+
+Results of simulation in SIMULATION-RESULT:
+  :final outputs   SIMULATION-VALUES (one number per path), SIMULATION-MEAN,
+                   SIMULATION-STANDARD-ERROR, SIMULATION-QUANTILE. Differences
+                   of outputs are paired estimates on common random numbers.
+  recorded names   SIMULATION-STATISTIC (a vector over SIMULATION-DATES),
+                   SIMULATION-RECORDED-NAMES.
+  kept paths       SIMULATION-PATH-STATE, SIMULATION-HELD, PATH-MARKETS.
+  any vector       SIMULATION-SUMMARY gives the mean and standard error.
+The function underneath is MAP-SIMULATED-PATHS.
+
+  ;; A short CALL delta-hedged on DATES, which end on its EXPIRY. The 
+  ;; balance is recorded each date (read it with SIMULATION-STATISTIC) and the
+  ;; terminal P&L is a :final output (read it with SIMULATION-VALUES).
   (simulate ((make-gbm) market dates :n-paths 20000)
     (:accumulate (shares 0d0) (cash 0d0) (premium 0d0))
     (:state s :spot)
@@ -841,7 +948,8 @@ serial). The function underneath is MAP-SIMULATED-PATHS.
       (when (date< date expiry)
         (let ((delta (getf (greeks call :black-scholes market :which '(:delta)) :delta)))
           (decf cash (* (- delta shares) s))
-          (setf shares delta))))
+          (setf shares delta)))
+      (record :balance (- (+ cash (* shares s)) (price call :black-scholes market))))
     (:final (:hedged (+ cash (* shares s) (- (payoff-value (option-payoff call) s))))
             (:unhedged (- premium (payoff-value (option-payoff call) s)))))"
   (let* ((record-name (intern "RECORD")) (stop-name (intern "STOP"))
@@ -904,9 +1012,14 @@ serial). The function underneath is MAP-SIMULATED-PATHS.
                              ,@(when state-vars `((double-float ,@(mapcar #'first state-vars)))))
                     ,@body))
                (with-market (market-var body)
-                 (if market-var
-                     `(symbol-macrolet ((,market-var (,market-fn))) ,@body)
-                     `(progn ,@body)))
+                 (cond ((null market-var) `(progn ,@body))
+                       ;; SYMBOL-MACROLET cannot bind a special variable (a
+                       ;; global MARKET from DEFVAR): rebind it, when used.
+                       ((special-variable-name-p market-var)
+                        (if (member market-var (a:flatten body))
+                            `(let ((,market-var (,market-fn))) ,@body)
+                            `(progn ,@body)))
+                       (t `(symbol-macrolet ((,market-var (,market-fn))) ,@body))))
                (record-book ()
                  (when book
                    `((unless (typep ,book 'portfolio)
@@ -935,7 +1048,7 @@ serial). The function underneath is MAP-SIMULATED-PATHS.
                 (,plan (make-simulation-plan ,(literal-pairs-form process) ,market ,dates
                                              :on-dates (append ,@(mapcar #'sixth ons))
                                              ,@plan-options))
-                (,store (make-simulation-store ,plan ',keep))
+                (,store (make-simulation-store ,plan ,(keep-form keep)))
                 ,@(iter (for (nil nil nil nil nil on-dates positions) in ons)
                         (collect `(,positions (on-positions ,plan ,on-dates)))))
            (let* (,@(iter (for (nil name underlying leg index) in state-vars)
