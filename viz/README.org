@@ -1,0 +1,89 @@
+#+TITLE: fincl-viz: drawing fincl results with =plot=
+
+=fincl-viz= is a developer plotting aid, not part of fincl. =plot= draws /layers/: small values that each mean one thing, built from a fincl object. =panel= puts layers on one pair of axes, =grid= lays panels out.
+
+#+begin_src lisp
+(ql:quickload :fincl-viz)
+(in-package :fincl-viz)
+#+end_src
+
+Layers read a =simulation-result= through its accessors, so what a plot needs must be kept by the =simulate= call: =:keep (:paths k)= for paths, =:keep :quantiles= for bands and quantile lines, =(record name value)= for per-path statistics, a =:final= output for histograms. A layer that lacks its data signals =missing-plot-data= saying what to add.
+
+* Layers
+
+| constructor                             | draws                                    | needs                                       | role       |
+|-----------------------------------------+------------------------------------------+---------------------------------------------+------------|
+| =(paths r :n 20)=                         | a state component of the stored paths    | =:keep (:paths k)=, k <= 30                   | =:paths=     |
+| =(mean-line r :name)=                     | the recorded mean by date                | =(record name x)=                             | =:mean=      |
+| =(statistic r :name :statistic :std-dev)= | any recorded statistic by date           | =(record name x)=; quantile: =:keep :quantiles= | =:statistic= |
+| =(band r :name :quantiles '(0.05 0.95))=  | the area between two quantiles           | =record=, =:keep :quantiles=                    | =:band=      |
+| =(histogram r :out :var 0.99)=            | density of an output; VaR and ES markers | a =:final= output                             | =:histogram= |
+| =(reference-line y)=                      | a horizontal (or =:axis :x=) line          |                                             | =:reference= |
+
+Layers in one panel need the same kind of x axis (dates, numbers, categories; reference lines suit any); a time layer and a histogram in one panel signal =incompatible-layers=. =(plot x)= with no layers draws the default layout of the object: =default-layers= has a method for simulation results.
+
+* Four plots
+
+A run to draw:
+
+#+begin_src lisp
+(defparameter *r*
+  (simulate ((make-gbm) market dates :n-paths 5000 :keep (:quantiles (:paths 30)))
+    (:state s :spot)
+    (:every (date) (record :spot s))
+    (:final (:pnl (- s 100)))))
+#+end_src
+
+1. A fan with its mean: one panel, the layers overlaid.
+   #+begin_src lisp
+   (plot (paths *r* :n 30) (mean-line *r* :spot))
+   #+end_src
+2. A statistic beside the fan, sharing the time axis.
+   #+begin_src lisp
+   (plot (grid (panel (paths *r* :n 30) (band *r* :spot))
+               (panel (statistic *r* :spot :statistic :std-dev))
+               :columns 1 :shared-x t))
+   #+end_src
+3. A P&L histogram with VaR and ES, and the same distribution beside the fan:
+   #+begin_src lisp
+   (plot (histogram *r* :pnl :var 0.99 :es 0.99))
+   (plot (grid (panel (paths *r* :n 30))
+               (panel (histogram *r* :pnl :horizontal t))
+               :marginal t))
+   #+end_src
+4. A restyled plot. Styles attach to a role (or to a layer's =:name=) and look the same in every panel:
+   #+begin_src lisp
+   (plot (grid (panel (paths *r* :n 30) (band *r* :spot))
+               (panel (histogram *r* :pnl)))
+         :style '(:paths (:color :secondary :opacity 0.4) :band (:color :model :opacity 0.3)))
+   (with-theme '(:roles (:paths (:color "black")) :layout (:plot-bgcolor "#f4f1ea"))
+     (plot *r*))
+   #+end_src
+
+* Style
+
+A role's look is a plist of =:color= (a name from =*theme*='s =:colors=, or a CSS string), =:width=, =:dash=, =:opacity=. From the weakest: =*theme*='s =:roles=, =with-theme=, the =:style= of =plot=, the =:style= of the =panel=; within a =:style=, an entry for the layer's =:name= beats its role; then the layer's own keywords (=(paths r :color "red")=). The layer's =:raw= (Plotly trace attributes) is merged last, and =plot='s =:layout= and =:config= are plain Plotly. An unknown role signals =unknown-role=.
+
+* Adding a layer, or a plottable
+
+A layer is built with =make-layer=: a role, an x-kind, and a function of the style that returns trace plists (the builders in =figure.lisp=):
+
+#+begin_src lisp
+(defun strike-line (strike)
+  (make-layer :reference :any
+              (lambda (style)
+                `(,(hline strike :name "strike"
+                         :style `(:line (:color ,(getf (funcall style) :color) :dash "dash")))))
+              :name "strike"))
+#+end_src
+
+=(funcall style)= is the resolved look of the layer's role; =(funcall style :marker)= that of another role. Check the data a layer needs in its constructor, as =check-needs= does, so the error appears where the layer is made.
+
+A new kind of object plots by one method:
+
+#+begin_src lisp
+(defmethod default-layers ((c my-curve))
+  (grid (panel (my-curve-layer c) :title "My curve")))
+#+end_src
+
+New roles are added to =*roles*= and to =*theme*='s =:roles=.
