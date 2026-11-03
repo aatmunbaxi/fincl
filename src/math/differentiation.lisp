@@ -147,38 +147,71 @@ removed.
           (finding estimate minimizing (max tableau-error rounding) into (best best-error))
           (finally (return (values best best-error))))))
 
-(defun jacobian! (f x out &key (scheme :forward) steps f0)
+(defun stencil-inside (scheme offsets x h lo hi)
+  "(values offsets h) for one coordinate at X: OFFSETS of SCHEME if every
+X + k H lies strictly inside (LO, HI) (NIL ends unbounded), else the
+one-sided stencil pointing into the interval, with H shortened to half the
+room if the interval is narrower."
+  (flet ((inside-p (offs step)
+           ;; Offset 0 is X itself, where F is evaluated anyway.
+           (every (lambda (k) (or (zerop k)
+                                  (let ((y (+ x (* k step))))
+                                    (and (or (null lo) (> y lo)) (or (null hi) (< y hi))))))
+                  offs)))
+    (if (inside-p offsets h)
+        (values offsets h)
+        (let* ((room-up (if hi (- hi x) most-positive-double-float))
+               (room-down (if lo (- x lo) most-positive-double-float))
+               (offs (scheme-offsets (if (>= room-up room-down) :forward :backward) 1))
+               (reach (reduce #'max (mapcar #'abs offs)))
+               (step (if (inside-p offs h) h (/ (max room-up room-down) (* 2 reach)))))
+          (if (and (plusp step) (inside-p offs step))
+              (values offs step)
+              (signal-invalid-argument 'bounds `(,lo . ,hi) 'cons
+                                       (format nil "an interval around ~A wide enough for a ~(~A~) difference"
+                                               x scheme)))))))
+
+(defun jacobian! (f x out &key (scheme :forward) steps f0 bounds)
   "The Jacobian of the vector function F (a DOUBLE-VECTOR of m residuals of a
 DOUBLE-VECTOR) at X (length n), by finite differences, written column-major
 into OUT (length m n): OUT[i + m j] = d r_i / d x_j. SCHEME is :FORWARD
 (n extra evaluations) or :CENTRAL (2n); STEPS, a sequence of n steps,
 defaults to DEFAULT-STEP for each x_j; F0, F at X, saves one evaluation.
-The stencils come from FINITE-DIFFERENCE-WEIGHTS. X is perturbed and
-restored. Returns OUT.
+BOUNDS, a list of n (lo . hi) intervals (NIL ends unbounded), keeps every
+point F is evaluated at inside them: a coordinate whose stencil would leave
+its interval is differenced one-sided, into it. The stencils come from
+FINITE-DIFFERENCE-WEIGHTS. X is perturbed and restored. Returns OUT.
 
   (jacobian! residuals x (make-array (* m n) :element-type 'double-float))"
   (declare (type double-vector x out))
   (let* ((n (length x))
          (offsets (scheme-offsets scheme 1))
-         (weights (finite-difference-weights offsets 1))
-         (r0 (and (member 0 offsets) (or f0 (funcall f x))))
-         (m (if r0 (length r0) nil)))
-    (dotimes (j n out)
-      (let* ((xj (aref x j))
-             ;; The step actually taken, exactly representable: (x + h) - x.
-             (h (let ((h (if steps (float (elt steps j) 1d0) (default-step xj scheme 1))))
-                  (- (+ xj h) xj)))
-             (values (mapcar (lambda (k)
-                               (if (zerop k)
-                                   r0
-                                   (progn (setf (aref x j) (+ xj (* k h)))
-                                          (prog1 (copy-seq (funcall f x))
-                                            (setf (aref x j) xj)))))
-                             offsets)))
-        (unless m (setf m (length (first values))))
-        (unless (= (length out) (* m n))
-          (signal-invalid-argument '(length out) (length out) `(integer ,(* m n))
-                                   (format nil "~D x ~D = ~D elements" m n (* m n))))
-        (dotimes (i m)
-          (setf (aref out (+ i (* m j)))
-                (float (apply-stencil weights (mapcar (lambda (r) (aref r i)) values) h 1) 1d0)))))))
+         (r0 nil)
+         (m nil))
+    (flet ((base ()
+             (or r0 (setf r0 (or f0 (funcall f x))))))
+      (dotimes (j n out)
+        (let ((xj (aref x j)))
+          (multiple-value-bind (offs step)
+              (let ((h (if steps (float (elt steps j) 1d0) (default-step xj scheme 1))))
+                (if bounds
+                    (destructuring-bind (lo . hi) (elt bounds j)
+                      (stencil-inside scheme offsets xj h lo hi))
+                    (values offsets h)))
+            (let* ((weights (finite-difference-weights offs 1))
+                   ;; The step actually taken, exactly representable: (x + h) - x.
+                   (h (- (+ xj step) xj))
+                   (values (mapcar (lambda (k)
+                                     (if (zerop k)
+                                         (base)
+                                         (progn (setf (aref x j) (+ xj (* k h)))
+                                                (prog1 (copy-seq (funcall f x))
+                                                  (setf (aref x j) xj)))))
+                                   offs)))
+              (unless m (setf m (length (first values))))
+              (unless (= (length out) (* m n))
+                (signal-invalid-argument '(length out) (length out) `(integer ,(* m n))
+                                         (format nil "~D x ~D = ~D elements" m n (* m n))))
+              (dotimes (i m)
+                (setf (aref out (+ i (* m j)))
+                      (float (apply-stencil weights (mapcar (lambda (r) (aref r i)) values) h 1) 1d0))))))))))

@@ -9,13 +9,18 @@
 
 (in-package #:fincl)
 
+(defvar *missing-fixing-hint* nil
+  "A sentence MISSING-FIXING reports add, or NIL; SIMULATE binds it in its
+workers.")
+
 (define-condition missing-fixing (pricing-error)
   ((index :initarg :index :reader error-index)
-   (date :initarg :date :reader error-date))
+   (date :initarg :date :reader error-date)
+   (hint :initarg :hint :initform *missing-fixing-hint* :reader error-hint))
   (:report (lambda (c s)
              (format s "The market has no ~A fixing for ~A, a date before its valuation ~
-date. Add it to the market's :fixings, or supply a rate with USE-VALUE."
-                     (index-name (error-index c)) (error-date c))))
+date. Add it to the market's :fixings, or supply a rate with USE-VALUE.~@[ ~A~]"
+                     (index-name (error-index c)) (error-date c) (error-hint c))))
   (:documentation "A past fixing an instrument needs is not in the market.
 USE-VALUE supplies the rate."))
 

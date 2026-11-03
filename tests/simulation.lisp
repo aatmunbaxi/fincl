@@ -56,6 +56,22 @@ as the Asian path kernel computes them."
                     (:final (:arithmetic (max 0d0 (* 1d0 (- (/ sum 4d0) 100d0))))))))
       (check-that "a single-output run gives = per-path values to the same output of a two-output run"
                   (equalp (simulation-values single) (simulation-values r :arithmetic))))
+    (let* ((dates (sim-quarterly-dates))
+           (on-dates (list (second dates) (fourth dates)))
+           (before (copy-list on-dates))
+           (on (simulate ((make-gbm) m dates :n-paths 500 :seed 3)
+                 (:state s :spot)
+                 (:on on-dates (i) (record :i i))))
+           (every (simulate ((make-gbm) m dates :n-paths 500 :seed 3)
+                    (:state s :spot)
+                    (:every (date)
+                      (let ((i (position date on-dates :test #'date=)))
+                        (when i (record :i i)))))))
+      (check-that ":ON leaves the caller's date list alone (SORT must not relink it)"
+                  (equal on-dates before))
+      (check-that ":ON runs on its dates only, I being the position in its list"
+                  (flet ((means (r) (substitute-if 0d0 #'sb-ext:float-nan-p (simulation-statistic r :i :mean))))
+                    (equalp (means on) (means every)))))
     (check-that "outputs are = under 1, 2 and 8 workers"
                 (let ((runs (mapcar (lambda (n) (with-workers n (lambda () (simulation-values (run-asian-pair m 2000) :geometric))))
                                     '(1 2 8))))

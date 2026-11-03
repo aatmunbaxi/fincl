@@ -109,6 +109,9 @@
    #:path-markets #:spot-loadings
    #:simulation-recorded-names #:simulation-kept-paths #:simulation-quantiles-p
    #:simulation-path-state
+   ;; simulated market components (task 32)
+   #:market-component #:structure-at-state #:process-targets #:fixing-dates
+   #:surface-quotes #:rescale-vol-structure
    #:valuation-date #:market-day-counter #:market-time #:derive-market
    ;; term structures and composite markets
    #:term-structure #:yield-curve #:dividend-curve #:black-vol-structure

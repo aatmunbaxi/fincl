@@ -32,7 +32,7 @@ code. Think of it more as a cookbook.
 - Bond and rate instrument pricing :: Fixed-rate bonds, interest swaps, swaptions.
 - Volatility calibration :: Calibrate stochastic processes to quoted option strip.
 - Scenario simulation  :: Path generation used to simulate local variables along
-  paths; summary statistics outputted with plot generation with =fincl-viz=
+  paths; summary statistics outputted with plot generation with =fincl-viz=.
 
 *And extensible by the user.*
 

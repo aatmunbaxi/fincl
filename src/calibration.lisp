@@ -401,14 +401,16 @@ order) and :PARAMETERS (name value ...).
                  (iter (for i in free) (for k from 0) (setf (aref v i) (aref x k)))
                  (with-parameter-vector process v)))
              (model-value (q trial-engine)
-               (let ((p (nth-value 0 (price (quote-instrument q) trial-engine market))))
-                 (if (eq objective :price-rmse)
-                     p
-                     (multiple-value-bind (f k d tau phi) (quote-terms q market)
-                       ;; A price outside Black's range is a large residual,
-                       ;; not an error: the optimizer moves away from it.
-                       (handler-case (implied-black-vol phi p f k d tau)
-                         (price-out-of-bounds () 10d0))))))
+               (if (eq objective :price-rmse)
+                   (nth-value 0 (price (quote-instrument q) trial-engine market))
+                   ;; A trial with no variance (COS refuses it) or a price
+                   ;; outside Black's range is a large residual, not an
+                   ;; error: the optimizer moves away from it.
+                   (handler-case
+                       (let ((p (nth-value 0 (price (quote-instrument q) trial-engine market))))
+                         (multiple-value-bind (f k d tau phi) (quote-terms q market)
+                           (implied-black-vol phi p f k d tau)))
+                     ((or price-out-of-bounds non-positive-volatility) () 10d0))))
              (residuals (x)
                (incf iterations)
                (let* ((trial-engine (engine-with-process engine (trial x)))
@@ -429,7 +431,7 @@ order) and :PARAMETERS (name value ...).
                                                       :max-iterations max-iterations
                                                       :jacobian (lambda (x out)
                                                                   (jacobian! #'residuals x out
-                                                                             :scheme :central
+                                                                             :scheme :central :bounds bounds
                                                                              :steps (map 'list (lambda (v) (* 1d-5 (max 1d-2 (abs v)))) x))))
                       (minimize method (lambda (x) (sum-of-squares (residuals x))) x0
                                 :bounds bounds :tolerance tolerance :max-iterations max-iterations))))
@@ -443,3 +445,30 @@ order) and :PARAMETERS (name value ...).
                   :parameters ,(iter (for name in names)
                                      (for value in-vector (parameter-vector calibrated market horizon))
                                      (appending `(,(a:make-keyword name) ,value)))))))))
+
+;;; --------------------------------------------------------------------
+;;; Quotes read off a market's surface (task 32)
+;;; --------------------------------------------------------------------
+
+(defun surface-quotes (market underlying options &key (weight 1))
+  "A QUOTE-SET quoting each of OPTIONS (European vanillas) at its Black vol
+on MARKET's vol structure for UNDERLYING, at its strike and expiry, with
+WEIGHT. Options expiring on or before MARKET's valuation date are left out,
+so one list serves every date of a simulation; none left signals
+INVALID-ARGUMENT.
+
+  (calibrate desk market (surface-quotes market :spx options) :engine :cos)"
+  (check-input market composite-market "a composite market")
+  (let* ((view (market-view market :underlying underlying))
+         (today (valuation-date market))
+         (live (remove-if-not (lambda (o)
+                                (check-input o option "a European vanilla option")
+                                (date< today (expiry (option-exercise o))))
+                              options)))
+    (unless live
+      (signal-invalid-argument 'options options 'list
+                               (format nil "options expiring after ~A, the market's valuation date" today)))
+    (quote-set (mapcar (lambda (o)
+                         (make-option-quote o :vol (black-vol view (strike (option-payoff o)) (expiry (option-exercise o)))
+                                              :weight weight))
+                       live))))

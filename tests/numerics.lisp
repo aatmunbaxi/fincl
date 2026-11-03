@@ -270,6 +270,22 @@ the test suite's Gaussian elimination."
             (check-that (format nil "jacobian!, ~(~A~): within ~:[1e-7~;1e-9~] of the analytic ~
 Jacobian (~,1E)" scheme (eq scheme :central) worst)
                         (< worst (if (eq scheme :central) 1d-9 1d-7))))))))
+  ;; Bounds: a coordinate within a step of its bound is differenced
+  ;; one-sided, into the interval; F refuses points outside it.
+  (let ((x (coerce '(-0.999999d0 0.5d0) 'double-vector))
+        (outside 0))
+    (flet ((f (x)
+             (unless (and (< -1d0 (aref x 0) 1d0) (< 0d0 (aref x 1))) (incf outside))
+             (let ((r (make-array 1 :element-type 'double-float)))
+               (setf (aref r 0) (+ (* (aref x 0) (aref x 0)) (* 3d0 (aref x 1))))
+               r)))
+      (let ((out (jacobian! #'f x (make-array 2 :element-type 'double-float) :scheme :central
+                                                                         :steps '(1d-5 1d-5)
+                                                                         :bounds '((-1d0 . 1d0) (0d0)))))
+        (check-that (format nil "jacobian! with :bounds evaluates F only inside them (~D outside) and ~
+differences one-sided at a bound (~,6F, ~,6F)" outside (aref out 0) (aref out 1))
+                    (and (zerop outside) (< (abs (- (aref out 0) -1.999998d0)) 1d-4)
+                         (< (abs (- (aref out 1) 3d0)) 1d-9))))))
   (multiple-value-bind (x fx iterations)
       (minimize :nelder-mead #'rosenbrock '(-1.2 1) :max-iterations 5000 :tolerance 1d-14)
     (check-that (format nil "Nelder-Mead, Rosenbrock 2-D: |x - 1| = ~,1E < 1e-6 (~D iterations, f ~,1E)"

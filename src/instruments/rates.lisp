@@ -680,3 +680,36 @@ type), TYPE :CALL (default) or :PUT, prices per 100 of face.
                        call-schedule)))
     (change-class bond 'callable-fixed-rate-bond
                   :call-schedule (sort calls #'date< :key #'first))))
+
+;;; --------------------------------------------------------------------
+;;; Fixing dates (task 32)
+;;; --------------------------------------------------------------------
+
+(defgeneric cashflow-fixing-dates (cashflow)
+  (:documentation "The dates CASHFLOW's rate fixes on, a list.")
+  (:method ((c cashflow)) '())
+  (:method ((c ibor-coupon)) `(,(coupon-fixing-date c)))
+  (:method ((c overnight-indexed-coupon)) (coerce (overnight-fixing-dates c) 'list)))
+
+(defgeneric instrument-fixing-dates (instrument)
+  (:documentation "Every date INSTRUMENT's floating rates fix on, unsorted.")
+  (:method ((i rates-instrument)) '())
+  (:method ((s swap)) (iter (for leg in (swap-legs s)) (appending (mapcan #'cashflow-fixing-dates leg))))
+  (:method ((s swaption)) (instrument-fixing-dates (swaption-swap s)))
+  (:method ((c cap-floor)) (mapcan #'cashflow-fixing-dates (cap-floor-leg c)))
+  (:method ((f forward-rate-agreement))
+    (when (fra-indexed-p f) `(,(index-fixing-date (fra-index f) (fra-value-date f))))))
+
+(defun fixing-dates (instrument &optional market)
+  "The dates the floating rates of the rates INSTRUMENT fix on, ascending
+and distinct; with MARKET, only those after its valuation date. A SIMULATE
+run that prices INSTRUMENT along its paths needs them among its dates, with
+the index in :FIX.
+
+  (fixing-dates swap m)  ; => (#D\"2027-03-24\" #D\"2027-09-23\" ...)"
+  (check-input instrument rates-instrument "a rates instrument")
+  (let ((dates (remove-duplicates (sort (copy-list (instrument-fixing-dates instrument)) #'date<)
+                                  :test #'date=)))
+    (if market
+        (remove-if-not (lambda (d) (date< (valuation-date market) d)) dates)
+        dates)))

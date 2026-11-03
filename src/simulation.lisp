@@ -1,4 +1,4 @@
-b;;;; simulation.lisp --- market path simulation (task 29)
+;;;; simulation.lisp --- market path simulation (tasks 29 and 32)
 ;;;;
 ;;;; Steps one or more underlyings along simulated paths with the process
 ;;;; protocol the Monte Carlo engine uses (MAKE-STEPPER on a MAKE-TIME-GRID
@@ -7,7 +7,9 @@ b;;;; simulation.lisp --- market path simulation (task 29)
 ;;;; statistics. MAP-SIMULATED-PATHS is the functional core; SIMULATE writes
 ;;;; its visitor from clauses. A path is run to its end before its antithetic
 ;;;; partner, which replays the path's normals negated, so the logic of one
-;;;; path never interleaves with another's.
+;;;; path never interleaves with another's. A leg drives one market component
+;;;; (a target, in BUMP's factor syntax); :DERIVE functions set others from the
+;;;; date and the legs' states.
 
 (in-package #:fincl)
 (named-readtables:in-readtable fincl:syntax)
@@ -16,13 +18,20 @@ b;;;; simulation.lisp --- market path simulation (task 29)
 ;;; The plan: legs, grid, normals
 ;;; --------------------------------------------------------------------
 
-(defstruct (simulation-leg (:constructor make-simulation-leg (underlying process view)))
-  "One simulated underlying: its name (NIL for a market that is not
-composite), its process (resolved at the horizon by the plan), and the
-single-underlying view the process steps on."
+(defstruct (simulation-leg (:constructor make-simulation-leg
+                               (underlying process view &optional target options initial)))
+  "One simulated market component: its designator UNDERLYING (the underlying
+of a spot leg, NIL for a market that is not composite; the target (kind key)
+of any other leg), its process (resolved at the horizon by the plan), the
+view the process steps on, the TARGET it drives as (kind key) (NIL for a
+market that is not composite), the OPTIONS passed to STRUCTURE-AT-STATE, and
+the target's INITIAL component."
   (underlying nil :read-only t)
   (process nil :read-only t)
-  (view nil :read-only t))
+  (view nil :read-only t)
+  (target nil :read-only t)
+  (options nil :read-only t)
+  (initial nil :read-only t))
 
 (defstruct (simulation-plan (:constructor %make-simulation-plan))
   "Everything a run needs but the visitor: the market, the legs, the time grid
@@ -40,11 +49,14 @@ factor of the factor correlation, and how markets are built from states."
   (offsets nil :type (simple-array fixnum (*)) :read-only t)  ; first factor of each leg
   (cholesky nil :read-only t)
   (every-step nil :read-only t)
-  (market-from-state nil :read-only t))
+  (market-from-state nil :read-only t)
+  (derive nil :type list :read-only t)                          ; ((target . function) ...)
+  (fix #() :type simple-vector :read-only t))                   ; rate indexes fixed along the paths
 
 (defun simulation-underlyings (simulation)
-  "The underlyings SIMULATION steps, in order (NIL for a market that is not
-composite). MARKET-AT-STATE's STATES follow this order."
+  "The legs SIMULATION steps, in order: the underlying of a spot leg (NIL for
+a market that is not composite), the target (kind key) of any other.
+MARKET-AT-STATE's STATES follow this order."
   (map 'list #'simulation-leg-underlying (simulation-plan-legs simulation)))
 
 (defun simulation-n-total (plan) (total-paths (simulation-plan-engine plan)))
@@ -57,42 +69,127 @@ are vectors over these dates."
     `(,(valuation-date (simulation-plan-market plan))
       ,@(coerce (simulation-plan-event-dates plan) 'list))))
 
+(defun leg-designator (target)
+  "How a leg on TARGET, (kind key), is named: its underlying for a spot leg,
+TARGET otherwise."
+  (if (eq (first target) :spot) (second target) target))
+
+(defun normalize-designator (designator)
+  "A user's leg designator (an underlying, or a target) as LEG-DESIGNATOR names
+the leg."
+  (leg-designator (normalize-target designator)))
+
+(defgeneric target-view (kind market key)
+  (:documentation "The market a process driving the component (KIND KEY) of
+the composite MARKET steps on (MAKE-STEPPER, INITIAL-STATE).")
+  (:method ((kind t) market key)
+    (declare (ignore market))
+    (signal-invalid-argument 'target `(,kind ,key) 'list
+                             (format nil "a target kind a process can be stepped on: ~{~S~^, ~}"
+                                     '(:spot :vol :dividend :dividend-schedule :curve))))
+  (:method ((kind (eql :curve)) market key) (make-instance 'curve-view :market market :curve-id key))
+  (:method ((kind (eql :spot)) market key) (market-view market :underlying key))
+  (:method ((kind (eql :vol)) market key) (market-view market :underlying key))
+  (:method ((kind (eql :dividend)) market key) (market-view market :underlying key))
+  (:method ((kind (eql :dividend-schedule)) market key) (market-view market :underlying key)))
+
+(defun check-simulated-process (p)
+  (check-input p stochastic-process "a stochastic process")
+  (unless (steppable-p p)
+    (signal-invalid-argument 'process p 'stochastic-process
+                             (format nil "a process that can be simulated (~(~A~) has no stepper)"
+                                     (class-name (class-of p)))))
+  p)
+
+(defun method-keywords (methods)
+  "The keywords METHODS accept, or T if one allows other keys."
+  (iter (for m in methods)
+        (for lambda-list = (c2mop:method-lambda-list m))
+        (when (member '&allow-other-keys lambda-list) (return t))
+        (appending (iter (for k in (rest (member '&key lambda-list)))
+                         (until (member k lambda-list-keywords))
+                         (collect (let ((spec (if (consp k) (first k) k)))
+                                    (if (consp spec) (first spec) (a:make-keyword spec))))))))
+
+(defun check-leg-options (process target options market)
+  "Signal unless OPTIONS is a plist whose keys STRUCTURE-AT-STATE accepts for
+PROCESS driving TARGET."
+  (unless (and (evenp (length options))
+               (iter (for (k nil) on options by #'cddr) (always (keywordp k))))
+    (signal-invalid-argument 'options options 'list
+                             (format nil "leg options for ~S: a list of keywords and values" target)))
+  (when options
+    (let ((accepted (method-keywords
+                     (compute-applicable-methods #'structure-at-state
+                                                 `(,process ,target nil ,market ,(valuation-date market) nil)))))
+      (unless (eq accepted t)
+        (iter (for (k nil) on options by #'cddr)
+              (unless (member k accepted)
+                (signal-invalid-argument 'option k 'keyword
+                                         (format nil "an option ~(~A~) takes for ~S: ~:[none~;~:*~{~S~^, ~}~]"
+                                                 (class-name (class-of process)) target accepted))))))))
+
+(defun make-target-leg (target process options market)
+  "The leg of PROCESS driving TARGET, (kind key), of the composite MARKET."
+  (check-simulated-process process)
+  (let ((initial (market-component market target)))
+    (unless (member (first target) (process-targets process))
+      (signal-invalid-argument 'target target 'list
+                               (format nil "a target ~(~A~) drives: kinds ~{~S~^, ~}"
+                                       (class-name (class-of process)) (process-targets process))))
+    (check-leg-options process target options market)
+    (make-simulation-leg (leg-designator target) process (target-view (first target) market (second target))
+                         target options initial)))
+
+(defun default-target (process market)
+  "The target PROCESS drives when given alone: its first kind of component,
+for the composite MARKET's only underlying (the discount curve of its only
+currency, for a curve)."
+  (let ((kind (first (process-targets process))))
+    (if (eq kind :curve)
+        (let ((currencies (sorted-keys (market-discount-curve-for market))))
+          (unless (= 1 (length currencies))
+            (signal-invalid-argument 'process process 'stochastic-process
+                                     (format nil "a leg naming its curve, ((:curve id) process): the market ~
+discounts ~:[no currency~;~:*~{~S~^, ~}~]" currencies)))
+          `(:curve ,(gethash (first currencies) (market-discount-curve-for market))))
+        `(,kind ,(resolve-underlying market nil)))))
+
 (defun simulation-legs-from (process market)
-  "The legs for PROCESS, a process or a list of (underlying process) pairs."
-  (flet ((check-process (p)
-           (check-input p stochastic-process "a stochastic process")
-           (unless (simulatable-p p)
-             (signal-invalid-argument 'process p 'stochastic-process
-                                      (format nil "a process that can be simulated (~(~A~) has no stepper)"
-                                              (class-name (class-of p)))))
-           p))
-    (if (typep process 'stochastic-process)
-        (let ((p (check-process process)))
-          (if (typep market 'composite-market)
-              (let ((u (resolve-underlying market nil)))
-                (vector (make-simulation-leg u p (market-view market :underlying u))))
-              (vector (make-simulation-leg nil p market))))
-        (progn
-          (check-input process (and list (not null)) "a process, or a list of (underlying process) pairs")
-          (check-input market composite-market "a composite market for several underlyings")
-          (let ((underlyings (mapcar (lambda (pair)
-                                       (unless (and (consp pair) (keywordp (first pair)) (= 2 (length pair)))
-                                         (signal-invalid-argument 'process process 'list
-                                                                  "a list of (underlying process) pairs"))
-                                       (first pair))
-                                     process)))
-            (unless (= (length underlyings) (length (remove-duplicates underlyings)))
-              (signal-invalid-argument 'process process 'list "pairs with distinct underlyings")))
-          (map 'simple-vector (lambda (pair)
-                                (destructuring-bind (u p) pair
-                                  (make-simulation-leg u (check-process p) (market-view market :underlying u))))
-               process)))))
+  "The legs for PROCESS: a process, or a list of legs (target process &rest
+options), TARGET a target (kind key) or an underlying keyword (its spot)."
+  (if (typep process 'stochastic-process)
+      (cond ((typep market 'composite-market)
+             (vector (make-target-leg (default-target process market) process nil market)))
+            ((eq :spot (first (process-targets (check-simulated-process process))))
+             (vector (make-simulation-leg nil process market)))
+            (t (check-input market composite-market
+                            (format nil "a composite market for a process driving ~S"
+                                    (first (process-targets process))))))
+      (progn
+        (check-input process (and list (not null))
+                     "a process, or a list of legs (target process &rest options)")
+        (check-input market composite-market "a composite market for several legs")
+        (let ((legs (map 'simple-vector
+                         (lambda (leg)
+                           (unless (and (consp leg) (<= 2 (length leg)))
+                             (signal-invalid-argument 'process process 'list
+                                                      "a list of legs (target process &rest options)"))
+                           (destructuring-bind (target p &rest options) leg
+                             (make-target-leg (normalize-target target) p options market)))
+                         process)))
+          (let ((targets (map 'list #'simulation-leg-target legs)))
+            (unless (= (length targets) (length (remove-duplicates targets :test #'equal)))
+              (signal-invalid-argument 'process process 'list
+                                       (format nil "legs with distinct targets, not ~{~S~^, ~}" targets))))
+          legs))))
 
 (defun correlation-matrix (correlation legs factors offsets)
   "The full factor correlation, a column-major DOUBLE-VECTOR, from
-CORRELATION: a list of (u1 u2 rho), each correlating the Brownian motions
-driving two legs' spots at rho through their SPOT-LOADINGS, or a square 2-D
-array over every factor in leg order."
+CORRELATION: a list of (leg1 leg2 rho), each correlating the Brownian motions
+driving two legs' element 0 at rho through their SPOT-LOADINGS (a leg named
+by its target, or by an underlying for its spot), or a square 2-D array over
+every factor in leg order."
   (let ((n (reduce #'+ factors))
         (names (map 'list #'simulation-leg-underlying legs)))
     (etypecase correlation
@@ -103,12 +200,13 @@ array over every factor in leg order."
            (unless (and (consp entry) (= 3 (length entry)) (realp (third entry))
                         (<= -1 (third entry) 1))
              (signal-invalid-argument 'correlation correlation 'list
-                                      "a list of (underlying underlying rho), rho in [-1, 1]"))
+                                      "a list of (leg leg rho), rho in [-1, 1], each leg a target or an underlying"))
            (destructuring-bind (u1 u2 rho) entry
-             (let ((a (position u1 names)) (b (position u2 names)))
+             (let ((a (position (normalize-designator u1) names :test #'equal))
+                   (b (position (normalize-designator u2) names :test #'equal)))
                (unless (and a b (/= a b))
                  (signal-invalid-argument 'correlation correlation 'list
-                                          (format nil "pairs of distinct simulated underlyings: ~{~S~^, ~}" names)))
+                                          (format nil "pairs of distinct simulated legs: ~{~S~^, ~}" names)))
                (let ((la (spot-loadings (simulation-leg-process (aref legs a))))
                      (lb (spot-loadings (simulation-leg-process (aref legs b)))))
                  (dotimes (i (length la))
@@ -128,6 +226,22 @@ array over every factor in leg order."
                (signal-invalid-argument 'correlation correlation 'array "a symmetric matrix"))
              (setf (aref m (+ i (* j n))) (float (aref correlation i j) 1d0)))))))))
 
+(defun derive-entries (derive market legs)
+  "DERIVE, a list of (target function), checked against MARKET and LEGS, as
+((target . function) ...) with each target (kind key)."
+  (check-input derive list "a list of (target function)")
+  (iter (for entry in derive)
+        (unless (and (consp entry) (= 2 (length entry)) (functionp (second entry)))
+          (signal-invalid-argument 'derive derive 'list "a list of (target function)"))
+        (for target = (normalize-target (first entry)))
+        (unless (typep market 'composite-market)
+          (signal-invalid-argument 'market market 'composite-market "a composite market for :DERIVE"))
+        (market-component market target)
+        (when (find target legs :key #'simulation-leg-target :test #'equal)
+          (signal-invalid-argument 'derive target 'list
+                                   (format nil "a target no leg drives (a leg already sets ~S)" target)))
+        (collect (cons target (second entry)))))
+
 (defun factor-owner (k legs offsets)
   "The underlying whose factors include factor K."
   (simulation-leg-underlying (aref legs (1- (or (position-if (lambda (o) (> o k)) offsets)
@@ -136,9 +250,14 @@ array over every factor in leg order."
 (defun make-simulation-plan (process market dates
                              &key (n-paths 10000) (seed 42) (rng :counter) (sampler :box-muller)
                                   antithetic n-steps max-dt correlation market-from-state
-                                  every-step on-dates (n-chunks 64))
+                                  every-step on-dates (n-chunks 64) derive fix)
   "The plan of a simulation; see MAP-SIMULATED-PATHS for the arguments.
-ON-DATES are further dates the logic sees, beside DATES."
+ON-DATES are further dates the logic sees, beside DATES. DERIVE is a list of
+(target function): FUNCTION, called as (function market date states) with
+the market of DATE built so far and the vector of the legs' states, returns
+TARGET's component in the markets built from states (MARKET-AT-STATE). FIX
+is a list of rate indexes whose fixings on each date are taken from that
+date's simulated forecast curve and carried by the markets of later dates."
   (check-input dates (and list (not null)) "a non-empty list of dates")
   (let ((today (valuation-date market)))
     (dolist (d (append dates on-dates))
@@ -146,7 +265,8 @@ ON-DATES are further dates the logic sees, beside DATES."
       (unless (date< today d)
         (signal-invalid-argument 'dates d 'date (format nil "a date after the valuation date ~A" today)))))
   (let* ((legs (simulation-legs-from process market))
-         (events (-<> (append dates on-dates)
+         (derive (derive-entries derive market legs))
+         (events (-<> (append dates on-dates nil) ; a fresh list: SORT must not relink ON-DATES
                       (sort <> #'date<)
                       (remove-duplicates <> :test #'date=)
                       (coerce <> 'simple-vector)))
@@ -162,7 +282,10 @@ ON-DATES are further dates the logic sees, beside DATES."
                       (make-simulation-leg (simulation-leg-underlying leg)
                                            (resolve-process (simulation-leg-process leg)
                                                             (simulation-leg-view leg) tau)
-                                           (simulation-leg-view leg)))
+                                           (simulation-leg-view leg)
+                                           (simulation-leg-target leg)
+                                           (simulation-leg-options leg)
+                                           (simulation-leg-initial leg)))
                     legs))
          (factors (map '(simple-array fixnum (*)) (lambda (l) (process-factors (simulation-leg-process l))) legs))
          (offsets (let ((sum 0))
@@ -191,7 +314,11 @@ ON-DATES are further dates the logic sees, beside DATES."
                           (format nil "a positive-definite correlation; it fails at factor ~D (of ~S): ~
 check the entries involving ~:*~S" k (factor-owner k legs offsets)))))))
      :every-step every-step
-     :market-from-state market-from-state)))
+     :market-from-state market-from-state
+     :derive derive
+     :fix (progn (check-input fix list "a list of rate indexes")
+                 (dolist (index fix (coerce fix 'simple-vector))
+                   (check-input index interest-rate-index "a rate index (SOFR, EURIBOR ...)"))))))
 
 ;;; --------------------------------------------------------------------
 ;;; Running a plan
@@ -232,7 +359,8 @@ column-major output vector, and each chunk's DONE value in chunk order."
              (handler-case (cons :ok (run-chunk-paths range chunk))
                (error (c) (cons :error c))))
            (run-chunk-paths (range chunk)
-             (let ((*serial-pricing* t))
+             (let ((*serial-pricing* t)
+                   (*missing-fixing-hint* "In SIMULATE, add the fixing date to DATES (FIXING-DATES gives an instrument's) and its index to :FIX."))
                (multiple-value-bind (start step finish done) (funcall visitor chunk)
                  (declare (type function start step finish))
                  (multiple-value-bind (fill start-path)
@@ -302,16 +430,20 @@ column-major output vector, and each chunk's DONE value in chunk order."
 
 (defun map-simulated-paths (visitor process market dates
                             &key (n-paths 10000) (seed 42) (rng :counter) (sampler :box-muller)
-                                 antithetic n-steps max-dt every-step (outputs 1) correlation)
+                                 antithetic n-steps max-dt every-step (outputs 1) correlation derive)
   "Simulate N-PATHS paths of PROCESS from MARKET's valuation date to the last
 of DATES and show each to VISITOR; returns the per-path outputs, an n-paths x
 OUTPUTS column-major DOUBLE-VECTOR (output k of path i at i + k n-paths; with
 one output, the per-path values in path order).
 
-PROCESS is a stochastic process, or a list of (underlying process) pairs
-naming underlyings of the composite MARKET, each stepped on its own view;
-CORRELATION correlates their first factors, a list of (u1 u2 rho), or every
-factor, a square 2-D array in leg order. The grid (MAKE-TIME-GRID) holds
+PROCESS is a stochastic process, or a list of legs (target process &rest
+options) on the composite MARKET, each stepped on its own view; a target is
+(:spot u), (:vol u), (:dividend u), (:dividend-schedule u) or (:curve id), a
+bare keyword U meaning (:spot u), and the options go to STRUCTURE-AT-STATE.
+CORRELATION correlates the legs' first factors, a list of (leg1 leg2 rho)
+naming legs by target or underlying, or every factor, a square 2-D array in
+leg order. DERIVE is as for MAKE-SIMULATION-PLAN; it sets components of
+the markets MARKET-AT-STATE builds from the plan. The grid (MAKE-TIME-GRID) holds
 DATES, the dividend ex-dates before the last date, and steps of at most the
 span over N-STEPS (or MAX-DT); with neither, one step per gap. Normals come
 from the Monte Carlo engine's generators (RNG, SEED, SAMPLER), so path i is
@@ -326,8 +458,8 @@ VISITOR is called once per chunk of paths with the chunk index and returns
                                  EVERY-STEP, at every grid index K); NIL stops
   (finish path-index state values)
                                  writes the path's OUTPUTS doubles into VALUES
-STATE is the process's state vector (a vector of them, one per pair, for
-pairs); it is reused, so copy what you keep.
+STATE is the process's state vector (a vector of them, one per leg, for a
+list of legs); it is reused, so copy what you keep.
 
   (map-simulated-paths (lambda (chunk)
                          (declare (ignore chunk))
@@ -339,7 +471,8 @@ pairs); it is reused, so copy what you keep.
   (let ((plan (make-simulation-plan process market dates
                                     :n-paths n-paths :seed seed :rng rng :sampler sampler
                                     :antithetic antithetic :n-steps n-steps :max-dt max-dt
-                                    :every-step every-step :correlation correlation)))
+                                    :every-step every-step :correlation correlation
+                                    :derive derive)))
     (values (run-simulation plan visitor :outputs outputs
                                          :state-form (if (typep process 'stochastic-process) :array :legs)))))
 
@@ -348,39 +481,164 @@ pairs); it is reused, so copy what you keep.
 ;;; --------------------------------------------------------------------
 
 (defgeneric market-at-state (market simulation date states)
-  (:documentation "MARKET as of DATE, with each simulated underlying's spot set
-from its state: STATES is a vector of the legs' state vectors in the order of
-(SIMULATION-UNDERLYINGS SIMULATION), element 0 the spot. The default, for a
-composite market, ages MARKET to DATE and sets the spots in one copy of its
-tables; curves, dividend schedules, vol structures and fixings are kept.
-Define a method on your market class, or pass :MARKET-FROM-STATE to SIMULATE
-(a function of the same arguments), to build markets otherwise.
+  (:documentation "MARKET as of DATE built from the simulated states: STATES
+is a vector of the legs' state vectors in the order of
+(SIMULATION-UNDERLYINGS SIMULATION). The default, for a composite market,
+ages MARKET to DATE in one copy of its tables, sets each leg's target to
+STRUCTURE-AT-STATE of its state (a spot leg: element 0), then each :DERIVE
+target to its function's value; every other component (curves, dividend
+schedules, vol structures, fixings) is kept. Define a method on your market
+class, or pass :MARKET-FROM-STATE to SIMULATE (a function of the same
+arguments), to build markets otherwise.
 
   (market-at-state m plan #D\"2027-03-24\" states)")
   (:method ((m composite-market) simulation date states)
-    (market-with-spots m date (iter (for u in (simulation-underlyings simulation))
-                                    (for s in-vector states)
-                                    (collect (cons u (aref s 0))))))
+    (let ((new (copy-composite-market m :valuation-date date)))
+      (iter (for leg in-vector (simulation-plan-legs simulation))
+            (for state in-vector states)
+            (for target = (simulation-leg-target leg))
+            (set-market-component new target
+                                  (apply #'structure-at-state (simulation-leg-process leg) target
+                                         (simulation-leg-initial leg) new date state
+                                         (simulation-leg-options leg))
+                                  date))
+      (iter (for (target . function) in (simulation-plan-derive simulation))
+            (set-market-component new target (funcall function new date states) date))
+      new))
   (:method ((m market) simulation date states)
     (declare (ignore simulation date states))
     (signal-invalid-argument 'market m 'composite-market
                              "a composite market, a MARKET-AT-STATE method for this market class, or :MARKET-FROM-STATE")))
 
-(defun market-with-spots (market date spots)
-  "A copy of the composite MARKET valued on DATE with the spots of SPOTS, an
-alist (underlying . spot), in one copy of its tables."
-  (let ((new (copy-composite-market market :valuation-date date)))
-    (iter (for (u . s) in spots)
-          (setf (gethash u (market-spots new)) (float s 1d0)))
-    new))
+(defun simulation-date (plan k)
+  "The date of event K of PLAN (0: the valuation date)."
+  (if (zerop k)
+      (valuation-date (simulation-plan-market plan))
+      (aref (simulation-plan-event-dates plan) (1- k))))
 
-(defun simulation-market (plan k states)
-  "The market at event K (0: the valuation date) for STATES."
-  (let ((date (if (zerop k)
-                  (valuation-date (simulation-plan-market plan))
-                  (aref (simulation-plan-event-dates plan) (1- k)))))
-    (funcall (or (simulation-plan-market-from-state plan) #'market-at-state)
-             (simulation-plan-market plan) plan date states)))
+(defun simulation-market (plan k states &optional fixings)
+  "The market at event K (0: the valuation date) for STATES, carrying the
+path's FIXINGS (a fixing buffer, see PATH-FIXINGS!) of the dates before K."
+  (let ((date (simulation-date plan k)))
+    (a:if-let ((from-state (simulation-plan-market-from-state plan)))
+      (funcall from-state (simulation-plan-market plan) plan date states)
+      (let ((market (market-at-state (simulation-plan-market plan) plan date states)))
+        (when (and fixings (plusp k))
+          (add-path-fixings plan market k fixings))
+        market))))
+
+;;; --------------------------------------------------------------------
+;;; Discounting and fixings along a path
+;;; --------------------------------------------------------------------
+
+(defgeneric state-discount (process state)
+  (:documentation "The discount from the valuation date along a path where
+PROCESS's state is STATE, exp(-int r ds), or NIL if PROCESS does not drive
+a curve: the default reads a state component named :INTEGRAL.")
+  (:method ((p stochastic-process) state)
+    (a:when-let ((i (position :integral (process-state-names p))))
+      (exp (- (aref state i))))))
+
+(defun default-discount-target (market)
+  "(:curve id) for the discount curve of the composite MARKET's only currency."
+  (let ((currencies (sorted-keys (market-discount-curve-for market))))
+    (unless (= 1 (length currencies))
+      (signal-invalid-argument 'target nil 'list
+                               (format nil "a curve to discount on, (path-discount '(:curve id)): the market ~
+discounts ~:[no currency~;~:*~{~S~^, ~}~]" currencies)))
+    `(:curve ,(gethash (first currencies) (market-discount-curve-for market)))))
+
+(defun simulation-path-discount (plan k states target)
+  "PATH-DISCOUNT in a clause: the discount from the valuation date to event K
+on the curve TARGET ((:curve id), default the only currency's discount
+curve), from the leg driving it if any, else from the initial market."
+  (let ((market (simulation-plan-market plan)))
+    (cond ((zerop k) 1d0)
+          ((and (null target) (not (typep market 'composite-market)))
+           (discount-factor market (simulation-date plan k)))
+          (t
+           (let* ((target (if target (normalize-target target) (default-discount-target market)))
+                  (legs (simulation-plan-legs plan))
+                  (i (position target legs :key #'simulation-leg-target :test #'equal)))
+             (unless (eq (first target) :curve)
+               (signal-invalid-argument 'target target 'list "a curve to discount on, (:curve id)"))
+             (if i
+                 (or (state-discount (simulation-leg-process (aref legs i)) (svref states i))
+                     (signal-invalid-argument 'target target 'list
+                                              (format nil "a curve whose leg's process discounts along the path ~
+(~(~A~) has no :INTEGRAL state)" (class-name (class-of (simulation-leg-process (aref legs i)))))))
+                 (market-curve-discount market (second target) (simulation-date plan k))))))))
+
+(defun make-fixing-buffer (plan)
+  "A buffer for one path's fixings of PLAN's :FIX indexes, one per (index,
+event), or NIL without :FIX."
+  (let ((n (length (simulation-plan-fix plan))))
+    (when (plusp n)
+      (make-array (* n (1+ (length (simulation-plan-event-dates plan))))
+                  :element-type 'double-float :initial-element 0d0))))
+
+(defun fixing-market (plan k states)
+  "A market on event K's date holding only the forecast curves of PLAN's :FIX
+indexes, as the leg driving each (or the :DERIVE form, or the initial
+market) gives it on this path."
+  (let* ((initial (simulation-plan-market plan))
+         (date (simulation-date plan k))
+         (curves (make-hash-table :test 'equal))
+         (full nil))
+    (iter (for index in-vector (simulation-plan-fix plan))
+          (for id = (index-forecast-curve index))
+          (for target = `(:curve ,id))
+          (unless (gethash id curves)
+            (setf (gethash id curves)
+                  (let ((i (position target (simulation-plan-legs plan) :key #'simulation-leg-target :test #'equal)))
+                    (cond (i (let ((leg (aref (simulation-plan-legs plan) i)))
+                               (apply #'structure-at-state (simulation-leg-process leg) target
+                                      (simulation-leg-initial leg) initial date (svref states i)
+                                      (simulation-leg-options leg))))
+                          ((assoc target (simulation-plan-derive plan) :test #'equal)
+                           (market-component (or full (setf full (market-at-state initial plan date states)))
+                                             target))
+                          (t (find-yield-curve initial id)))))))
+    (make-instance 'composite-market
+                   :valuation-date date :day-counter (market-day-counter initial) :underlyings '()
+                   :spots (make-hash-table :test 'equal) :yield-curves curves
+                   :dividend-curves (make-hash-table :test 'equal)
+                   :vol-structures (make-hash-table :test 'equal)
+                   :underlying-currency (make-hash-table :test 'equal)
+                   :discount-curve-for (make-hash-table :test 'equal))))
+
+(defun path-fixings! (plan k states buffer)
+  "Store in BUFFER each :FIX index's fixing on event K's date (NaN on a day
+the index does not fix), from that date's forecast curve on this path."
+  (when buffer
+    (let* ((date (simulation-date plan k))
+           (fix (simulation-plan-fix plan))
+           (market nil))
+      (iter (for index in-vector fix)
+            (for i from 0)
+            (setf (aref buffer (+ i (* k (length fix))))
+                  (if (business-day-p (index-fixing-calendar index) date)
+                      (if (zerop k)
+                          (index-fixing index (simulation-plan-market plan) date)
+                          (index-fixing index (or market (setf market (fixing-market plan k states))) date))
+                      (quiet-nan)))))))
+
+(defun add-path-fixings (plan market k buffer)
+  "Add to MARKET, built for event K and not yet shared, the path's fixings in
+BUFFER on the dates before K, on top of the initial market's."
+  (let ((fix (simulation-plan-fix plan))
+        (tables (market-fixings market)))
+    (iter (for index in-vector fix)
+          (for i from 0)
+          (for id = (index-name index))
+          (let ((table (make-hash-table :test 'equalp)))
+            (a:when-let ((old (gethash id tables)))
+              (maphash (lambda (d r) (setf (gethash d table) r)) old))
+            (iter (for j below k)
+                  (for rate = (aref buffer (+ i (* j (length fix)))))
+                  (unless (sb-ext:float-nan-p rate)
+                    (setf (gethash (simulation-date plan j) table) rate)))
+            (setf (gethash id tables) table)))))
 
 ;;; --------------------------------------------------------------------
 ;;; Streamed statistics and stored values
@@ -668,11 +926,14 @@ market built from the path's state on its date as during the run, at every
 simulation date from the valuation date on.
 
   (path-markets r 0)"
-  (let ((plan (simulation-result-plan result)))
+  (let* ((plan (simulation-result-plan result))
+         (fixings (make-fixing-buffer plan)))
     (iter (for states in-vector (kept-dates result path :states))
           (for k from 0)
           (for date in (simulation-dates plan))
-          (when states (collect (cons date (simulation-market plan k states)))))))
+          (when states
+            (path-fixings! plan k states fixings)
+            (collect (cons date (simulation-market plan k states fixings)))))))
 
 (defun simulation-recorded-names (result)
   "The names RESULT recorded with RECORD, keywords or lists, in printed order."
@@ -706,29 +967,33 @@ already stopped.
             (finally (return v))))))
 
 (defun simulation-state-names (process)
-  "The names a :STATE clause may use for PROCESS, a process or a list of
-(underlying process) pairs: the process's state names, or (component
-underlying) lists for pairs.
+  "The names a :STATE clause may use for PROCESS, a process or a list of legs
+(target process &rest options): the process's state names, or (component
+leg) lists for legs, a spot leg named by its underlying and any other by its
+target.
 
   (simulation-state-names (make-heston)) => (:SPOT :VARIANCE)
   (simulation-state-names `((:aapl ,(make-heston)) (:msft ,(make-gbm))))
   => ((:SPOT :AAPL) (:VARIANCE :AAPL) (:SPOT :MSFT))"
   (if (typep process 'stochastic-process)
       (process-state-names process)
-      (iter (for (u p) in process)
-            (appending (mapcar (lambda (name) `(,name ,u)) (process-state-names p))))))
+      (iter (for leg in process)
+            (for designator = (normalize-designator (first leg)))
+            (appending (mapcar (lambda (name) `(,name ,designator)) (process-state-names (second leg)))))))
 
 (defun simulation-state-location (plan name underlying)
-  "(values leg index) of the state component NAME of UNDERLYING (NIL: the only
-leg) in PLAN; a wrong name lists the valid ones."
+  "(values leg index) of the state component NAME of the leg UNDERLYING (an
+underlying for its spot leg, or a target; NIL: the only leg) in PLAN; a wrong
+name lists the valid ones."
   (let* ((legs (simulation-plan-legs plan))
+         (underlying (and underlying (normalize-designator underlying)))
          (valid (if (= 1 (length legs))
                     (process-state-names (simulation-leg-process (aref legs 0)))
                     (iter (for l in-vector legs)
                           (appending (mapcar (lambda (n) `(,n ,(simulation-leg-underlying l)))
                                              (process-state-names (simulation-leg-process l)))))))
          (leg (cond ((and (null underlying) (= 1 (length legs))) 0)
-                    (t (position underlying legs :key #'simulation-leg-underlying)))))
+                    (t (position underlying legs :key #'simulation-leg-underlying :test #'equal)))))
     (flet ((refuse ()
              (signal-invalid-argument 'state `(,name ,@(when underlying `(,underlying))) 'keyword
                                       (format nil "a state name of this simulation: ~{~S~^, ~} (see SIMULATION-STATE-NAMES)"
@@ -791,7 +1056,7 @@ contribute 0)."
 ;;; --------------------------------------------------------------------
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
-  (defparameter *simulate-clauses* '(:accumulate :hold :portfolio :state :start :every :on :final))
+  (defparameter *simulate-clauses* '(:accumulate :hold :portfolio :state :derive :start :every :on :final))
 
   (defun simulate-clause-error (clause reason)
     (signal-invalid-argument 'clause clause 'list (format nil "a SIMULATE clause: ~A" reason)))
@@ -817,18 +1082,41 @@ symbol that names no function."
           (simulate-clause-error clause "distinct output names")))
       entries))
 
-  (defun literal-pairs-form (process)
-    "PROCESS as a form: a literal list of (underlying process-form) pairs, as
-D5 writes them, becomes a form making the list with the process forms
-evaluated; anything else is evaluated as it is."
-    (if (and (consp process) (consp (first process)) (keywordp (first (first process))))
-        `(list ,@(mapcar (lambda (pair)
-                           (unless (and (consp pair) (keywordp (first pair)) (= 2 (length pair)))
+  (defun literal-target-p (x)
+    "True if X is written as a target: an underlying keyword or (kind key)."
+    (or (keywordp x) (and (consp x) (keywordp (first x)))))
+
+  (defun literal-legs-form (process)
+    "PROCESS as a form: a literal list of legs (target process-form &rest
+options), the target written as data, becomes a form making the list with
+the process and option forms evaluated; anything else is evaluated as it is."
+    (if (and (consp process) (consp (first process)) (literal-target-p (first (first process))))
+        `(list ,@(mapcar (lambda (leg)
+                           (unless (and (consp leg) (literal-target-p (first leg)) (<= 2 (length leg)))
                              (signal-invalid-argument 'process process 'list
-                                                      "a list of (underlying process) pairs"))
-                           `(list ,(first pair) ,(second pair)))
+                                                      "a list of legs (target process &rest options)"))
+                           `(list ',(first leg) ,@(rest leg)))
                          process))
         process))
+
+  (defun literal-correlation-form (correlation)
+    "CORRELATION as a form: a literal list of (leg leg rho-form), the legs
+written as data, becomes a form with each rho evaluated; anything else (a
+quoted list, a variable, an array form) is evaluated as it is."
+    (if (and (consp correlation) (consp (first correlation))
+             (literal-target-p (first (first correlation))))
+        `(list ,@(mapcar (lambda (entry)
+                           (if (and (consp entry) (= 3 (length entry)))
+                               `(list ',(first entry) ',(second entry) ,(third entry))
+                               `',entry))
+                         correlation))
+        correlation))
+
+  (defun calls-named-p (tree names)
+    "True if TREE contains a form whose operator's name is one of NAMES."
+    (and (consp tree)
+         (or (and (symbolp (first tree)) (member (symbol-name (first tree)) names :test #'string=))
+             (some (lambda (x) (calls-named-p x names)) (if (a:proper-list-p tree) tree (list (car tree) (cdr tree)))))))
 
   (defun parse-portfolio (clause)
     "(values var init record engine) of a :PORTFOLIO clause."
@@ -855,8 +1143,13 @@ the clauses' logic on every path, and return a SIMULATION-RESULT. DATES is an
 ascending list of dates after the valuation date; the last is the end of every
 path.
 
-PROCESS is a process, or a literal list of (underlying process) pairs for
-several underlyings, e.g. ((:spx (make-gbm)) (:vix (make-heston))). OPTIONS:
+PROCESS is a process, or a literal list of legs (target process &rest
+options), each leg's process driving one market component, its target:
+(:spot u) the spot of underlying U, (:vol u), (:dividend u),
+(:dividend-schedule u) or (:curve id). A bare keyword U is (:spot u), so
+((:spx (make-gbm)) (:vix (make-heston))) simulates two spots. The leg options
+go to STRUCTURE-AT-STATE. A process given alone drives the market's only
+underlying's spot. OPTIONS:
   :n-paths 10000     paths simulated.
   :seed 42           the random seed.
   :rng :counter      :counter (a path's draws do not depend on N-PATHS, chunks
@@ -865,14 +1158,21 @@ several underlyings, e.g. ((:spx (make-gbm)) (:vix (make-heston))). OPTIONS:
                      SIMULATION-SUMMARY then work on pair means.
   :n-steps :max-dt   fill the gaps between DATES with extra steps (default one
                      step per gap); the clauses still run only on DATES.
-  :correlation       spot correlations between underlyings, as in
-                     MAP-SIMULATED-PATHS.
+  :correlation       correlations between legs, a list of (leg leg rho) naming
+                     legs by target or underlying, e.g. ((:spx :ndx 0.6d0)),
+                     or a factor matrix, as in MAP-SIMULATED-PATHS.
   :keep              what to store for later: :QUANTILES (per-date quantiles of
                      every recorded name), (:PATHS k) (states and held values of
                      the first k paths; k is evaluated), :STATES, or a list of
                      these.
   :market-from-state a function building a date's market from the simulated
                      states, replacing MARKET-AT-STATE.
+  :fix               a list of rate indexes, e.g. (list (euribor #T\"6M\")). On
+                     each date the index fixes, its fixing is read from that
+                     date's simulated curve, and the markets of later dates
+                     hold it, so instruments priced there use the path's own
+                     past fixings. Pricing needs every fixing date among DATES
+                     (FIXING-DATES lists an instrument's).
 
 Optional clauses. :ACCUMULATE and :HOLD may repeat and :FINAL appears
 once; the logic clauses run in the order written.
@@ -891,31 +1191,44 @@ once; the logic clauses run in the order written.
                      :VALUE and Greek keys; each is recorded every date under
                      the name (var-keyword key), e.g. (:book :delta). Without
                      :FINAL the one output is :VALUE.
-  (:state var name [underlying])
+  (:state var name [leg])
                      VAR is bound to the double-float state component NAME
-                     (:spot, :variance, ... see SIMULATION-STATE-NAMES) at the
-                     current date.
+                     (:spot, :variance, ... see SIMULATION-STATE-NAMES) of the
+                     leg (an underlying, or a target) at the current date.
+  (:derive target ([market [date]]) form ...)
+                     sets TARGET's component in every market built from the
+                     paths to the value of the forms, computed from DATE,
+                     MARKET (that date's market, with the legs' components
+                     and earlier :DERIVE targets already set) and the :STATE
+                     variables. The forms cannot see :ACCUMULATE or :HOLD
+                     variables, RECORD or STOP, so the component depends only
+                     on the date and the simulated states. TARGET may not be
+                     a leg's. For example, a flat implied vol that
+                     follows the spot S (a :STATE variable):
+                       (:derive (:vol :spx) ()
+                         (make-instance 'flat-black-vol :vol (* 0.002d0 s)))
   (:start [(market)] form ...)
                      at the valuation date, before the first step. The optional
                      (market) binds that date's market. RECORD here goes to the
                      valuation date, the first of SIMULATION-DATES.
   (:every (date [market]) form ...)
                      at every date of DATES. DATE is bound to the date, MARKET
-                     to the market on it with the simulated spots.
+                     to the market on it built from the simulated states.
   (:on date-list (i [market]) form ...)
                      at the dates of DATE-LIST (a subset of DATES), I being the
                      date's position in the list.
   (:final (name form) ...)
                      one clause: named per-path outputs, evaluated after the
                      last date (or after STOP) from the final state; NAME is a
-                     keyword. (:final form) is (:final (:value form)).
+                     keyword. (:final form) is (:final (:value form)). MARKET
+                     in the forms is the market of the path's last date.
 MARKET is built only if the
 clause uses it, and a global special variable may serve as its name. Clause
 code runs serially: pricing inside it starts no parallel work. An error in
 a clause is re-signalled in the caller.
 
-Inside :START, :EVERY and :ON bodies two local macros are available, matched by
-name in any package:
+Inside :START, :EVERY and :ON bodies these local operators are available,
+matched by name in any package:
   (record name value)  adds the real VALUE to the statistic NAME at the current
                        date. NAME is a keyword. The statistic at a date is
                        over all the values recorded under NAME at it. The
@@ -924,6 +1237,13 @@ name in any package:
                        individual values are not stored. It returns VALUE.
   (stop)               ends the path: its later dates run no clauses and
                        record nothing, and :FINAL still runs.
+  (path-discount [curve])
+                       the discount from the valuation date to the current
+                       date along this path, on CURVE ((:curve id); default the
+                       discount curve of the market's only currency). When a
+                       leg simulates that curve it is exp(-integral of the
+                       short rate) on the path; otherwise it is the initial
+                       market's discount factor. Also available in :FINAL.
 
 Results of simulation in SIMULATION-RESULT:
   :final outputs   SIMULATION-VALUES (one number per path), SIMULATION-MEAN,
@@ -951,15 +1271,31 @@ The function underneath is MAP-SIMULATED-PATHS.
           (setf shares delta)))
       (record :balance (- (+ cash (* shares s)) (price call :black-scholes market))))
     (:final (:hedged (+ cash (* shares s) (- (payoff-value (option-payoff call) s))))
-            (:unhedged (- premium (payoff-value (option-payoff call) s)))))"
+            (:unhedged (- premium (payoff-value (option-payoff call) s)))))
+
+  ;; The exposure of a SWAP when the curve it prices on follows Hull-White:
+  ;; its INDEX fixes along each path on the simulated curve, and
+  ;; PATH-DISCOUNT discounts along the path.
+  (simulate ((make-hull-white :a 0.03d0 :sigma 0.008d0) market
+             (sort (append dates (fixing-dates swap market)) #'date<)
+             :n-paths 5000 :fix (list index) :keep :quantiles)
+    (:every (date market)
+      (record :exposure (max 0d0 (swap-npv swap market)))
+      (record :discounted (* (path-discount) (swap-npv swap market))))
+    (:final (:pv (* (path-discount) (swap-npv swap market)))))"
   (let* ((record-name (intern "RECORD")) (stop-name (intern "STOP"))
+         (discount-name (intern "PATH-DISCOUNT")) (fixings (gensym "FIXINGS"))
          (plan (gensym "PLAN")) (store (gensym "STORE")) (stats (gensym "STATS"))
          (path (gensym "PATH")) (k (gensym "K")) (states (gensym "STATES"))
          (alive (gensym "ALIVE")) (cached (gensym "MARKET")) (market-fn (gensym "MARKET-AT"))
          (values-vector (gensym "VALUES"))
          (keep (getf options :keep))
-         (plan-options (a:remove-from-plist options :keep))
-         accumulators holds portfolios state-vars starts everys ons finals)
+         (plan-options (let ((rest (a:remove-from-plist options :keep)))
+                         (if (getf rest :correlation)
+                             `(:correlation ,(literal-correlation-form (getf rest :correlation))
+                               ,@(a:remove-from-plist rest :correlation))
+                             rest)))
+         accumulators holds portfolios state-vars derives starts everys ons finals)
     (dolist (clause clauses)
       (unless (and (consp clause) (member (first clause) *simulate-clauses*))
         (simulate-clause-error clause (format nil "one of ~{~S~^, ~}" *simulate-clauses*)))
@@ -975,9 +1311,19 @@ The function underneath is MAP-SIMULATED-PATHS.
         (:portfolio (push (multiple-value-list (parse-portfolio clause)) portfolios))
         (:state (unless (<= 3 (length clause) 4)
                   (simulate-clause-error clause "(:state var name [underlying])"))
-                (push `(,(second clause) ,(third clause) ,(fourth clause)
+                (push `(,(second clause) ,(third clause)
+                        ,(if (consp (fourth clause)) `',(fourth clause) (fourth clause))
                         ,(gensym "LEG") ,(gensym "INDEX"))
                       state-vars))
+        (:derive (destructuring-bind (&optional target binding &rest body) (rest clause)
+                   (unless (and (literal-target-p target) (listp binding) (<= (length binding) 2)
+                                (every (lambda (s) (and (symbolp s) s (not (keywordp s)))) binding))
+                     (simulate-clause-error clause "(:derive target ([market [date]]) form ...)"))
+                   (when (calls-named-p body '("RECORD" "STOP"))
+                     (simulate-clause-error clause "a :DERIVE body without RECORD or STOP (it runs per market, not per path)"))
+                   (push `(,target ,(or (first binding) (gensym "MARKET")) ,(or (second binding) (gensym "DATE"))
+                           ,body)
+                         derives)))
         (:start (destructuring-bind (&rest body) (rest clause)
                   (let ((binding (when (clause-binding-list-p (first body)) (pop body))))
                     (push `(,(first binding) ,body) starts))))
@@ -997,7 +1343,7 @@ The function underneath is MAP-SIMULATED-PATHS.
     (when (rest portfolios)
       (simulate-clause-error (first portfolios) "one :PORTFOLIO clause"))
     (setf accumulators (nreverse accumulators) holds (nreverse holds)
-          state-vars (nreverse state-vars) starts (nreverse starts)
+          state-vars (nreverse state-vars) derives (nreverse derives) starts (nreverse starts)
           everys (nreverse everys) ons (nreverse ons))
     (let* ((portfolio (first portfolios))
            (book (first portfolio))
@@ -1043,22 +1389,33 @@ The function underneath is MAP-SIMULATED-PATHS.
                     (store-path-date ,store ,path ,k ,states
                                      (list ,@(iter (for var in held-vars)
                                                    (appending `(,(a:make-keyword (symbol-name var)) ,var))))))))
+        ;; The state locations are bound before the plan, which the :DERIVE
+        ;; functions go into, and set from it before any path runs.
         `(let* (,@(iter (for (nil nil nil nil dates-form on-dates) in ons)
                         (collect `(,on-dates ,dates-form)))
-                (,plan (make-simulation-plan ,(literal-pairs-form process) ,market ,dates
-                                             :on-dates (append ,@(mapcar #'sixth ons))
-                                             ,@plan-options))
+                ,@(iter (for (nil nil nil leg index) in state-vars)
+                        (appending `((,leg 0) (,index 0))))
+                (,plan (make-simulation-plan
+                        ,(literal-legs-form process) ,market ,dates
+                        :on-dates (append ,@(mapcar #'sixth ons))
+                        ,@(when derives
+                            `(:derive
+                              (list ,@(iter (for (target market-var date-var body) in derives)
+                                            (collect
+                                                `(list ',target
+                                                       (lambda (,market-var ,date-var ,states)
+                                                         (declare (ignorable ,market-var ,date-var ,states)
+                                                                  (simple-vector ,states))
+                                                         ,(with-states body))))))))
+                        ,@plan-options))
                 (,store (make-simulation-store ,plan ,(keep-form keep)))
                 ,@(iter (for (nil nil nil nil nil on-dates positions) in ons)
                         (collect `(,positions (on-positions ,plan ,on-dates)))))
-           (let* (,@(iter (for (nil name underlying leg index) in state-vars)
-                          (for location = (gensym "LOCATION"))
-                          (appending `((,location (multiple-value-list
-                                                   (simulation-state-location ,plan ,name ,underlying)))
-                                       (,leg (first ,location))
-                                       (,index (second ,location))))))
-             (declare (ignorable ,@(iter (for (nil nil nil leg index) in state-vars)
-                                         (appending `(,leg ,index)))))
+           (declare (fixnum ,@(iter (for (nil nil nil leg index) in state-vars) (appending `(,leg ,index)))))
+           (progn
+             ,@(iter (for (nil name underlying leg index) in state-vars)
+                     (collect `(multiple-value-setq (,leg ,index)
+                                 (simulation-state-location ,plan ,name ,underlying)))))
              (multiple-value-bind (outputs chunks)
                  (run-simulation
                   ,plan
@@ -1066,20 +1423,24 @@ The function underneath is MAP-SIMULATED-PATHS.
                     (declare (ignore chunk))
                     (let ((,stats (make-hash-table :test 'equal))
                           (,path 0) (,k 0) (,states nil) (,alive t) (,cached nil)
+                          (,fixings (make-fixing-buffer ,plan))
                           ,@(iter (for (var) in accumulators) (collect `(,var 0d0)))
                           ,@(mapcar (lambda (v) `(,v nil)) held-vars))
                       (declare (fixnum ,path ,k)
                                ,@(when accumulators `((double-float ,@(mapcar #'first accumulators))))
                                (ignorable ,stats ,alive))
                       (flet ((,market-fn ()
-                               (or ,cached (setf ,cached (simulation-market ,plan ,k ,states)))))
-                        (declare (ignorable #',market-fn))
+                               (or ,cached (setf ,cached (simulation-market ,plan ,k ,states ,fixings))))
+                             (,discount-name (&optional target)
+                               (simulation-path-discount ,plan ,k ,states target)))
+                        (declare (ignorable #',market-fn #',discount-name))
                         (macrolet ((,record-name (name value)
                                      `(record-value ,',stats ,',store ,name ,',path ,',k ,value))
                                    (,stop-name () `(setf ,',alive nil)))
                           (values
                            (lambda (p s)
                              (setf ,path p ,k 0 ,states s ,cached nil ,alive t)
+                             (path-fixings! ,plan 0 s ,fixings)
                              ,@(iter (for (var init) in accumulators) (collect `(setf ,var (float ,init 1d0))))
                              ,@(iter (for (var init) in holds) (collect `(setf ,var ,init)))
                              ,@(when book `((setf ,book ,(second portfolio))))
@@ -1091,6 +1452,7 @@ The function underneath is MAP-SIMULATED-PATHS.
                            (lambda (p kk s)
                              (declare (ignore p))
                              (setf ,k kk ,states s ,cached nil)
+                             (path-fixings! ,plan kk s ,fixings)
                              ,@(iter (for clause in everys)
                                      (collect
                                          (ecase (first clause)
@@ -1113,14 +1475,16 @@ The function underneath is MAP-SIMULATED-PATHS.
                              (declare (ignore p) (type double-vector ,values-vector) (ignorable ,values-vector))
                              (setf ,states s)
                              ,(with-states
-                                  (iter (for (name form) in outputs)
-                                        (for o from 0)
-                                        (collect `(setf (aref ,values-vector ,o)
-                                                        (output-value ,name ,path ,form))))))
+                                  `(,(with-market
+                                      (intern "MARKET")
+                                      (iter (for (name form) in outputs)
+                                            (for o from 0)
+                                            (collect `(setf (aref ,values-vector ,o)
+                                                            (output-value ,name ,path ,form))))))))
                            (lambda () ,stats))))))
                   :outputs ,(length outputs))
                (finish-simulation ,plan ,store ',(mapcar #'first outputs)
-                                  ,(if outputs 'outputs nil) chunks))))))))
+                                  ,(if outputs 'outputs nil) chunks)))))))
 
 (defun on-positions (plan dates)
   "A fixnum vector over PLAN's event indices (1-based; 0 unused) holding each

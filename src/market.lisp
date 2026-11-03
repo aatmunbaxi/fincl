@@ -483,18 +483,78 @@ amounts (floored at 0), the rate or the quoted rate.
             (bump-dividend ex-date shift)
             (->> (market-with market :dividend-schedules underlying))))))
   (destructuring-bind (kind key) factor
-    (multiple-value-bind (table what known)
-        (ecase kind
-          (:spot (values :spots "underlying" (market-underlyings market)))
-          (:vol (values :vol-structures "vol structure for"
-                        (sorted-keys (market-vol-structures market))))
-          (:dividend (values :dividend-curves "dividend curve for" (market-underlyings market)))
-          (:dividend-schedule (values :dividend-schedules "dividend schedule for"
-                                      (sorted-keys (market-dividend-schedules market))))
-          (:curve (values :yield-curves "yield curve" (sorted-keys (market-yield-curves market)))))
-      (let ((old (market-entry (market-table market table) key what known)))
-        (->> (if (realp old) (apply-shift old shift) (bump-structure old shift))
-             (market-with market table key))))))
+    (let ((table (component-table kind))
+          (old (market-component market factor)))
+      (->> (if (realp old) (apply-shift old shift) (bump-structure old shift))
+           (market-with market table key)))))
+
+;;; --------------------------------------------------------------------
+;;; Components by target (task 32)
+;;; --------------------------------------------------------------------
+
+(defparameter *target-kinds* '(:spot :vol :dividend :dividend-schedule :curve)
+  "The kinds of market component a target names, in BUMP's factor syntax.")
+
+(defun component-table (kind)
+  "The MARKET-TABLE keyword holding components of KIND."
+  (ecase kind
+    (:spot :spots)
+    (:vol :vol-structures)
+    (:dividend :dividend-curves)
+    (:dividend-schedule :dividend-schedules)
+    (:curve :yield-curves)))
+
+(defun component-type (kind)
+  "The type of a component of KIND, and its description."
+  (ecase kind
+    (:spot (values 'real "a real spot"))
+    (:vol (values 'black-vol-structure "a BLACK-VOL-STRUCTURE"))
+    (:dividend (values 'dividend-curve "a DIVIDEND-CURVE"))
+    (:dividend-schedule (values 'dividend-schedule "a DIVIDEND-SCHEDULE"))
+    (:curve (values 'yield-curve "a YIELD-CURVE"))))
+
+(defun normalize-target (target)
+  "TARGET as (kind key): a keyword U is (:SPOT U); a list must be (kind key)
+with kind one of *TARGET-KINDS* and key a keyword."
+  (cond ((keywordp target) `(:spot ,target))
+        ((and (consp target) (= 2 (length target)) (member (first target) *target-kinds*)
+              (keywordp (second target)))
+         target)
+        (t (signal-invalid-argument 'target target 'list
+                                    (format nil "a target (kind key), kind one of ~{~S~^, ~}, or an underlying keyword"
+                                            *target-kinds*)))))
+
+(defun market-component (market target)
+  "The component of the composite MARKET that TARGET names, in BUMP's factor
+syntax: (:spot u) the spot of underlying U (a bare keyword U means the same),
+(:vol u) its vol structure, (:dividend u) its continuous dividend curve,
+(:dividend-schedule u) its discrete dividends, (:curve id) the yield curve ID.
+A component the market lacks signals MISSING-MARKET-DATA listing what it has.
+
+  (market-component m '(:curve :usd-ois))
+  (market-component m :spx)   ; the SPX spot"
+  (check-input market composite-market "a composite market")
+  (destructuring-bind (kind key) (normalize-target target)
+    (let ((table (market-table market (component-table kind))))
+      (multiple-value-bind (what known)
+          (ecase kind
+            (:spot (values "underlying" (market-underlyings market)))
+            (:vol (values "vol structure for" (sorted-keys table)))
+            (:dividend (values "dividend curve for" (market-underlyings market)))
+            (:dividend-schedule (values "dividend schedule for" (sorted-keys table)))
+            (:curve (values "yield curve" (sorted-keys table))))
+        (market-entry table key what known)))))
+
+(defun set-market-component (market target value date)
+  "Set TARGET's component of MARKET, a fresh copy not yet shared, to VALUE,
+checked against the component's type; DATE names the market in the report."
+  (destructuring-bind (kind key) target
+    (multiple-value-bind (type description) (component-type kind)
+      (unless (typep value type)
+        (signal-invalid-argument target value type
+                                 (format nil "~A for ~S on ~A" description target date)))
+      (setf (gethash key (market-table market (component-table kind)))
+            (if (eq kind :spot) (float value 1d0) value)))))
 
 (defmethod print-object ((m composite-market) stream)
   (print-unreadable-object (m stream :type t)

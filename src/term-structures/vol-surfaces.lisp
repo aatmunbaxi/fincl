@@ -509,6 +509,61 @@ or (:relative x)), as BUMP-STRUCTURE makes it."))
                     (+ (expt (+ sigma x) 2) (* ratio (- wt (* sigma sigma))))))))))
 
 ;;; --------------------------------------------------------------------
+;;; Rescaled surfaces: a new ATM level on a surface's shape (task 32)
+;;; --------------------------------------------------------------------
+
+(defclass rescaled-surface (moneyness-vol-structure)
+  ((base :initarg :base :reader rescaled-base)
+   (atm-variance :initarg :atm-variance :reader rescaled-atm-variance :type function))
+  (:documentation "BASE's smile at each maturity scaled to the ATM-forward
+total variance ATM-VARIANCE gives: w'(k, T) = w(k, T) a(T) / w(0, T). Make
+it with RESCALE-VOL-STRUCTURE."))
+
+(defun base-variance-derivatives (base k horizon)
+  "(values w w_k w_kk w_T) of BASE, a moneyness surface or a flat vol."
+  (etypecase base
+    (moneyness-vol-structure (surface-variance-derivatives base k horizon))
+    (flat-black-vol (let ((v2 (expt (flat-vol base) 2)))
+                      (values (* v2 horizon) 0d0 0d0 v2)))))
+
+(defun rescale-vol-structure (structure atm-variance)
+  "A vol structure with STRUCTURE's smile shape and the ATM level that
+ATM-VARIANCE gives. ATM-VARIANCE is a function of the time to maturity tau
+(market time from the valuation date of the market the result is read on)
+returning the total at-the-money-forward variance a(tau) wanted there. The
+result's total variance at log-moneyness k = ln(K/F) is
+w(k, tau) a(tau) / w(0, tau): at each maturity the at-the-money variance
+is a(tau) and every other strike keeps its ratio to it in STRUCTURE.
+STRUCTURE is a moneyness surface (SVI, SSVI, grid, smile) or a flat vol.
+
+When a(tau) / w(0, tau) changes quickly with tau the total variance can
+fall between maturities at some strikes (calendar arbitrage);
+CALENDAR-ARBITRAGE-FREE-P checks a result. For example, a simulated Heston
+variance v sets the level to the expected integrated variance:
+
+  (rescale-vol-structure surface
+                         (lambda (tau) (+ (* theta tau)
+                                          (* (- v theta) (/ (- 1 (exp (- (* kappa tau)))) kappa)))))"
+  (check-input structure (or moneyness-vol-structure flat-black-vol)
+               "a moneyness vol surface or a FLAT-BLACK-VOL")
+  (check-input atm-variance function "a function of the time to maturity")
+  (make-instance 'rescaled-surface :base structure :atm-variance atm-variance))
+
+(defmethod surface-variance-derivatives ((s rescaled-surface) k horizon)
+  (let ((tau (float horizon 1d0)))
+    (if (zerop tau)
+        (values 0d0 0d0 0d0 (/ (float (funcall (rescaled-atm-variance s) 1d-6) 1d0) 1d-6))
+        (let ((a (float (funcall (rescaled-atm-variance s) tau) 1d0))
+              (da (difference-quotient (lambda (x) (float (funcall (rescaled-atm-variance s) x) 1d0))
+                                       tau (* 1d-5 (max tau 1d-3)))))
+          (multiple-value-bind (w wk wkk wt) (base-variance-derivatives (rescaled-base s) k tau)
+            (multiple-value-bind (w0 w0k w0kk w0t) (base-variance-derivatives (rescaled-base s) 0d0 tau)
+              (declare (ignore w0k w0kk))
+              (let ((ratio (/ a w0)))
+                (values (* w ratio) (* wk ratio) (* wkk ratio)
+                        (+ (* wt ratio) (/ (* w da) w0) (- (/ (* w a w0t) (* w0 w0))))))))))))
+
+;;; --------------------------------------------------------------------
 ;;; Printing
 ;;; --------------------------------------------------------------------
 
@@ -527,6 +582,10 @@ or (:relative x)), as BUMP-STRUCTURE makes it."))
   (print-unreadable-object (s stream :type t)
     (format stream "~D expiries ~,4F..~,4F" (length (surface-expiries s))
             (aref (surface-expiries s) 0) (a:last-elt (surface-expiries s)))))
+
+(defmethod print-object ((s rescaled-surface) stream)
+  (print-unreadable-object (s stream :type t)
+    (format stream "rescaled ~A" (rescaled-base s))))
 
 (defmethod print-object ((s ssvi-surface) stream)
   (print-unreadable-object (s stream :type t)

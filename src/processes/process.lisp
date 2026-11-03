@@ -425,6 +425,45 @@ b_j (SIMULATE's :CORRELATION). The default puts it all on factor 0.
       (setf (aref v 0) 1d0)
       v)))
 
+;;; --------------------------------------------------------------------
+;;; Market components driven by a process (task 32)
+;;; --------------------------------------------------------------------
+
+(defgeneric process-targets (process)
+  (:documentation "The kinds of market component PROCESS can drive in
+SIMULATE, from (:spot :vol :dividend :dividend-schedule :curve): (:SPOT) for
+every equity process. The first is the kind a process given alone drives.
+
+  (process-targets (make-gbm)) => (:SPOT)")
+  (:method ((p stochastic-process)) '(:spot)))
+
+(defgeneric structure-at-state (process target initial market date state &key)
+  (:documentation "The market component TARGET (e.g. (:spot :spx) or
+(:curve :usd-ois)) on DATE, on a path where PROCESS's state vector is STATE.
+INITIAL is the component in the initial market; MARKET is the market on DATE
+built so far (aged, with the components of the legs before this one set).
+The keys are the leg's options in SIMULATE, e.g. :KNOTS in
+((:curve :usd-ois) (make-hull-white) :knots tenors). The method for a spot
+returns element 0 of STATE.
+
+Define a method on a process class to let it drive another kind of
+component; it must also list the kind in PROCESS-TARGETS.
+
+  (structure-at-state (make-gbm) '(:spot :spx) 100d0 m d #(104.2d0)) => 104.2d0")
+  (:method ((p stochastic-process) target initial market date state &key)
+    (declare (ignore initial market date))
+    (if (eq (first target) :spot)
+        (aref state 0)
+        (signal-invalid-argument 'target target 'list
+                                 (format nil "a target ~(~A~) drives: ~{~S~^, ~}"
+                                         (class-name (class-of p)) (process-targets p))))))
+
+(defgeneric steppable-p (process)
+  (:documentation "True if SIMULATE can step PROCESS (it has a stepper). The
+default is SIMULATABLE-P; a process the Monte Carlo engine cannot price
+options under but that can be stepped (a short-rate model) returns T.")
+  (:method ((p stochastic-process)) (simulatable-p p)))
+
 (defun state-index (process designator)
   "The state-vector index of the component DESIGNATOR names: a keyword from
 PROCESS-STATE-NAMES, or a list whose first element is one (task 23 adds the
