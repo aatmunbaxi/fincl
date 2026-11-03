@@ -43,20 +43,20 @@ The following are taken from =fincl/viz= demonstrations.
 
 
 
-| [[./viz/images/gbm-sim.png]] | [[./viz/images/heston-sim.png]] |
-| [[./viz/images/cev-sim.png]] | [[./viz/images/garch-sim.png]]  |
+| [[./viz/images/README-figures/gbm-sim.png]] | [[./viz/images/README-figures/heston-sim.png]] |
+| [[./viz/images/README-figures/cev-sim.png]] | [[./viz/images/README-figures/garch-sim.png]]  |
 
 ** Option Pricing and Statistics
-| [[./viz/images/price-vs-inputs.png]]  | [[./viz/images/greeks-vs-spot.png]] |
-| [[./viz/images/greeks-vs-expiry.png]] | [[./viz/images/volatility-smiles.png]]                |
+| [[./viz/images/README-figures/price-vs-inputs.png]]  | [[./viz/images/README-figures/greeks-vs-spot.png]] |
+| [[./viz/images/README-figures/greeks-vs-expiry.png]] | [[./viz/images/README-figures/volatility-smiles.png]]                |
 
 ** Monte Carlo
 
-| [[./viz/images/euro-convergence.png]] | [[./viz/images/american-convergence.png]] |
-| [[./viz/images/asian-convergence.png]]                       |                                       |
+| [[./viz/images/README-figures/euro-convergence.png]] | [[./viz/images/README-figures/american-convergence.png]] |
+| [[./viz/images/README-figures/asian-convergence.png]]                       |                                       |
 
 ** Volatility Calibration
-| [[./viz/images/calibration-before.png]] |
-| [[./viz/images/calibration-after.png]] |
+| [[./viz/images/README-figures/calibration-before.png]] |
+| [[./viz/images/README-figures/calibration-after.png]] |
 * LLM Disclosure
 LLMs were supervised in creation of this code.
