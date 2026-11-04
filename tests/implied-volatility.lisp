@@ -18,7 +18,7 @@
           (for got = (ecase op
                        (:nbc (apply #'fincl::normalised-black-call args))
                        (:erfcx (erfcx (first args)))
-                       (:ncdf (fincl::lbr-norm-cdf (first args)))
+                       (:ncdf (fincl::norm-cdf (first args)))
                        (:black (apply #'fincl::lbr-black args))
                        (:iv (apply #'fincl::lbr-implied-volatility args))))
           (incf (gethash op count 0))

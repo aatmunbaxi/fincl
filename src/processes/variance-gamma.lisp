@@ -28,7 +28,9 @@ the expiry, which the process reproduces as nu -> 0 with theta = 0.")
 
 (defmethod levy-exponent ((p variance-gamma) u)
   (let ((sigma (sigma p)) (nu (nu p)) (theta (theta p)))
-    (/ (- (log (+ 1d0 (* #c(0d0 -1d0) u theta nu) (* 0.5d0 sigma sigma nu u u)))) nu)))
+    (/ (- (complex-log (coerce (+ 1d0 (* #c(0d0 -1d0) u theta nu) (* 0.5d0 sigma sigma nu u u))
+                               '(complex double-float))))
+       nu)))
 
 (defmethod levy-cumulants ((p variance-gamma))
   (let ((s2 (expt (sigma p) 2)) (nu (nu p)) (theta (theta p)))

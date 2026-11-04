@@ -238,15 +238,6 @@ GROWTH = log(F(HORIZON)/S0)."
   (+ (* theta horizon)
      (/ (* (- v0 theta) (- 1d0 (exp (- (* kappa horizon))))) kappa)))
 
-(defun complex-log1p (z)
-  "log(1 + Z) for complex Z, accurate also for |Z| near 0 (Kahan's method,
-as LOG1P)."
-  (declare (type (complex double-float) z))
-  (let ((u (+ 1d0 z)))
-    (if (= u 1d0)
-        z
-        (/ (* (log u) z) (- u 1d0)))))
-
 (defmethod characteristic-function ((p heston) market horizon)
   (multiple-value-bind (kappa theta xi rho v0 growth) (heston-parameters p market horizon)
     (if (zerop xi)
@@ -273,7 +264,7 @@ as LOG1P)."
             (let* ((iu (complex 0d0 u))
                    (a (+ iu (* u u)))
                    (beta (- kappa (* rho xi iu)))
-                   (d (sqrt (+ (* beta beta) (* xi2 a))))
+                   (d (complex-sqrt (+ (* beta beta) (* xi2 a))))
                    (bmd/xi2 (- (/ a (+ beta d))))         ; (beta - d) / xi^2
                    (g (/ (* xi2 bmd/xi2) (+ beta d)))
                    (e (exp (- (* d horizon))))

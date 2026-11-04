@@ -77,6 +77,36 @@ measured against max(1, x^2)."
     (check-that "q(least positive normalized double) is finite"
                 (< -38d0 (norm-quantile least-positive-normalized-double-float) -37d0))))
 
+(defun complex-function-checks ()
+  (let ((worst-sqrt 0d0) (worst-log 0d0) (worst-square 0d0) (worst-exp 0d0)
+        (state (sb-ext:seed-random-state 11)))
+    (flet ((component ()
+             (* (if (zerop (random 2 state)) 1 -1) (expt 10d0 (- (random 14d0 state) 7d0))))
+           (relative (a b) (/ (abs (- a b)) (abs b))))
+      (dotimes (i 20000)
+        (let ((z (complex (component) (component))))
+          (setf worst-sqrt (max worst-sqrt (relative (fincl::complex-sqrt z) (sqrt z)))
+                worst-log (max worst-log (relative (fincl::complex-log z) (log z)))
+                worst-square (max worst-square (relative (expt (fincl::complex-sqrt z) 2) z))
+                worst-exp (max worst-exp (relative (exp (fincl::complex-log z)) z)))))
+      (check-that (format nil "complex-sqrt agrees with SQRT (worst ~,2E) and squares back (~,2E)"
+                          worst-sqrt worst-square)
+                  (and (< worst-sqrt 1d-14) (< worst-square 1d-14)))
+      (check-that (format nil "complex-log agrees with LOG (worst ~,2E) and exponentiates back (~,2E)"
+                          worst-log worst-exp)
+                  (and (< worst-log 1d-13) (< worst-exp 1d-14))))
+    ;; The branch cut, signed zeros, the origin, and the ranges handed to CL.
+    (dolist (z `(#c(-4d0 0d0) #c(-4d0 -0d0) #c(4d0 0d0) #c(0d0 3d0) #c(0d0 -3d0) #c(-4d0 1d-300)
+                 #c(-1d-200 0d0) #c(1d200 1d200) #c(-1d-160 1d-160)))
+      (check-equal (format nil "complex-sqrt ~S as SQRT" z) (sqrt z) (fincl::complex-sqrt z))
+      (check-equal (format nil "complex-log ~S as LOG" z) (log z) (fincl::complex-log z))
+      (check-that (format nil "complex-sqrt and complex-log keep the sign of the imaginary part of ~S" z)
+                  (and (= (float-sign (imagpart (fincl::complex-sqrt z))) (float-sign (imagpart (sqrt z))))
+                       (= (float-sign (imagpart (fincl::complex-log z))) (float-sign (imagpart (log z)))))))
+    (check-equal "complex-sqrt 0" #c(0d0 0d0) (fincl::complex-sqrt #c(0d0 0d0)))
+    (check-that "complex-log1p of a small argument keeps its digits"
+                (< (abs (- (fincl::complex-log1p #c(1d-20 2d-20)) #c(1d-20 2d-20))) 1d-38))))
+
 (defun math-checks ()
   (format t "~&Math: special functions~%")
   (let ((worst (iter (for x in *expm1-log1p-points*)
@@ -92,6 +122,7 @@ measured against max(1, x^2)."
   (check "norm-cdf 1.96" 0.9750021048517795d0 (norm-cdf 1.96d0) 1d-15)
   (check "norm-pdf 0 = 1/sqrt(2 pi)" (/ (sqrt (* 2 pi))) (norm-pdf 0d0) 1d-16)
   (quantile-checks)
+  (complex-function-checks)
   ;; Known-answer vectors from Random123 (kat_vectors, philox4x32 10 rounds).
   (check-equal "Philox4x32-10 known answers"
                '((#x6627e8d5 #xe169c58d #xbc57ac4c #x9b00dbd8)

@@ -28,7 +28,9 @@
 (defmethod levy-exponent ((p nig) u)
   (let ((a (alpha p)) (b (beta p)))
     (* (- (delta p))
-       (- (sqrt (- (* a a) (expt (+ b (* #c(0d0 1d0) u)) 2))) (nig-gamma p)))))
+       (- (complex-sqrt (coerce (- (* a a) (expt (+ b (* #c(0d0 1d0) u)) 2))
+                                 '(complex double-float)))
+          (nig-gamma p)))))
 
 (defmethod levy-cumulants ((p nig))
   (let* ((a (alpha p)) (b (beta p)) (d (delta p)) (g (nig-gamma p)))
