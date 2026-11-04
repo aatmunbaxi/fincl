@@ -3,16 +3,11 @@
 
 (in-package #:fincl)
 
-(defconstant +sqrt2+ (sqrt 2d0))
+(defconstant +dbl-epsilon+ #.(scale-float 1d0 -52) "C's DBL_EPSILON, 2^-52.")
+(defconstant +sqrt-dbl-epsilon+ #.(sqrt (scale-float 1d0 -52)))
+(defconstant +one-over-sqrt-two+ 0.7071067811865475244008443621048490392848359376887d0)
 
-(declaim (inline norm-cdf norm-pdf))
-
-(defun norm-cdf (x)
-  "Standard normal CDF.
-
-  (norm-cdf 1.96d0) => 0.9750021048517795d0"
-  (declare (double-float x))
-  (* 0.5d0 (sf:erfc (/ (- x) +sqrt2+))))
+(declaim (inline norm-pdf))
 
 (defun norm-pdf (x)
   "Standard normal density.
@@ -119,6 +114,67 @@ log(u) x / (u - 1) cancels the rounding error of u.
             (/ (* (log u) x) (- u 1d0))))))
 
 ;;; --------------------------------------------------------------------
+;;; Complex square root and logarithm
+;;; --------------------------------------------------------------------
+;;;
+;;; SBCL's SQRT and LOG on a (complex double-float) go through CSSQS, which
+;;; saves and restores the floating-point modes on every call and boxes the
+;;; argument and the result; in a characteristic function that is more than
+;;; the arithmetic. These are inline, on the real and imaginary parts, and
+;;; defer to SQRT and LOG outside |z| in [1e-150, 1e150], where those scale
+;;; to avoid overflow.
+
+(declaim (inline complex-sqrt complex-log complex-log1p))
+
+(defun complex-sqrt (z)
+  "Principal square root of the (complex double-float) Z, with non-negative
+real part; the sign of a zero imaginary part is kept, so the branch cut is as
+SQRT's.
+
+  (complex-sqrt #c(-4d0 0d0)) => #C(0.0d0 2.0d0)"
+  (declare (type (complex double-float) z))
+  (let* ((x (realpart z)) (y (imagpart z))
+         (r (sb-kernel:%hypot x y)))
+    (declare (double-float x y r))
+    (cond ((zerop r) (complex 0d0 y))
+          ((not (< 1d-150 r 1d150)) (sqrt z))
+          (t (let ((s (sqrt (the (double-float 0d0) (* 0.5d0 (+ (abs x) r))))))
+               (declare (double-float s))
+               (if (>= x 0d0)
+                   (complex s (/ y (* 2d0 s)))
+                   (complex (/ (abs y) (* 2d0 s)) (float-sign y s))))))))
+
+(defun complex-log (z)
+  "Principal logarithm of the (complex double-float) Z, imaginary part in
+(-pi, pi]. Near |Z| = 1 the real part is log1p((a - 1)(a + 1) + b^2)/2 with
+a >= b the larger and smaller of |Re Z| and |Im Z|, which avoids the
+cancellation in log |Z|.
+
+  (complex-log #c(0d0 1d0)) => #C(0.0d0 1.5707963267948966d0)"
+  (declare (type (complex double-float) z))
+  (let* ((x (realpart z)) (y (imagpart z))
+         (r (sb-kernel:%hypot x y)))
+    (declare (double-float x y r))
+    (if (not (< 1d-150 r 1d150))
+        (log z)
+        (let* ((ax (abs x)) (ay (abs y))
+               (a (max ax ay)) (b (min ax ay)))
+          (declare (double-float ax ay a b))
+          (complex (if (< 0.5d0 r 2d0)
+                       (* 0.5d0 (sb-kernel:%log1p (+ (* (- a 1d0) (+ a 1d0)) (* b b))))
+                       (sb-kernel:%log r))
+                   (atan y x))))))
+
+(defun complex-log1p (z)
+  "log(1 + Z) for the (complex double-float) Z, accurate also for |Z| near 0
+(Kahan's method, as LOG1P)."
+  (declare (type (complex double-float) z))
+  (let ((u (+ 1d0 z)))
+    (if (= u 1d0)
+        z
+        (/ (* (complex-log u) z) (- u 1d0)))))
+
+;;; --------------------------------------------------------------------
 ;;; Cody's erf, erfc and erfcx
 ;;; --------------------------------------------------------------------
 ;;;
@@ -213,6 +269,32 @@ rational approximations, without overflow or cancellation for large X.
 
   (erfcx 10d0) => 0.05614099274382259d0"
   (cody-calerf (float x 1d0) 2))
+
+(defun norm-cdf (x)
+  "Standard normal CDF: Cody's erfc, and below -10 the asymptotic series of
+Abramowitz and Stegun 26.2.12, as in Jäckel's LetsBeRational, so the left
+tail keeps its relative precision.
+
+  (norm-cdf 1.96d0) => 0.9750021048517795d0"
+  (declare (double-float x))
+  (if (<= x -10d0)
+      (let ((sum 1d0))
+        (declare (double-float sum))
+        (when (>= x (- (/ +sqrt-dbl-epsilon+)))
+          (let ((zsqr (* x x)) (i 1d0) (g 1d0) (a most-positive-double-float) (lasta 0d0))
+            (declare (double-float zsqr i g a lasta))
+            (iter (setf lasta a)
+                  (let* ((u (/ (- (* 4 i) 3) zsqr))
+                         (y (* u (/ (- (* 4 i) 1) zsqr))))
+                    (declare (double-float u y))
+                    (setf a (* g (- u y)))
+                    (decf sum a)
+                    (setf g (* g y))
+                    (incf i)
+                    (setf a (abs a)))
+                  (while (and (> lasta a) (>= a (abs (* sum +dbl-epsilon+))))))))
+        (/ (* (- (norm-pdf x)) sum) x))
+      (* 0.5d0 (cody-calerf (* (- x) +one-over-sqrt-two+) 1))))
 
 ;;; --------------------------------------------------------------------
 ;;; Modified Bessel function of the second kind, K_nu(x)

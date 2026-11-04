@@ -39,14 +39,11 @@
 
 (in-package #:fincl)
 
-(defconstant +dbl-epsilon+ #.(scale-float 1d0 -52) "C's DBL_EPSILON, 2^-52.")
-(defconstant +sqrt-dbl-epsilon+ #.(sqrt (scale-float 1d0 -52)))
 (defconstant +fourth-root-dbl-epsilon+ #.(sqrt (sqrt (scale-float 1d0 -52))))
 (defconstant +sixteenth-root-dbl-epsilon+ #.(sqrt (sqrt (sqrt (sqrt (scale-float 1d0 -52))))))
 (defconstant +sqrt-dbl-min+ #.(sqrt least-positive-normalized-double-float))
 (defconstant +sqrt-dbl-max+ #.(sqrt most-positive-double-float))
 
-(defconstant +one-over-sqrt-two+ 0.7071067811865475244008443621048490392848359376887d0)
 (defconstant +one-over-sqrt-two-pi+ 0.3989422804014326779399460599343818684758586311649d0)
 (defconstant +sqrt-two-pi+ 2.506628274631000502415765284811045253006986740610d0)
 (defconstant +two-pi+ 6.283185307179586476925286766559005768394338798750d0)
@@ -66,29 +63,6 @@
   (declare (double-float x))
   (* +one-over-sqrt-two-pi+ (exp (* -0.5d0 x x))))
 (defun square (x) (declare (double-float x)) (* x x))
-
-(defun lbr-norm-cdf (z)
-  "Phi(Z) as in the reference: Abramowitz and Stegun 26.2.12 below -10,
-Cody's erfc above."
-  (declare (double-float z))
-  (if (<= z -10d0)
-      (let ((sum 1d0))
-        (declare (double-float sum))
-        (when (>= z (- (/ +sqrt-dbl-epsilon+)))
-          (let ((zsqr (* z z)) (i 1d0) (g 1d0) (a most-positive-double-float) (lasta 0d0))
-            (declare (double-float zsqr i g a lasta))
-            (iter (setf lasta a)
-                  (let* ((x (/ (- (* 4 i) 3) zsqr))
-                         (y (* x (/ (- (* 4 i) 1) zsqr))))
-                    (declare (double-float x y))
-                    (setf a (* g (- x y)))
-                    (decf sum a)
-                    (setf g (* g y))
-                    (incf i)
-                    (setf a (abs a)))
-                  (while (and (> lasta a) (>= a (abs (* sum +dbl-epsilon+))))))))
-        (/ (* (- (lbr-norm-pdf z)) sum) z))
-      (* 0.5d0 (cody-calerf (* (- z) +one-over-sqrt-two+) 1))))
 
 ;;; --------------------------------------------------------------------
 ;;; Rational cubic interpolation (Delbourgo and Gregory, 1985)
@@ -320,7 +294,7 @@ functions."
 (defun normalized-black-call-using-norm-cdf (x s)
   (declare (double-float x s))
   (let* ((h (/ x s)) (tt (* 0.5d0 s)) (b-max (exp (* 0.5d0 x)))
-         (b (- (* (lbr-norm-cdf (+ h tt)) b-max) (/ (lbr-norm-cdf (- h tt)) b-max))))
+         (b (- (* (norm-cdf (+ h tt)) b-max) (/ (norm-cdf (- h tt)) b-max))))
     (abs (max b 0d0))))
 
 (defun normalised-black-call (x s)
@@ -379,7 +353,7 @@ two terms loses digits.
 (defun compute-f-lower-map-and-first-two-derivatives (x s)
   (declare (double-float x s))
   (let* ((ax (abs x)) (z (/ (* +sqrt-one-over-three+ ax) s)) (y (* z z)) (s2 (* s s))
-         (phi-cdf (lbr-norm-cdf (- z))) (phi-pdf (lbr-norm-pdf z))
+         (phi-cdf (norm-cdf (- z))) (phi-pdf (lbr-norm-pdf z))
          ;; PI_OVER_SIX * y/(s2*s) * Phi * (...) * exp(...), left to right.
          (fpp (* (/ (* +pi-over-six+ y) (* s2 s)) phi-cdf
                  (+ (* 8 +sqrt-three+ s ax)
@@ -399,7 +373,7 @@ two terms loses digits.
 
 (defun compute-f-upper-map-and-first-two-derivatives (x s)
   (declare (double-float x s))
-  (let* ((f (lbr-norm-cdf (* -0.5d0 s)))
+  (let* ((f (norm-cdf (* -0.5d0 s)))
          (w (square (/ x s)))
          (fp (* -0.5d0 (exp (* 0.5d0 w))))
          (fpp (/ (* +sqrt-pi-over-two+ (exp (+ w (* 0.125d0 s s))) w) s)))
