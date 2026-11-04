@@ -167,11 +167,13 @@ constraints; the best feasible face solution is the optimum."
                            (when (< s best-sse) (setf best p best-sse s)))))
                    (rank-deficient () nil)))))
       (try '())
-      (iter (for (c1 . rest1) on constraints)
-            (try `(,c1))
-            (iter (for (c2 . rest2) on rest1)
-                  (try `(,c1 ,c2))
-                  (dolist (c3 rest2) (try `(,c1 ,c2 ,c3))))))
+      ;; The problem is convex: a feasible unconstrained minimum is the optimum.
+      (unless best
+        (iter (for (c1 . rest1) on constraints)
+              (try `(,c1))
+              (iter (for (c2 . rest2) on rest1)
+                    (try `(,c1 ,c2))
+                    (dolist (c3 rest2) (try `(,c1 ,c2 ,c3)))))))
     (values best best-sse)))
 
 (defun svi-residuals (ks ws weights)
