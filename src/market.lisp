@@ -48,7 +48,12 @@ positive one. PRICE offers USE-VALUE, to return a value as the price."))
   "Year fraction from MARKET's valuation date to DATE under its day counter.
 
   (market-time m #D\"2027-09-24\") => 1.0d0   ; valued 2026-09-24, ACT/365F"
-  (year-fraction (market-day-counter market) (valuation-date market) date))
+  (let ((dc (market-day-counter market)))
+    (if (eq (class-of dc) (load-time-value (find-class 'actual-365-fixed)))
+        ;; YEAR-FRACTION's ACT/365F method without dispatch: the same double
+        ;; (its :AROUND negation of a reversed interval is exact).
+        (/ (float (date- date (valuation-date market)) 1d0) 365d0)
+        (year-fraction dc (valuation-date market) date))))
 
 ;;; --------------------------------------------------------------------
 ;;; The protocol

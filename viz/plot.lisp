@@ -238,32 +238,59 @@ SIMULATE call that made it." argument)))
 
 ;;; Constructors
 
-(defun paths (result &key n (state :spot) underlying name color width dash opacity raw)
-  "The stored paths of RESULT (:KEEP (:PATHS k)): state component STATE (of
-UNDERLYING, with several) of the first N paths, all of them by default, at
-the simulation dates. At most *MAX-PLOTTED-PATHS*. Role :PATHS.
+(defun held-series (result path name)
+  "The :HOLD variable NAME of stored PATH as a DOUBLE-VECTOR over the
+simulation dates, NaN where the path had stopped; a value that is not a real
+on a date the path ran signals."
+  (map 'fincl:double-vector
+       (lambda (plist)
+         ;; A date the path ran stores a plist of every held variable.
+         (let ((value (getf plist name)))
+           (cond ((null plist) (fincl::quiet-nan))
+                 ((realp value) (float value 1d0))
+                 (t (fincl::signal-invalid-argument
+                     'held value 'real
+                     (format nil "a real held value of ~S on every date stored path ~D ran" name path))))))
+       (fincl::kept-dates result path :held)))
 
-  (plot (paths r :n 20))"
+(defun paths (result &key n state record held underlying name color width dash opacity raw)
+  "The stored paths of RESULT (:KEEP (:PATHS k)) at the simulation dates,
+for the first N paths, all of them by default (at most *MAX-PLOTTED-PATHS*):
+state component STATE (of UNDERLYING, with several; default :SPOT), or the
+values the path recorded under RECORD (see SIMULATION-PATH-RECORD), or the
+:HOLD variable HELD (a keyword; reals on every date the path ran). At most
+one of STATE, RECORD and HELD. Role :PATHS.
+
+  (plot (paths r :n 20))
+  (plot (paths r :record '(:book :value)))"
+  (when (< 1 (count-if-not #'null `(,state ,record ,held)))
+    (fincl::signal-invalid-argument 'paths `(:state ,state :record ,record :held ,held) 'list
+                                    "at most one of :STATE, :RECORD and :HELD"))
   (let* ((kept (simulation-kept-paths result))
          (label (format nil "PATHS layer of ~S" result))
-         (n (or n (and (plusp kept) kept) *max-plotted-paths*)))
+         (n (or n (and (plusp kept) kept) *max-plotted-paths*))
+         (needs `((:paths ,n) ,@(when record `((:record ,record))))))
     (when (> n *max-plotted-paths*)
       (error 'too-many-paths :requested n :limit *max-plotted-paths*))
-    (check-needs result label `((:paths ,n)))
+    (check-needs result label needs)
     (let ((dates (result-dates result))
           (name (or name "paths")))
-      (make-layer :paths :time
-                  (lambda (style)
-                    (let ((look (funcall style)))
-                      (iter (for i below n)
-                            (collect (line-trace dates (simulation-path-state result i state underlying)
-                                                 :name name
-                                                 :style `(,@(line-attributes look)
-                                                          :legendgroup ,name
-                                                          :showlegend ,(zerop i)))))))
-                  :data-needs `((:paths ,n)) :name name :ylabel (label-of state)
-                  :attributes (remove-nil-pairs `(:color ,color :width ,width :dash ,dash :opacity ,opacity))
-                  :raw raw))))
+      (flet ((series (i)
+               (cond (record (simulation-path-record result i record))
+                     (held (held-series result i held))
+                     (t (simulation-path-state result i (or state :spot) underlying)))))
+        (make-layer :paths :time
+                    (lambda (style)
+                      (let ((look (funcall style)))
+                        (iter (for i below n)
+                              (collect (line-trace dates (series i)
+                                                   :name name
+                                                   :style `(,@(line-attributes look)
+                                                            :legendgroup ,name
+                                                            :showlegend ,(zerop i)))))))
+                    :data-needs needs :name name :ylabel (label-of (or record held state :spot))
+                    :attributes (remove-nil-pairs `(:color ,color :width ,width :dash ,dash :opacity ,opacity))
+                    :raw raw)))))
 
 (defun remove-nil-pairs (plist)
   (iter (for (k v) in-plist plist)

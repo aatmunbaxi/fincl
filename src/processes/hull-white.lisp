@@ -208,7 +208,8 @@ SIMULATE resolves a Hull-White leg."))
 (defparameter *default-curve-knots*
   (append (mapcar (lambda (n) (make-tenor n :months)) '(1 3 6))
           (mapcar (lambda (n) (make-tenor n :years)) '(1 2 3 5 7 10 15 20 30)))
-  "The tenors a simulated curve is built on when a leg gives no :KNOTS.")
+  "The tenors of the curve a simulated short-rate leg builds when the process has no
+closed-form bond price (STATE-DISCOUNT-BOND is NIL).")
 
 (defun curve-knot-dates (date knots last)
   "The dates DATE plus each of KNOTS (tenors), ascending and distinct, cut at
@@ -221,25 +222,102 @@ LAST (a date or NIL) but keeping at least the first."
     (or kept (and dates `(,(first dates)))
         (signal-invalid-argument 'knots knots 'list "tenors after the date (positive tenors)"))))
 
+(defmethod state-discount-bond ((p fitted-hull-white) state t0 t1)
+  (hull-white-discount-bond p (fitted-rate-curve p) t0 t1 (aref state 0)))
+
+(defgeneric state-discount-function (process state t0)
+  (:documentation "(lambda (t1)) giving STATE-DISCOUNT-BOND of PROCESS at
+STATE from T0 to T1, with what depends only on T0 computed once.")
+  (:method ((p stochastic-process) state t0)
+    (lambda (t1) (state-discount-bond p state t0 t1))))
+
+(defmethod state-discount-function ((p fitted-hull-white) state t0)
+  ;; HULL-WHITE-DISCOUNT-BOND's operations, in its order, with the T0 terms
+  ;; hoisted: the same doubles.
+  (let* ((a (hull-white-a p))
+         (sigma (sigma p))
+         (curve (fitted-rate-curve p))
+         (t0 (float t0 1d0))
+         (forward (rate-curve-forward curve t0))
+         (b2 (hull-white-b a 0d0 (* 2d0 t0)))
+         (d0 (rate-curve-discount curve t0))
+         (r (aref state 0)))
+    (declare (double-float a sigma t0 forward b2 d0 r))
+    (lambda (t1)
+      (let* ((b (hull-white-b a t0 t1))
+             (temp (* sigma b))
+             (value (- (* b forward) (* 0.25d0 temp temp b2))))
+        (declare (double-float b temp value))
+        (* (/ (* (exp value) (rate-curve-discount curve t1)) d0)
+           (exp (- (* b r))))))))
+
+(defclass state-curve (dated-curve)
+  ((process :initarg :process :reader state-curve-process)
+   (state :initarg :state :reader state-curve-state :type double-vector
+          :documentation "A copy of the leg's state on the reference date.")
+   (now :initarg :now :reader state-curve-now :type double-float
+        :documentation "The reference date in the leg's market time.")
+   (shifts :initarg :shifts :initform '() :reader state-curve-shifts
+           :documentation "Zero-rate shifts applied in order, from BUMP-STRUCTURE.")
+   (discount :initform nil
+             :documentation "STATE-DISCOUNT-FUNCTION at NOW, made on the first price."))
+  (:documentation "The yield curve on a simulated path: the discount to tau is
+STATE-DISCOUNT-BOND of the process at its state from now to now + tau, exact
+at every maturity and evaluated only when asked. Its day counter is the leg's
+market's, so tau is market time."))
+
+(defmethod curve-discount ((c state-curve) (x real))
+  (let ((tau (float x 1d0)))
+    (check-curve-time c tau)
+    (if (zerop tau)
+        1d0
+        (let ((d (funcall (the function
+                               (or (slot-value c 'discount)
+                                   (setf (slot-value c 'discount)
+                                         (state-discount-function (state-curve-process c) (state-curve-state c)
+                                                                  (state-curve-now c)))))
+                          (+ (state-curve-now c) tau))))
+          (dolist (shift (state-curve-shifts c) d)
+            (setf d (if (eq (first shift) :absolute)
+                        (* d (exp (- (* (float (second shift) 1d0) tau))))
+                        (exp (- (* (apply-shift (/ (- (log d)) tau) shift) tau))))))))))
+
+(defmethod bump-structure ((c state-curve) shift)
+  ;; Zero rates move by SHIFT at every maturity: e^(-z tau) -> e^(-z' tau).
+  (check-input shift shift "(:relative x) or (:absolute x)")
+  (make-instance 'state-curve :reference-date (curve-reference-date c) :day-counter (curve-day-counter c)
+                              :process (state-curve-process c) :state (state-curve-state c)
+                              :now (state-curve-now c) :shifts `(,@(state-curve-shifts c) ,shift)))
+
+(defmethod print-object ((c state-curve) stream)
+  (print-unreadable-object (c stream :type t)
+    (format stream "~A, ~(~A~) at ~{~,6F~^ ~}" (curve-reference-date c)
+            (class-name (class-of (state-curve-process c))) (coerce (state-curve-state c) 'list))))
+
 (defmethod structure-at-state ((p hull-white) target initial market date state &key knots)
-  "The curve of the bonds P(t, T | r) at DATE, log-linear in discount factors
-between the knots (the leg's :KNOTS tenors, default 1M ... 30Y, cut at the
-initial curve's last date), on the initial curve's day counter."
+  "The curve of the bonds P(t, T | r) at DATE: without :KNOTS a STATE-CURVE,
+exact at every maturity; with :KNOTS (tenors, cut at the initial curve's
+last date) log-linear in discount factors between them, on the initial
+curve's day counter."
   (declare (ignore market))
   (unless (typep p 'fitted-hull-white)
     (signal-invalid-argument 'process p 'fitted-hull-white
                              (format nil "a Hull-White process fitted to ~S (as SIMULATE resolves its legs)" target)))
   (let* ((curve (fitted-rate-curve p))
          (initial-market (rate-curve-market curve))
-         (now (market-time initial-market date))
-         (r (aref state 0))
-         (dates (curve-knot-dates date (or knots *default-curve-knots*)
-                                  (and (typep initial 'interpolated-curve) (a:last-elt (curve-dates initial))))))
-    (make-instance 'interpolated-discount-curve
-                   :dates (cons date dates)
-                   :day-counter (if (typep initial 'dated-curve)
-                                    (curve-day-counter initial)
-                                    (market-day-counter initial-market))
-                   :discounts (cons 1d0 (mapcar (lambda (d)
-                                                  (hull-white-discount-bond p curve now (market-time initial-market d) r))
-                                                dates)))))
+         (now (market-time initial-market date)))
+    (if (null knots)
+        (make-instance 'state-curve :reference-date date :day-counter (market-day-counter initial-market)
+                                    :process p :state (copy-seq state) :now (float now 1d0))
+        (let ((r (aref state 0))
+              (dates (curve-knot-dates date knots
+                                       (and (typep initial 'interpolated-curve) (a:last-elt (curve-dates initial))))))
+          (make-instance 'interpolated-discount-curve
+                         :dates (cons date dates)
+                         :day-counter (if (typep initial 'dated-curve)
+                                          (curve-day-counter initial)
+                                          (market-day-counter initial-market))
+                         :discounts (cons 1d0 (mapcar (lambda (d)
+                                                        (hull-white-discount-bond p curve now
+                                                                                  (market-time initial-market d) r))
+                                                      dates)))))))

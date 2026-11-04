@@ -373,11 +373,12 @@ and FREQUENCY) at which BOND's clean price is CLEAN-PRICE.
 
 (defun bond-npv (bond market &key discount-curve)
   "Value on MARKET's valuation date of BOND's cash flows paying after it."
-  (let ((curve (rates-discount-curve market (instrument-currency bond) discount-curve))
+  (let ((curve (market-discount-curve market (rates-discount-curve market (instrument-currency bond) discount-curve)))
         (today (valuation-date market)))
+    ;; MARKET-CURVE-DISCOUNT's operations, with the curve resolved once.
     (iter (for cf in (bond-cashflows bond))
           (unless (occurred-p cf today)
-            (sum (* (cashflow-amount cf market) (market-curve-discount market curve (payment-date cf))))))))
+            (sum (* (cashflow-amount cf market) (curve-discount curve (market-time market (payment-date cf)))))))))
 
 ;;; --------------------------------------------------------------------
 ;;; Swaps

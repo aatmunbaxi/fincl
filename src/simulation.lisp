@@ -701,6 +701,7 @@ slots, except the quantile tables, made on first use under LOCK."
   (kept-paths 0 :type fixnum)     ; the first K paths' states and held values
   (kept-states nil)               ; path -> date -> vector of leg state copies
   (held nil)                      ; path -> date -> plist of held values
+  (records nil)                   ; path -> name -> double vector over dates (NaN: nothing)
   (all-states nil))               ; T: every path's states (into KEPT-STATES)
 
 (defun parse-keep (keep)
@@ -748,7 +749,8 @@ A variable (or NIL) is evaluated as it stands."
        :n-total n-total :n-dates n-dates :quantiles quantiles
        :kept-paths kept :all-states states
        :kept-states (when (plusp kept) (make-array kept :initial-element nil))
-       :held (when (plusp kept) (make-array kept :initial-element nil))))))
+       :held (when (plusp kept) (make-array kept :initial-element nil))
+       :records (when (plusp kept) (make-array kept :initial-element nil))))))
 
 (defun store-path-date (store path k states held)
   "Keep PATH's STATES (copied) and HELD values at date K if PATH is kept."
@@ -786,6 +788,17 @@ A variable (or NIL) is evaluated as it stands."
                                                   (simulation-store-n-dates store))
                                                :element-type 'double-float :initial-element (quiet-nan))))))))
         (setf (aref table (+ path (* k (simulation-store-n-total store)))) x)))
+    (when (keeping-path-p store path)
+      ;; Only PATH's worker writes its table, so no lock.
+      (let ((names (or (svref (simulation-store-records store) path)
+                       (setf (svref (simulation-store-records store) path) (make-hash-table :test 'equal)))))
+        (setf (aref (the double-vector
+                         (or (gethash name names)
+                             (setf (gethash name names)
+                                   (make-array (simulation-store-n-dates store)
+                                               :element-type 'double-float :initial-element (quiet-nan)))))
+                    k)
+              x)))
     value))
 
 ;;; --------------------------------------------------------------------
@@ -920,6 +933,29 @@ recorded under NAME: :MEAN, :STD-DEV, :MIN, :MAX, :COUNT, or :QUANTILE with P
 variable's name) on stored PATH at each simulation date, a vector."
   (map 'simple-vector (lambda (plist) (getf plist name)) (kept-dates result path :held)))
 
+(defun simulation-path-record (result path name)
+  "The values stored PATH (:KEEP (:PATHS k) or :STATES) recorded under NAME at
+each of (SIMULATION-DATES RESULT), a DOUBLE-VECTOR with NaN where the path
+recorded nothing (before its first record of NAME, or after STOP); the last
+value recorded on a date. A book's records are named by their lists.
+
+  (simulation-path-record r 0 :balance)
+  (simulation-path-record r 0 '(:book :value))"
+  (let* ((store (simulation-result-store result))
+         (records (simulation-store-records store)))
+    (unless (gethash name (simulation-result-statistics result))
+      (signal-invalid-argument 'name name t
+                               (format nil "a recorded name: ~{~S~^, ~}"
+                                       (recorded-names (simulation-result-statistics result)))))
+    (unless (and records (< -1 path (length records)))
+      (signal-invalid-argument 'path path 'integer
+                               (format nil "a stored path: 0 .. ~D (use :KEEP (:PATHS k) or :STATES)"
+                                       (1- (simulation-store-kept-paths store)))))
+    (a:if-let ((values (and (svref records path) (gethash name (svref records path)))))
+      (copy-seq values)
+      (make-array (simulation-store-n-dates store) :element-type 'double-float
+                                                   :initial-element (quiet-nan)))))
+
 (defun path-markets (result path)
   "((date . market) ...) for stored PATH (:KEEP (:PATHS k) or :STATES), each
 market built from the path's state on its date as during the run, at every
@@ -1045,6 +1081,318 @@ contribute 0)."
                               (portfolio-positions book)))
             engine market :which keys)))
 
+(defun simulation-event-times (plan)
+  "The market times of PLAN's events, a DOUBLE-VECTOR from 0 (the valuation
+date) over SIMULATION-DATES."
+  (let* ((market (simulation-plan-market plan))
+         (events (simulation-plan-event-dates plan))
+         (times (make-array (1+ (length events)) :element-type 'double-float :initial-element 0d0)))
+    (iter (for d in-vector events) (for k from 1)
+          (setf (aref times k) (float (market-time market d) 1d0)))
+    times))
+
+(defun simulation-event-steps (times)
+  "TIMES[k] - TIMES[k-1] for each event k (0 at the valuation date)."
+  (declare (type double-vector times))
+  (let ((steps (make-array (length times) :element-type 'double-float :initial-element 0d0)))
+    (iter (for k from 1 below (length times))
+          (setf (aref steps k) (- (aref times k) (aref times (1- k)))))
+    steps))
+
+(defun copy-states-into (target states)
+  "STATES (a vector of leg state vectors) copied into TARGET, or into fresh
+vectors if TARGET is NIL; returns the copy."
+  (if target
+      (progn (iter (for v in-vector states) (for i from 0)
+                   (replace (the double-vector (svref target i)) (the double-vector v)))
+             target)
+      (map 'simple-vector #'copy-seq states)))
+
+;;; --------------------------------------------------------------------
+;;; Books with cash (task 33)
+;;; --------------------------------------------------------------------
+
+(defparameter *income-kinds* '(:discrete-dividend :continuous-dividend :coupon :redemption :expiry)
+  "The kinds of income POSITION-INCOME reports and a book's :COLLECT names.")
+
+(defstruct (book-accounting (:constructor %make-book-accounting (plan cash-curve collect)))
+  "How SIMULATE runs a :PORTFOLIO book holding cash: the PLAN, the curve id
+its cash accrues on (CASH-CURVE; NIL: the currency's discount curve), and
+the income kinds it COLLECTs."
+  (plan nil :read-only t)
+  (cash-curve nil :read-only t)
+  (collect '() :type list :read-only t))
+
+(defun make-book-accounting (plan cash-curve collect)
+  (unless (or (null cash-curve) (keywordp cash-curve))
+    (signal-invalid-argument :cash-curve cash-curve 'keyword "the id of a yield curve, or NIL"))
+  (let ((kinds (if (eq collect :all) *income-kinds* collect)))
+    (unless (and (listp kinds) (every (lambda (k) (member k *income-kinds*)) kinds))
+      (signal-invalid-argument :collect collect 'list
+                               (format nil ":ALL or a list of income kinds from ~{~S~^ ~}" *income-kinds*)))
+    (%make-book-accounting plan cash-curve kinds)))
+
+(defun simulation-book-currency (market)
+  "The currency of a book's cash on MARKET: the composite market's only
+currency (that of its only discount curve, else of all its underlyings), or
+NIL for a market that is not composite."
+  (when (typep market 'composite-market)
+    (let ((discounted (sorted-keys (market-discount-curve-for market)))
+          (underlying (remove-duplicates (iter (for u in (market-underlyings market))
+                                               (collect (gethash u (market-underlying-currency market)))))))
+      (cond ((= 1 (length discounted)) (first discounted))
+            ((= 1 (length underlying)) (first underlying))
+            (t (signal-invalid-argument :cash market 'composite-market
+                                        (format nil "a market with one currency for :CASH; it has ~{~S~^, ~}: put ~
+(make-position (make-cash-account :currency c) :quantity x) in the book's INIT instead"
+                                                (union discounted underlying))))))))
+
+(defun book-cash-position (book)
+  "BOOK's top-level CASH-ACCOUNT position, or NIL."
+  (find-if (lambda (m) (and (typep m 'portfolio-position) (typep (position-instrument m) 'cash-account)))
+           (portfolio-members book)))
+
+(defun book-cash-target (accounting position)
+  "The curve, (:curve id), the cash of POSITION accrues on (NIL on a market
+that is not composite)."
+  (let ((market (simulation-plan-market (book-accounting-plan accounting))))
+    (cond ((book-accounting-cash-curve accounting) `(:curve ,(book-accounting-cash-curve accounting)))
+          ((not (typep market 'composite-market)) nil)
+          (t (let* ((currency (or (instrument-currency (position-instrument position))
+                                  (simulation-book-currency market)))
+                    (id (gethash currency (market-discount-curve-for market))))
+               (unless id
+                 (signal-invalid-argument :cash-curve nil 'keyword
+                                          (format nil "a curve for the cash in ~S, which the market does not ~
+discount: give the book :CASH-CURVE id" currency)))
+               `(:curve ,id))))))
+
+(defun open-book (book cash accounting)
+  "BOOK at the start of a path, with a cash account of balance CASH (a real,
+or NIL for none) added. Returns (values book target): TARGET is the cash
+curve when the book holds cash, :NONE when it does not."
+  (unless (typep book 'portfolio)
+    (if cash
+        (signal-invalid-argument 'book book 'portfolio "a PORTFOLIO as the book's INIT")
+        (return-from open-book (values book :none))))
+  (let ((existing (book-cash-position book)))
+    (when (and (null existing) (find-if (lambda (p) (typep (position-instrument p) 'cash-account))
+                                        (portfolio-positions book)))
+      (signal-invalid-argument 'book book 'portfolio "a book holding its cash account at the top level, not in a sub-portfolio"))
+    (cond ((and cash existing)
+           (signal-invalid-argument :cash cash 'real
+                                    "either :CASH or a cash account in the book's INIT, not both"))
+          (cash
+           (check-input cash real "a real cash balance")
+           (let* ((market (simulation-plan-market (book-accounting-plan accounting)))
+                  (position (make-position (make-cash-account :currency (simulation-book-currency market))
+                                           :quantity cash)))
+             (values (apply #'make-portfolio (portfolio-name book) `(,@(portfolio-members book) ,position))
+                     (book-cash-target accounting position))))
+          (existing (values book (book-cash-target accounting existing)))
+          (t (values book :none)))))
+
+(defun book-balance (book)
+  "The cash balance of BOOK, which must hold a cash account."
+  (position-quantity (book-cash-position book)))
+
+(defun set-book-balance (book balance)
+  "A copy of BOOK whose cash balance is BALANCE."
+  (let ((cash (book-cash-position book)))
+    (apply #'make-portfolio (portfolio-name book)
+           (substitute (derive-position cash :quantity balance) cash (portfolio-members book)))))
+
+(defun check-book-cash (book operator)
+  (unless (and (typep book 'portfolio) (book-cash-position book))
+    (signal-invalid-argument operator book 'portfolio
+                             (format nil "a book holding cash for ~(~A~): give the :PORTFOLIO clause :CASH x ~
+(or a cash account in its INIT)" operator))))
+
+(defun book-cash-flow (book amount operator)
+  "BOOK with AMOUNT (a non-negative real) added to its cash by DEPOSIT (OPERATOR
+DEPOSIT) or taken from it (WITHDRAW)."
+  (check-book-cash book operator)
+  (unless (and (realp amount) (>= amount 0))
+    (signal-invalid-argument operator amount 'real
+                             (format nil "a non-negative real to ~(~A~)" operator)))
+  (set-book-balance book (if (eq operator 'deposit)
+                             (+ (book-balance book) (float amount 1d0))
+                             (- (book-balance book) (float amount 1d0)))))
+
+(defun book-trade (book instrument market-fn default-engine &key by to engine)
+  "(values book cost): BOOK after buying or selling INSTRUMENT to a quantity
+TO, or BY a change, at its unit price on the market MARKET-FN returns, paid
+from the book's cash; COST is the cash paid (negative for a sale). A
+position whose quantity becomes 0 is removed. The price
+uses ENGINE, else the position's engine, else DEFAULT-ENGINE, with
+PRICE-POSITION's fallbacks; a price that fails signals its condition."
+  (check-book-cash book 'trade)
+  (check-input instrument instrument "an instrument")
+  (when (typep instrument 'cash-account)
+    (signal-invalid-argument 'trade instrument 'instrument
+                             "an instrument other than cash (DEPOSIT and WITHDRAW move cash)"))
+  (unless (and (or by to) (not (and by to)) (realp (or by to)))
+    (signal-invalid-argument 'trade (or by to) 'real "exactly one of :BY and :TO, a real"))
+  (let* ((old (find-if (lambda (m) (and (typep m 'portfolio-position)
+                                        (same-instrument-p (position-instrument m) instrument)))
+                       (portfolio-members book)))
+         (q0 (if old (position-quantity old) 0d0))
+         (q1 (if to (float to 1d0) (+ q0 (float by 1d0))))
+         (dq (- q1 q0))
+         ;; A position sold to zero leaves the book (ADJUST-POSITION keeps it).
+         (traded (if (zerop q1)
+                     (apply #'make-portfolio (portfolio-name book) (remove old (portfolio-members book)))
+                     (adjust-position book instrument :to q1))))
+    (if (zerop dq)
+        (values traded 0d0)
+        (let* ((result (price-position (make-position instrument :engine (or engine (and old (position-engine old))))
+                                       (funcall market-fn) default-engine #'default-fallback-policy))
+               (unit (position-result-unit-price result)))
+          (unless unit
+            (error (or (position-result-condition result)
+                       (make-condition 'unsupported-combination :exercise nil :payoff instrument :path nil
+                                                                :engine default-engine :market nil))))
+          (let ((cost (* dq unit)))
+            (values (set-book-balance traded (- (book-balance book) cost)) cost))))))
+
+;;; --------------------------------------------------------------------
+;;; Income of a book's positions (task 33)
+;;; --------------------------------------------------------------------
+
+(defgeneric position-income (instrument from to market-from market-to)
+  (:documentation "(values flows finished): FLOWS, a list of (pay-date amount
+kind) paid to one unit of INSTRUMENT over (FROM, TO], KIND one of
+:DISCRETE-DIVIDEND :CONTINUOUS-DIVIDEND :COUPON :REDEMPTION :EXPIRY, and
+FINISHED true if the instrument has nothing left after TO (it is removed
+from the book). MARKET-FROM and MARKET-TO are functions of no arguments
+returning the simulated markets on FROM and TO, built on first call.
+
+A holding pays its discrete dividends going ex in the interval, on the
+ex-date (a cash dividend its drop in the price, the amount discounted from
+its pay date; a proportional one the fraction of the spot before the drop),
+and its continuous yield q to first order, S(FROM) (e^(q dt) - 1) at TO. A
+bond pays its coupons and redemption, a swap or FRA its signed flows, on
+their payment dates. An option expiring in the interval pays its payoff
+there, which must be on TO. Cash, caps, floors and swaptions pay nothing
+(exercise is clause code); so does any other instrument.")
+  (:method ((i instrument) from to market-from market-to)
+    (declare (ignore from to market-from market-to))
+    (values '() nil)))
+
+(defmethod position-income ((h holding) from to market-from market-to)
+  (declare (ignore market-to))
+  (let* ((view (instrument-view (funcall market-from) h))
+         (spot (spot view))
+         (flows (iter (for event in (discrete-dividends view))
+                      (for ex = (dividend-event-date event))
+                      (while (date<= ex to))
+                      (when (date< from ex)
+                        (collect `(,ex ,(if (eq (dividend-event-kind event) :cash)
+                                            (dividend-event-amount event)
+                                            ;; The expected spot just before the drop.
+                                            (let ((delta (dividend-event-amount event)))
+                                              (* delta (/ (forward view ex) (- 1d0 delta)))))
+                                   :discrete-dividend)))))
+         (dt (market-time view to))
+         (q (dividend-yield view to)))
+    (values (if (zerop q)
+                flows
+                `(,@flows (,to ,(* spot (expm1 (* q dt))) :continuous-dividend)))
+            nil)))
+
+(defun flows-in (cashflows from to market sign kind-of)
+  "(pay-date amount kind) for each of CASHFLOWS paying in (FROM, TO], its
+amount times SIGN; MARKET (a function) is called only for floating flows."
+  (iter (for cf in cashflows)
+        (for pay = (payment-date cf))
+        (when (and (date< from pay) (date<= pay to))
+          (collect `(,pay ,(* sign (cashflow-amount cf (if (typep cf 'floating-rate-coupon) (funcall market) nil)))
+                     ,(funcall kind-of cf))))))
+
+(defmethod position-income ((b bond) from to market-from market-to)
+  (declare (ignore market-from))
+  (values (flows-in (bond-cashflows b) from to market-to 1d0
+                    (lambda (cf) (if (typep cf 'coupon) :coupon :redemption)))
+          (date<= (payment-date (a:lastcar (bond-cashflows b))) to)))
+
+(defmethod position-income ((s swap) from to market-from market-to)
+  (declare (ignore market-from))
+  (values (iter (for leg in (swap-legs s))
+                (for sign in (swap-signs s))
+                (appending (flows-in leg from to market-to sign (constantly :coupon))))
+          (iter (for leg in (swap-legs s))
+                (always (date<= (payment-date (a:lastcar leg)) to)))))
+
+(defmethod position-income ((f forward-rate-agreement) from to market-from market-to)
+  (declare (ignore market-from))
+  (let ((pay (fra-value-date f)))
+    (if (and (date< from pay) (date<= pay to))
+        (values `((,pay ,(fra-amount f (funcall market-to)) :coupon)) t)
+        (values '() (date<= pay to)))))
+
+(defmethod position-income ((o option) from to market-from market-to)
+  (declare (ignore market-from))
+  (let ((expiry (expiry (option-exercise o))))
+    (cond ((not (date<= expiry to)) (values '() nil))
+          ((not (date= expiry to))
+           (signal-invalid-argument 'option o 'option
+                                    (format nil "an option expiring on a simulation date: it expires on ~A, between ~
+~A and ~A; add ~:*~:*~:*~A to DATES" expiry from to)))
+          (t (values `((,to ,(values (price o :auto (funcall market-to))) :expiry)) t)))))
+
+(defun income-currency (instrument market)
+  "The currency INSTRUMENT pays in on MARKET, or NIL if unknown."
+  (or (instrument-currency instrument)
+      (and (typep market 'composite-market)
+           (not (typep instrument '(or rates-instrument cash-account)))
+           (gethash (resolve-underlying market (instrument-underlying instrument))
+                    (market-underlying-currency market)))))
+
+(defun remove-finished-positions (book finished)
+  "BOOK without the positions in FINISHED, at any depth."
+  (labels ((prune (portfolio)
+             (apply #'make-portfolio (portfolio-name portfolio)
+                    (iter (for m in (portfolio-members portfolio))
+                          (cond ((typep m 'portfolio) (collect (prune m)))
+                                ((not (member m finished)) (collect m)))))))
+    (prune book)))
+
+(defun book-income (book accounting k target market-from market-to)
+  "BOOK after D5's step 2 at event K: each position's income over
+(t_{k-1}, t_k] (POSITION-INCOME) of the kinds the book collects, times its
+quantity, paid into cash and grown from its pay date to t_k (exactly on the
+initial curve TARGET, at face when a leg simulates TARGET); then the
+positions that matured or expired are removed."
+  (let* ((plan (book-accounting-plan accounting))
+         (from (simulation-date plan (1- k)))
+         (to (simulation-date plan k))
+         (initial (simulation-plan-market plan))
+         (simulated (find target (simulation-plan-legs plan) :key #'simulation-leg-target :test #'equal))
+         (cash-currency (instrument-currency (position-instrument (book-cash-position book))))
+         (collect (book-accounting-collect accounting))
+         (balance (book-balance book))
+         (finished '()))
+    (flet ((growth (pay)
+             (cond ((or simulated (date= pay to)) 1d0)
+                   ((null target) (/ (discount-factor initial pay) (discount-factor initial to)))
+                   (t (/ (market-curve-discount initial (second target) pay)
+                         (market-curve-discount initial (second target) to))))))
+      (dolist (p (portfolio-positions book))
+        (let ((instrument (position-instrument p)))
+          (multiple-value-bind (flows done) (position-income instrument from to market-from market-to)
+            (when done (push p finished))
+            (dolist (flow flows)
+              (destructuring-bind (pay amount kind) flow
+                (when (member kind collect)
+                  (let ((currency (income-currency instrument initial)))
+                    (when (and currency cash-currency (not (eq currency cash-currency)))
+                      (error 'currency-mismatch :currencies `(,currency ,cash-currency)
+                                                :operation (format nil "income of ~A on ~A into a book's cash" p to))))
+                  (incf balance (* (position-quantity p) amount (growth pay)))))))))
+      (-> book
+          (set-book-balance balance)
+          (remove-finished-positions finished)))))
+
 (defun output-value (name path value)
   (if (realp value)
       (float value 1d0)
@@ -1062,10 +1410,30 @@ contribute 0)."
     (signal-invalid-argument 'clause clause 'list (format nil "a SIMULATE clause: ~A" reason)))
 
   (defun clause-binding-list-p (x)
-    "True if X is the optional (market) list of :START: a list of at most one
-symbol that names no function."
-    (and (listp x) (<= (length x) 1)
-         (every (lambda (s) (and (symbolp s) s (not (keywordp s)) (not (fboundp s)))) x)))
+    "True if X is the optional ([market] &key time) list of :START: a list
+holding &KEY, or of at most one symbol that names no function."
+    (and (listp x)
+         (or (member '&key x)
+             (and (<= (length x) 1)
+                  (every (lambda (s) (and (symbolp s) s (not (keywordp s)) (not (fboundp s)))) x)))))
+
+  (defun parse-clause-binding (clause binding min max keys syntax)
+    "(values variables key-variables) of a date clause's BINDING: MIN to MAX
+variables, then optionally &KEY and variables named by KEYS (strings), each
+at most once. KEY-VARIABLES holds one symbol or NIL per key, in KEYS' order.
+SYNTAX describes the clause in the report."
+    (unless (a:proper-list-p binding) (simulate-clause-error clause syntax))
+    (let* ((at (position '&key binding))
+           (variables (subseq binding 0 at))
+           (key-part (if at (subseq binding (1+ at)) '())))
+      (flet ((variable-p (s) (and (symbolp s) s (not (keywordp s)) (not (member s lambda-list-keywords)))))
+        (unless (and (<= min (length variables) max) (every #'variable-p variables)
+                     (every #'variable-p key-part)
+                     (every (lambda (s) (member (symbol-name s) keys :test #'string=)) key-part)
+                     (= (length key-part) (length (remove-duplicates key-part :key #'symbol-name :test #'string=))))
+          (simulate-clause-error clause syntax)))
+      (values variables
+              (mapcar (lambda (key) (find key key-part :key #'symbol-name :test #'string=)) keys))))
 
   (defun parse-final (clause)
     "The (name form) entries of a :FINAL clause."
@@ -1118,19 +1486,40 @@ quoted list, a variable, an array form) is evaluated as it is."
          (or (and (symbolp (first tree)) (member (symbol-name (first tree)) names :test #'string=))
              (some (lambda (x) (calls-named-p x names)) (if (a:proper-list-p tree) tree (list (car tree) (cdr tree)))))))
 
+  (defun named-call-arguments (tree name)
+    "The first arguments of the forms in TREE whose operator's name is NAME."
+    (when (consp tree)
+      (append (when (and (symbolp (first tree)) (string= (symbol-name (first tree)) name)
+                         (consp (rest tree)))
+                `(,(second tree)))
+              (if (a:proper-list-p tree)
+                  (a:mappend (lambda (x) (named-call-arguments x name)) tree)
+                  (append (named-call-arguments (car tree) name) (named-call-arguments (cdr tree) name))))))
+
   (defun parse-portfolio (clause)
-    "(values var init record engine) of a :PORTFOLIO clause."
-    (destructuring-bind (var &rest rest) (rest clause)
-      (unless (and (symbolp var) var (not (keywordp var)))
-        (simulate-clause-error clause "(:portfolio var [init] &key record engine)"))
-      (let* ((init (if (and rest (not (keywordp (first rest)))) (pop rest) nil))
-             (options rest))
-        (unless (evenp (length options))
-          (simulate-clause-error clause "(:portfolio var [init] &key record engine)"))
-        (values var
-                (or init `(make-portfolio ,(string-downcase (symbol-name var))))
-                (getf options :record)
-                (getf options :engine :auto))))))
+    "(values var init record engine cash cash-curve collect) of a :PORTFOLIO
+clause; CASH is NIL without :CASH."
+    (let ((syntax "(:portfolio var [init] &key record engine cash cash-curve collect)"))
+      (destructuring-bind (var &rest rest) (rest clause)
+        (unless (and (symbolp var) var (not (keywordp var)))
+          (simulate-clause-error clause syntax))
+        (let* ((init (if (and rest (not (keywordp (first rest)))) (pop rest) nil))
+               (options rest))
+          (unless (and (evenp (length options))
+                       (iter (for (k nil) on options by #'cddr)
+                             (always (member k '(:record :engine :cash :cash-curve :collect)))))
+            (simulate-clause-error clause syntax))
+          (unless (and (listp (getf options :record))
+                       (every (lambda (k) (member k `(:value :cash ,@*greek-keys*))) (getf options :record)))
+            (simulate-clause-error clause (format nil ":RECORD keys from :VALUE, :CASH and the Greeks ~{~S~^ ~}"
+                                                  *greek-keys*)))
+          (values var
+                  (or init `(make-portfolio ,(string-downcase (symbol-name var))))
+                  (getf options :record)
+                  (getf options :engine :auto)
+                  (getf options :cash)
+                  (getf options :cash-curve)
+                  (getf options :collect :all)))))))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defun special-variable-name-p (symbol)
@@ -1185,12 +1574,24 @@ once; the logic clauses run in the order written.
                      on every path, so (:hold (v (make-array 5))) gives each
                      path its own array. Readable later with SIMULATION-HELD
                      for the kept paths.
-  (:portfolio var [init] &key record engine)
+  (:portfolio var [init] &key record engine cash cash-curve collect)
                      VAR is a per-path PORTFOLIO (INIT, default empty), changed
                      with ADJUST-POSITION and priced with ENGINE. RECORD lists
-                     :VALUE and Greek keys; each is recorded every date under
-                     the name (var-keyword key), e.g. (:book :delta). Without
-                     :FINAL the one output is :VALUE.
+                     :VALUE, :CASH and Greek keys; each is recorded every date
+                     under the name (var-keyword key), e.g. (:book :delta).
+                     Without :FINAL the one output is :VALUE.
+                     CASH (a real, evaluated per path), or a CASH-ACCOUNT
+                     position in INIT, makes the book self-financing: on each
+                     date after the first, before the clauses, its cash grows
+                     by D(t_k-1)/D(t_k) (the path's discount on the
+                     currency's discount curve, or CASH-CURVE's; the initial
+                     curve's when no leg simulates it), then each position's
+                     income over the interval (dividends, coupons and
+                     redemptions, option payoffs at expiry; COLLECT lists the
+                     kinds paid, default :ALL of :DISCRETE-DIVIDEND
+                     :CONTINUOUS-DIVIDEND :COUPON :REDEMPTION :EXPIRY) is paid
+                     into it, and matured bonds and expired options leave
+                     the book. An option held must expire on a date of DATES.
   (:state var name [leg])
                      VAR is bound to the double-float state component NAME
                      (:spot, :variance, ... see SIMULATION-STATE-NAMES) of the
@@ -1207,14 +1608,16 @@ once; the logic clauses run in the order written.
                      follows the spot S (a :STATE variable):
                        (:derive (:vol :spx) ()
                          (make-instance 'flat-black-vol :vol (* 0.002d0 s)))
-  (:start [(market)] form ...)
+  (:start [([market] &key time)] form ...)
                      at the valuation date, before the first step. The optional
-                     (market) binds that date's market. RECORD here goes to the
-                     valuation date, the first of SIMULATION-DATES.
-  (:every (date [market]) form ...)
+                     (market) binds that date's market, TIME 0. RECORD here
+                     goes to the valuation date, the first of SIMULATION-DATES.
+  (:every (date [market] &key time dt) form ...)
                      at every date of DATES. DATE is bound to the date, MARKET
-                     to the market on it built from the simulated states.
-  (:on date-list (i [market]) form ...)
+                     to the market on it built from the simulated states, TIME
+                     to its market time and DT to TIME less the previous
+                     date's (doubles).
+  (:on date-list (i [market] &key time dt) form ...)
                      at the dates of DATE-LIST (a subset of DATES), I being the
                      date's position in the list.
   (:final (name form) ...)
@@ -1244,6 +1647,17 @@ matched by name in any package:
                        leg simulates that curve it is exp(-integral of the
                        short rate) on the path; otherwise it is the initial
                        market's discount factor. Also available in :FINAL.
+  (previous var)       the :STATE variable VAR's value at the previous date
+                       (the valuation date's at the first).
+With a book holding cash, also:
+  (trade instrument &key by to engine)
+                       buys or sells INSTRUMENT to quantity TO, or BY a change,
+                       at its price on the date's market (ENGINE, else the
+                       position's, else the book's), paid from cash; returns
+                       the cash paid. A position sold to 0 leaves the book.
+  (deposit amount) (withdraw amount)
+                       move a non-negative AMOUNT into or out of cash; return
+                       the balance.
 
 Results of simulation in SIMULATION-RESULT:
   :final outputs   SIMULATION-VALUES (one number per path), SIMULATION-MEAN,
@@ -1251,7 +1665,8 @@ Results of simulation in SIMULATION-RESULT:
                    of outputs are paired estimates on common random numbers.
   recorded names   SIMULATION-STATISTIC (a vector over SIMULATION-DATES),
                    SIMULATION-RECORDED-NAMES.
-  kept paths       SIMULATION-PATH-STATE, SIMULATION-HELD, PATH-MARKETS.
+  kept paths       SIMULATION-PATH-STATE, SIMULATION-HELD, SIMULATION-PATH-RECORD
+                   (each RECORD of the path, by date), PATH-MARKETS.
   any vector       SIMULATION-SUMMARY gives the mean and standard error.
 The function underneath is MAP-SIMULATED-PATHS.
 
@@ -1273,6 +1688,16 @@ The function underneath is MAP-SIMULATED-PATHS.
     (:final (:hedged (+ cash (* shares s) (- (payoff-value (option-payoff call) s))))
             (:unhedged (- premium (payoff-value (option-payoff call) s)))))
 
+  ;; The same hedge as a self-financing book: the short call's payoff is
+  ;; paid from cash at EXPIRY, so the book's final value is the P&L.
+  (simulate ((make-gbm) market dates :n-paths 20000)
+    (:portfolio book (make-portfolio \"hedge\" (make-position call :quantity -1))
+                :cash (price call :black-scholes market) :engine :black-scholes)
+    (:every (date market)
+      (when (date< date expiry)
+        (trade (make-holding) :to (getf (greeks call :black-scholes market :which '(:delta)) :delta))))
+    (:final (:pnl (price book :black-scholes market))))
+
   ;; The exposure of a SWAP when the curve it prices on follows Hull-White:
   ;; its INDEX fixes along each path on the simulated curve, and
   ;; PATH-DISCOUNT discounts along the path.
@@ -1284,7 +1709,13 @@ The function underneath is MAP-SIMULATED-PATHS.
       (record :discounted (* (path-discount) (swap-npv swap market))))
     (:final (:pv (* (path-discount) (swap-npv swap market)))))"
   (let* ((record-name (intern "RECORD")) (stop-name (intern "STOP"))
-         (discount-name (intern "PATH-DISCOUNT")) (fixings (gensym "FIXINGS"))
+         (discount-name (intern "PATH-DISCOUNT")) (previous-name (intern "PREVIOUS"))
+         (fixings (gensym "FIXINGS"))
+         (event-times (gensym "TIMES")) (event-steps (gensym "STEPS")) (previous (gensym "PREVIOUS"))
+         (trade-name (intern "TRADE")) (deposit-name (intern "DEPOSIT")) (withdraw-name (intern "WITHDRAW"))
+         (accounting (gensym "ACCOUNTING")) (cash-target (gensym "CASH-TARGET"))
+         (last-discount (gensym "LAST-DISCOUNT")) (book-states (gensym "BOOK-STATES"))
+         (book-market (gensym "BOOK-MARKET"))
          (plan (gensym "PLAN")) (store (gensym "STORE")) (stats (gensym "STATS"))
          (path (gensym "PATH")) (k (gensym "K")) (states (gensym "STATES"))
          (alive (gensym "ALIVE")) (cached (gensym "MARKET")) (market-fn (gensym "MARKET-AT"))
@@ -1326,17 +1757,21 @@ The function underneath is MAP-SIMULATED-PATHS.
                          derives)))
         (:start (destructuring-bind (&rest body) (rest clause)
                   (let ((binding (when (clause-binding-list-p (first body)) (pop body))))
-                    (push `(,(first binding) ,body) starts))))
+                    (multiple-value-bind (variables keys)
+                        (parse-clause-binding clause binding 0 1 '("TIME") "(:start [([market] &key time)] form ...)")
+                      (push `(,(first variables) ,body ,(first keys)) starts)))))
         (:every (destructuring-bind (binding &rest body) (rest clause)
-                  (unless (and (listp binding) (<= 1 (length binding) 2) (every #'symbolp binding))
-                    (simulate-clause-error clause "(:every (date [market]) form ...)"))
-                  (push `(:every ,(first binding) ,(second binding) ,body) everys)))
+                  (multiple-value-bind (variables keys)
+                      (parse-clause-binding clause binding 1 2 '("TIME" "DT")
+                                            "(:every (date [market] &key time dt) form ...)")
+                    (push `(:every ,(first variables) ,(second variables) ,body ,@keys) everys))))
         (:on (destructuring-bind (dates-form binding &rest body) (rest clause)
-               (unless (and (listp binding) (<= 1 (length binding) 2) (every #'symbolp binding))
-                 (simulate-clause-error clause "(:on date-list (i [market]) form ...)"))
-               (push `(:on ,(first binding) ,(second binding) ,body ,dates-form
-                           ,(gensym "ON-DATES") ,(gensym "POSITIONS"))
-                     everys)
+               (multiple-value-bind (variables keys)
+                   (parse-clause-binding clause binding 1 2 '("TIME" "DT")
+                                         "(:on date-list (i [market] &key time dt) form ...)")
+                 (push `(:on ,(first variables) ,(second variables) ,body ,dates-form
+                             ,(gensym "ON-DATES") ,(gensym "POSITIONS") ,@keys)
+                       everys))
                (push (first everys) ons)))
         (:final (when finals (simulate-clause-error clause "one :FINAL clause"))
                 (setf finals (parse-final clause)))))
@@ -1350,12 +1785,25 @@ The function underneath is MAP-SIMULATED-PATHS.
            (book-key (when book (a:make-keyword (symbol-name book))))
            (outputs (or finals
                         (when book `((:value (price ,book ,(fourth portfolio) (,market-fn)))))))
-           (held-vars `(,@(mapcar #'first holds) ,@(when book `(,book)))))
+           (held-vars `(,@(mapcar #'first holds) ,@(when book `(,book))))
+           (uses-previous (calls-named-p clauses '("PREVIOUS"))))
+      (dolist (var (named-call-arguments clauses "PREVIOUS"))
+        (unless (find var state-vars :key #'first)
+          (signal-invalid-argument 'previous var 'symbol
+                                   (format nil "a :STATE variable in (previous var), one of ~:[none~;~:*~{~S~^, ~}~] ~
+(carry other values from date to date in an :ACCUMULATE variable)"
+                                           (mapcar #'first state-vars)))))
       (labels ((with-states (body)
                  `(let ,(iter (for (var nil nil leg index) in state-vars)
                               (collect `(,var (aref (the double-vector (svref ,states ,leg)) ,index))))
                     (declare (ignorable ,@(mapcar #'first state-vars))
                              ,@(when state-vars `((double-float ,@(mapcar #'first state-vars)))))
+                    ,@body))
+               (with-times (time-var dt-var body)
+                 ;; TIME and DT of event K, from vectors the plan gives once.
+                 `(let (,@(when time-var `((,time-var (aref ,event-times ,k))))
+                        ,@(when dt-var `((,dt-var (aref ,event-steps ,k)))))
+                    (declare (ignorable ,@(remove nil `(,time-var ,dt-var))))
                     ,@body))
                (with-market (market-var body)
                  (cond ((null market-var) `(progn ,@body))
@@ -1371,10 +1819,15 @@ The function underneath is MAP-SIMULATED-PATHS.
                    `((unless (typep ,book 'portfolio)
                        (signal-invalid-argument ',book ,book 'portfolio
                                                 "a PORTFOLIO (set the book with ADJUST-POSITION or MAKE-PORTFOLIO)"))
-                     ,@(destructuring-bind (var init record engine) portfolio
-                         (declare (ignore var init))
-                         (when record
-                           (let ((greek-keys (remove :value record)))
+                     ,@(destructuring-bind (var init record &rest more) portfolio
+                         (declare (ignore var init more))
+                         (when (member :cash record)
+                           `((record-value ,stats ,store '(,book-key :cash) ,path ,k
+                                           (progn (check-book-cash ,book :record) (book-balance ,book))))))
+                     ,@(destructuring-bind (var init record engine &rest accounting) portfolio
+                         (declare (ignore var init accounting))
+                         (when (intersection record `(:value ,@*greek-keys*))
+                           (let ((greek-keys (remove :cash (remove :value record))))
                              `((let ((m (,market-fn)))
                                  ,@(when (member :value record)
                                      `((record-value ,stats ,store '(,book-key :value) ,path ,k
@@ -1384,6 +1837,29 @@ The function underneath is MAP-SIMULATED-PATHS.
                                          ,@(iter (for key in greek-keys)
                                                  (collect `(record-value ,stats ,store '(,book-key ,key)
                                                                          ,path ,k (getf g ,key)))))))))))))))
+               (accrue-book ()
+                 ;; D5 steps 1 and 2 for a book holding cash: interest at the
+                 ;; growth of cash over the interval, from the path's discount.
+                 (when book
+                   `((unless (eq ,cash-target :none)
+                       (let ((d (simulation-path-discount ,plan ,k ,states ,cash-target)))
+                         (check-book-cash ,book :interest)
+                         (setf ,book (set-book-balance ,book (* (book-balance ,book) (/ ,last-discount d)))
+                               ,last-discount d))
+                       ;; Income over the interval; the previous date's market
+                       ;; is the one built then, or built now from its states.
+                       (setf ,book (book-income ,book ,accounting ,k ,cash-target
+                                                (lambda ()
+                                                  (or ,book-market
+                                                      (setf ,book-market (simulation-market ,plan (1- ,k) ,book-states
+                                                                                            ,fixings))))
+                                                #',market-fn))))))
+               (remember-book-date ()
+                 ;; What the next date's income needs of this one.
+                 (when book
+                   `((unless (eq ,cash-target :none)
+                       (setf ,book-market ,cached
+                             ,book-states (copy-states-into ,book-states ,states))))))
                (keep-hook ()
                  `(when (keeping-path-p ,store ,path)
                     (store-path-date ,store ,path ,k ,states
@@ -1409,9 +1885,17 @@ The function underneath is MAP-SIMULATED-PATHS.
                                                          ,(with-states body))))))))
                         ,@plan-options))
                 (,store (make-simulation-store ,plan ,(keep-form keep)))
+                (,event-times (simulation-event-times ,plan))
+                (,event-steps (simulation-event-steps ,event-times))
+                ,@(when book
+                    (destructuring-bind (var init record engine cash cash-curve collect) portfolio
+                      (declare (ignore var init record engine cash))
+                      `((,accounting (make-book-accounting ,plan ,cash-curve ,collect)))))
                 ,@(iter (for (nil nil nil nil nil on-dates positions) in ons)
                         (collect `(,positions (on-positions ,plan ,on-dates)))))
-           (declare (fixnum ,@(iter (for (nil nil nil leg index) in state-vars) (appending `(,leg ,index)))))
+           (declare (fixnum ,@(iter (for (nil nil nil leg index) in state-vars) (appending `(,leg ,index))))
+                    (type double-vector ,event-times ,event-steps)
+                    (ignorable ,event-times ,event-steps))
            (progn
              ,@(iter (for (nil name underlying leg index) in state-vars)
                      (collect `(multiple-value-setq (,leg ,index)
@@ -1424,9 +1908,13 @@ The function underneath is MAP-SIMULATED-PATHS.
                     (let ((,stats (make-hash-table :test 'equal))
                           (,path 0) (,k 0) (,states nil) (,alive t) (,cached nil)
                           (,fixings (make-fixing-buffer ,plan))
+                          ,@(when uses-previous `((,previous nil)))
+                          ,@(when book `((,cash-target :none) (,last-discount 1d0) (,book-states nil)
+                                         (,book-market nil)))
                           ,@(iter (for (var) in accumulators) (collect `(,var 0d0)))
                           ,@(mapcar (lambda (v) `(,v nil)) held-vars))
                       (declare (fixnum ,path ,k)
+                               ,@(when book `((double-float ,last-discount)))
                                ,@(when accumulators `((double-float ,@(mapcar #'first accumulators))))
                                (ignorable ,stats ,alive))
                       (flet ((,market-fn ()
@@ -1436,40 +1924,76 @@ The function underneath is MAP-SIMULATED-PATHS.
                         (declare (ignorable #',market-fn #',discount-name))
                         (macrolet ((,record-name (name value)
                                      `(record-value ,',stats ,',store ,name ,',path ,',k ,value))
-                                   (,stop-name () `(setf ,',alive nil)))
+                                   (,stop-name () `(setf ,',alive nil))
+                                   ,@(when uses-previous
+                                       `((,previous-name (var)
+                                           (let ((entry (assoc var ',(iter (for (var nil nil leg index) in state-vars)
+                                                                           (collect `(,var ,leg ,index))))))
+                                             (unless entry
+                                               (signal-invalid-argument
+                                                'previous var 'symbol
+                                                "a :STATE variable (carry other values from date to date in an :ACCUMULATE variable)"))
+                                             `(aref (the double-vector (svref ,',previous ,(second entry)))
+                                                    ,(third entry))))))
+                                   ,@(when book
+                                       `((,trade-name (instrument &rest keys)
+                                           (let ((b (gensym "BOOK")) (cost (gensym "COST")))
+                                             `(multiple-value-bind (,b ,cost)
+                                                  (book-trade ,',book ,instrument (function ,',market-fn)
+                                                              ,',(fourth portfolio) ,@keys)
+                                                (setf ,',book ,b)
+                                                ,cost)))
+                                         (,deposit-name (amount)
+                                           `(progn (setf ,',book (book-cash-flow ,',book ,amount 'deposit))
+                                                   (book-balance ,',book)))
+                                         (,withdraw-name (amount)
+                                           `(progn (setf ,',book (book-cash-flow ,',book ,amount 'withdraw))
+                                                   (book-balance ,',book))))))
                           (values
                            (lambda (p s)
                              (setf ,path p ,k 0 ,states s ,cached nil ,alive t)
                              (path-fixings! ,plan 0 s ,fixings)
+                             ,@(when uses-previous `((setf ,previous (copy-states-into ,previous s))))
                              ,@(iter (for (var init) in accumulators) (collect `(setf ,var (float ,init 1d0))))
                              ,@(iter (for (var init) in holds) (collect `(setf ,var ,init)))
-                             ,@(when book `((setf ,book ,(second portfolio))))
-                             ,@(iter (for (market-var body) in starts)
-                                     (collect (with-states `(,(with-market market-var body)))))
+                             ,@(when book
+                                 `((setf ,book ,(second portfolio) ,last-discount 1d0)
+                                   (multiple-value-setq (,book ,cash-target)
+                                     (open-book ,book ,(fifth portfolio) ,accounting))))
+                             ,@(iter (for (market-var body time-var) in starts)
+                                     (collect (with-states `(,(with-times time-var nil
+                                                                `(,(with-market market-var body)))))))
                              ,@(record-book)
                              ,(keep-hook)
+                             ,@(remember-book-date)
                              ,alive)
                            (lambda (p kk s)
                              (declare (ignore p))
                              (setf ,k kk ,states s ,cached nil)
                              (path-fixings! ,plan kk s ,fixings)
+                             ,@(accrue-book)
                              ,@(iter (for clause in everys)
                                      (collect
                                          (ecase (first clause)
                                            (:every
-                                            (destructuring-bind (date-var market-var body) (rest clause)
+                                            (destructuring-bind (date-var market-var body time-var dt-var) (rest clause)
                                               `(let ((,date-var (aref (simulation-plan-event-dates ,plan) (1- ,k))))
                                                  (declare (ignorable ,date-var))
-                                                 ,(with-states `(,(with-market market-var body))))))
+                                                 ,(with-states `(,(with-times time-var dt-var
+                                                                    `(,(with-market market-var body))))))))
                                            (:on
-                                            (destructuring-bind (index-var market-var body dates-form on-dates positions)
+                                            (destructuring-bind (index-var market-var body dates-form on-dates positions
+                                                                 time-var dt-var)
                                                 (rest clause)
                                               (declare (ignore dates-form on-dates))
                                               `(let ((,index-var (aref ,positions ,k)))
                                                  (when (>= ,index-var 0)
-                                                   ,(with-states `(,(with-market market-var body))))))))))
+                                                   ,(with-states `(,(with-times time-var dt-var
+                                                                      `(,(with-market market-var body))))))))))))
                              ,@(record-book)
                              ,(keep-hook)
+                             ,@(remember-book-date)
+                             ,@(when uses-previous `((copy-states-into ,previous s)))
                              ,alive)
                            (lambda (p s ,values-vector)
                              (declare (ignore p) (type double-vector ,values-vector) (ignorable ,values-vector))

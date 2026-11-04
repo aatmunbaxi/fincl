@@ -52,6 +52,42 @@ underlying), paying in CURRENCY (NIL: the underlying's).
         (format stream "~:[the market's underlying~;~:*~S~]" (instrument-underlying h)))))
 
 ;;; --------------------------------------------------------------------
+;;; Cash
+;;; --------------------------------------------------------------------
+
+(defclass cash-account (instrument) ()
+  (:metaclass component-class)
+  (:documentation "One unit of a currency, worth 1 in it: a position's
+quantity is a cash balance (negative: borrowed). Interest is not part of its
+value; SIMULATE's books accrue it.
+
+  (make-position (make-cash-account :currency :usd) :quantity 1000)"))
+
+(defun make-cash-account (&key currency)
+  "A CASH-ACCOUNT in CURRENCY (a keyword; NIL means the market's).
+
+  (make-cash-account :currency :usd)"
+  (make-instance 'cash-account :currency currency))
+
+;;; Priced on the market as a whole: cash has no underlying.
+(defmethod instrument-view (market (c cash-account))
+  market)
+
+(defmethod price ((c cash-account) engine market)
+  (declare (ignore market))
+  (values 1d0 nil (and (typep engine 'engine) engine)))
+
+(defmethod greeks ((c cash-account) engine market &key (which *greek-keys*) bumps)
+  (declare (ignore engine market bumps))
+  (iter (for key in which) (appending `(,key 0d0))))
+
+(defmethod print-object ((c cash-account) stream)
+  (if *print-readably*
+      (prin1 `(make-cash-account ,@(a:when-let ((cur (instrument-currency c))) `(:currency ,cur))) stream)
+      (print-unreadable-object (c stream :type t)
+        (format stream "~:[the market's currency~;~:*~S~]" (instrument-currency c)))))
+
+;;; --------------------------------------------------------------------
 ;;; Positions and portfolios
 ;;; --------------------------------------------------------------------
 
@@ -121,7 +157,9 @@ identity; holdings by underlying and currency.")
   (:method (a b) (eq a b))
   (:method ((a holding) (b holding))
     (and (eq (instrument-underlying a) (instrument-underlying b))
-         (eq (instrument-currency a) (instrument-currency b)))))
+         (eq (instrument-currency a) (instrument-currency b))))
+  (:method ((a cash-account) (b cash-account))
+    (eq (instrument-currency a) (instrument-currency b))))
 
 (defun adjust-position (portfolio instrument &key by to)
   "A copy of PORTFOLIO whose top-level position in INSTRUMENT (see
@@ -267,6 +305,9 @@ model); SELECT-ENGINE and PRICE-PORTFOLIO move on when it does.
   (:method ((h holding) market &key candidates process)
     (declare (ignore market candidates process))
     ;; Any engine prices a holding; the Black-Scholes one stands for all.
+    `(,(ensure-engine :black-scholes)))
+  (:method ((c cash-account) market &key candidates process)
+    (declare (ignore market candidates process))
     `(,(ensure-engine :black-scholes))))
 
 (defun select-engine (instrument market &rest options &key candidates process)

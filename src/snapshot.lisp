@@ -56,6 +56,11 @@ dividend-schedule and smile/SSVI structures, an option, a holding, a position or
 (defmethod snapshot-form ((c interpolated-zero-curve)) (interpolated-curve-form c :zero-rates))
 (defmethod snapshot-form ((c interpolated-forward-curve)) (interpolated-curve-form c :forwards))
 
+(defmethod snapshot-form ((c state-curve))
+  (signal-invalid-argument 'curve c 'interpolated-discount-curve
+                           "a curve with a snapshot form: a simulated curve is a model's bond price function; ~
+give its leg :KNOTS (tenors) to simulate an interpolated curve instead"))
+
 (defmethod snapshot-form ((s interpolated-smile))
   (let ((i (smile-interpolator s)))
     `(make-interpolated-smile ,(smile-expiry s)
@@ -81,6 +86,9 @@ dividend-schedule and smile/SSVI structures, an option, a holding, a position or
 (defmethod snapshot-form ((h holding))
   `(make-holding ,@(a:when-let ((u (instrument-underlying h))) `(:underlying ,u))
                  ,@(a:when-let ((c (instrument-currency h))) `(:currency ,c))))
+
+(defmethod snapshot-form ((c cash-account))
+  `(make-cash-account ,@(a:when-let ((cur (instrument-currency c))) `(:currency ,cur))))
 
 (defmethod snapshot-form ((p portfolio-position))
   `(make-position ,(snapshot-form (position-instrument p)) :quantity ,(position-quantity p)
@@ -158,7 +166,7 @@ back.
 (defparameter *snapshot-constructors*
   '(make-market make-dividend-schedule make-instance make-interpolated-smile make-svi-slice
     make-smile-surface make-ssvi-surface make-option-from-clauses make-holding make-position
-    make-portfolio make-engine make-gbm make-heston make-cev make-local-vol make-merton-jump
+    make-portfolio make-cash-account make-engine make-gbm make-heston make-cev make-local-vol make-merton-jump
     make-kou-jump make-variance-gamma make-nig make-bates make-garch)
   "The functions a snapshot may call.")
 

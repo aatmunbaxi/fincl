@@ -458,6 +458,16 @@ component; it must also list the kind in PROCESS-TARGETS.
                                  (format nil "a target ~(~A~) drives: ~{~S~^, ~}"
                                          (class-name (class-of p)) (process-targets p))))))
 
+(defgeneric state-discount-bond (process state t0 t1)
+  (:documentation "The price at T0 of a zero-coupon bond paying 1 at T1, on a
+path where PROCESS's state at T0 is STATE, or NIL if PROCESS has no closed
+form. Times are in the leg's market time.
+
+  (state-discount-bond process state 1d0 5d0)   ; a 4-year bond, 1 year in")
+  (:method ((p stochastic-process) state t0 t1)
+    (declare (ignore state t0 t1))
+    nil))
+
 (defgeneric steppable-p (process)
   (:documentation "True if SIMULATE can step PROCESS (it has a stepper). The
 default is SIMULATABLE-P; a process the Monte Carlo engine cannot price

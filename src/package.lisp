@@ -109,6 +109,9 @@
    #:path-markets #:spot-loadings
    #:simulation-recorded-names #:simulation-kept-paths #:simulation-quantiles-p
    #:simulation-path-state
+   ;; self-financing books, exact simulated curves, per-path records (task 33)
+   #:simulation-path-record #:state-discount-bond #:market-curve-discount
+   #:cash-account #:make-cash-account
    ;; simulated market components (task 32)
    #:market-component #:structure-at-state #:process-targets #:fixing-dates
    #:surface-quotes #:rescale-vol-structure

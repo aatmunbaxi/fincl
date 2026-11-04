@@ -163,6 +163,7 @@
                (:file "simulation")
                (:file "simulation-components")
                (:file "simulation-validation")
+               (:file "simulation-books")
                (:file "readme")
                ;; The runners call the checks above; keep them last.
                (:file "tests"))

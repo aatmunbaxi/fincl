@@ -467,9 +467,42 @@
                         (and (probe-file path)
                              (string-equal (pathname-type path) (string-downcase display))))))))))
 
+(defun recorded-paths-checks ()
+  (format t "~&Paths of recorded and held values~%")
+  (flet ((run (keep)
+           (simulate ((make-gbm) *viz-market* (plot-dates) :n-paths 200 :keep keep)
+             (:accumulate (nav 1d0))
+             (:hold (held-nav 1d0))
+             (:state s :spot)
+             (:every (date)
+               (setf nav (* nav 1.01d0) held-nav nav)
+               (record :balance (* nav s))))))
+    (let* ((r (run '(:paths 5)))
+           (by-record (plot-figure (paths r :record :balance :n 5)))
+           (by-held (plot-figure (paths r :held :held-nav :n 5))))
+      (check-equal "(paths r :record :balance) draws a trace per path" 5 (length (getf by-record :data)))
+      (check-that "its values are the path's records"
+                  (same-doubles (coerce (getf (first-trace by-record) :y) 'fincl:double-vector)
+                                (simulation-path-record r 0 :balance)))
+      (check-that "(paths r :held :held-nav) draws the held values"
+                  (= 1.01d0 (aref (getf (first-trace by-held) :y) 1)))
+      (check-that "both render"
+                  (let ((*output-directory* #p"/tmp/fincl-viz-tests/plots/"))
+                    (and (probe-file (plot (paths r :record :balance) :name "recorded-paths" :display :json))
+                         (probe-file (plot (paths r :held :held-nav) :name "held-paths" :display :json)))))
+      (check-error "both :record and :held" (paths r :record :balance :held :held-nav) invalid-argument))
+    (let ((bare (run nil)))
+      (check-error "recorded paths of a result that kept none" (paths bare :record :balance :n 3)
+                   missing-plot-data)
+      (check-that "the report names the :KEEP to add"
+                  (search "add :keep (:paths 3)"
+                          (handler-case (paths bare :record :balance :n 3)
+                            (missing-plot-data (c) (princ-to-string c))))))))
+
 (defun run-viz-tests ()
   "Run every fincl-viz check; returns T when all pass."
   (setf *failures* 0)
+  (recorded-paths-checks)
   (json-checks)
   (renderer-checks)
   (merge-checks)

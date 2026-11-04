@@ -396,8 +396,9 @@ forecast on the :EUR curve."
          (hw (make-hull-white :a 0.03d0 :sigma 0.008d0))
          (fitted (fincl::resolve-process hw (fincl::target-view :curve m :eur) 1d0))
          (rate-curve (fincl::fitted-rate-curve fitted))
-         (r (simulate ((((:curve :eur) hw)) m (mapcar (lambda (n) (years-after *today* n)) '(1 2)) :n-paths 20
-                       :keep (:paths 4))
+         ;; The default curve is exact (task 33); the knots are given to test their cut.
+         (r (simulate ((((:curve :eur) hw :knots fincl::*default-curve-knots*)) m
+                       (mapcar (lambda (n) (years-after *today* n)) '(1 2)) :n-paths 20 :keep (:paths 4))
               (:final (:x 0d0))))
          (worst 0d0))
     (dotimes (path 4)
