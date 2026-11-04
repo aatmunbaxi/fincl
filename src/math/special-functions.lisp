@@ -470,6 +470,15 @@ sqrt(2 pi X), accurate to a few ulps also when X and M are 1e10."
       (exp (- m))
       (/ (exp (- (- (stirling-error x)) (bd0 x m))) (sqrt (* 2 pi x)))))
 
+;;; The P - term and Q - term recurrences lose absolute precision, about eps
+;;; times the P (or Q) of the last evaluation, which matters only against the
+;;; sum it enters: the terms where it is large have small Poisson weights.
+(defconstant +gamma-anchor-error+ 8.8d-16
+  "Assumed relative error of a REGULARIZED-GAMMA evaluation, 8 ulp.")
+(defconstant +gamma-sum-tolerance+ 1d-14
+  "Fraction of the running sum that the recurrences' accumulated error may reach
+before the incomplete gamma is evaluated afresh.")
+
 (defun noncentral-chi-square-cdf (x df lambda)
   "(values F 1-F): the noncentral chi-square distribution function with DF
 degrees of freedom (DF > 0) and noncentrality LAMBDA >= 0 at X, and its
@@ -496,16 +505,22 @@ complement, each with full relative precision.
         (let ((p-sum (* w0 p0)) (q-sum (* w0 q0)))
           (declare (double-float p-sum q-sum))
           ;; Forward from the mode: weights fall, P falls, Q rises to 1.
-          (let ((w w0) (p p0) (q q0) (term t0))
-            (declare (double-float w p q term))
+          (let ((w w0) (p p0) (q q0) (term t0)
+                (err (* +gamma-anchor-error+ p0)) (spent 0d0))
+            (declare (double-float w p q term err spent))
             ;; The Poisson weights spread over about sqrt(lambda/2) terms.
             (iter (for i from 1 to (+ 10000 (ceiling (* 60 (sqrt half)))))
                   (setf w (/ (* w half) (+ k i)))
-                  ;; P - term cancels when the term is a sizeable part of
-                  ;; P (Y well below the shape): evaluate P afresh there.
-                  (if (> term (* 0.05d0 p))
-                      (multiple-value-setq (p q) (regularized-gamma (+ a i) y))
-                      (setf p (- p term) q (+ q term)))
+                  ;; P - term loses absolute precision (about eps times the
+                  ;; last anchor's P); evaluate P afresh only when the error
+                  ;; spent so far would pass the tolerance of the sum.
+                  (let ((err2 (+ err (* 2d0 double-float-epsilon term))))
+                    (declare (double-float err2))
+                    (if (> (+ spent (* w err2)) (* +gamma-sum-tolerance+ p-sum))
+                        (progn (multiple-value-setq (p q) (regularized-gamma (+ a i) y))
+                               (setf err (* +gamma-anchor-error+ p)))
+                        (setf p (- p term) q (+ q term) err err2))
+                    (incf spent (* w err)))
                   (setf term (/ (* term y) (+ a i)))
                   (incf p-sum (* w p))
                   (incf q-sum (* w q))
@@ -518,20 +533,25 @@ complement, each with full relative precision.
                       (finish)))))
           ;; Backward from the mode to k = 0: P rises, Q falls.
           (let ((w w0) (p p0) (q q0)
+                (err (* +gamma-anchor-error+ q0)) (spent 0d0)
                 (term (/ (* t0 a) y)))  ; y^(a-1) e^-y / Gamma(a)
-            (declare (double-float w p q term))
+            (declare (double-float w p q term err spent))
             (iter (for j from k above 0)
                   (for aj = (- a (- k j)))  ; shape at index j
                   (setf w (/ (* w j) half))
-                  ;; Likewise Q - term, when Y is well above the shape;
-                  ;; and when P or the term underflowed, far in the lower
-                  ;; tail.
-                  (if (or (> term (* 0.05d0 q)) (zerop p) (zerop term))
-                      (progn
-                        (multiple-value-setq (p q) (regularized-gamma (- aj 1d0) y))
-                        (setf term (if (> aj 2d0) (poisson-density (- aj 2d0) y) 0d0)))
-                      (setf p (+ p term) q (- q term)
-                            term (/ (* term (- aj 1d0)) y)))
+                  ;; Likewise Q - term; and afresh when P or the term
+                  ;; underflowed, far in the lower tail.
+                  (let ((err2 (+ err (* 2d0 double-float-epsilon term))))
+                    (declare (double-float err2))
+                    (if (or (> (+ spent (* w err2)) (* +gamma-sum-tolerance+ q-sum))
+                            (zerop p) (zerop term))
+                        (progn
+                          (multiple-value-setq (p q) (regularized-gamma (- aj 1d0) y))
+                          (setf err (* +gamma-anchor-error+ q)
+                                term (if (> aj 2d0) (poisson-density (- aj 2d0) y) 0d0)))
+                        (setf p (+ p term) q (- q term) err err2
+                              term (/ (* term (- aj 1d0)) y)))
+                    (incf spent (* w err)))
                   (incf p-sum (* w p))
                   (incf q-sum (* w q))
                   (let* ((r (/ (- j 1) half))
