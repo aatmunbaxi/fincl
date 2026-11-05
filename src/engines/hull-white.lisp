@@ -144,6 +144,8 @@ close_enough (TimeGrid::index)."
 ;;; The Hull-White trinomial lattice
 ;;; --------------------------------------------------------------------
 
+(deftype fixnum-vector () '(simple-array fixnum (*)))
+
 (defstruct (hull-white-lattice (:conc-name lattice-) (:constructor %make-hull-white-lattice))
   "A trinomial lattice for x = r - phi(t), an Ornstein-Uhlenbeck process
 from 0, fitted to a curve. Level i has SIZE(i) nodes x = (JMIN(i-1) + j) DX(i);
@@ -156,29 +158,37 @@ with probabilities P1, P2, P3."
   (probabilities nil :type simple-vector) ; per step: three double vectors
   (sizes nil :type (simple-array fixnum (*)))
   (phi nil :type double-vector)
+  (discounts nil :type simple-vector) ; per step: double vector of exp(-(x + phi) dt) per node
   (state-prices nil :type simple-vector) ; kept steps only, NIL elsewhere
   (state-price-sums nil :type double-vector))
 
+(declaim (inline lattice-size lattice-x lattice-dt))
+
 (defun lattice-size (lattice i)
-  (aref (lattice-sizes lattice) i))
+  (aref (the fixnum-vector (lattice-sizes lattice)) i))
 
 (defun lattice-x (lattice i j)
+  (declare (type fixnum i j))
   (if (zerop i)
       0d0
-      (* (+ (svref (lattice-jmins lattice) (1- i)) j) (aref (lattice-dxs lattice) i))))
+      (* (+ (the fixnum (svref (lattice-jmins lattice) (1- i))) j)
+         (aref (the double-vector (lattice-dxs lattice)) i))))
 
 (defun lattice-dt (lattice i)
   (let ((times (lattice-times lattice)))
+    (declare (type double-vector times))
     (- (aref times (1+ i)) (aref times i))))
 
-(defun lattice-discount (lattice i j)
-  (exp (- (* (+ (lattice-x lattice i j) (aref (lattice-phi lattice) i)) (lattice-dt lattice i)))))
-
-(defun lattice-descendant (lattice i j branch)
-  (+ (- (aref (svref (lattice-ks lattice) i) j) (svref (lattice-jmins lattice) i) 1) branch))
-
-(defun lattice-probability (lattice i j branch)
-  (aref (svref (svref (lattice-probabilities lattice) i) branch) j))
+(defun step-discounts (lattice i)
+  "The one-step discount exp(-(x + phi) dt) at every node of step I, phi
+fitted. Tabulated once, since every roll-back of the lattice reads it."
+  (declare (type fixnum i))
+  (let ((discounts (make-array (lattice-size lattice i) :element-type 'double-float))
+        (phi (aref (the double-vector (lattice-phi lattice)) i))
+        (dt (lattice-dt lattice i)))
+    (declare (double-float phi dt))
+    (dotimes (j (length discounts) discounts)
+      (setf (aref discounts j) (exp (- (* (+ (lattice-x lattice i j) phi) dt)))))))
 
 (defun build-trinomial-tree (a sigma grid)
   "The branching of QuantLib's TrinomialTree for the OU process dx = -a x dt
@@ -237,14 +247,23 @@ with probabilities P1, P2, P3."
 
 (defun next-state-prices (lattice i prices)
   "State prices at step I + 1 from PRICES at step I (phi(t_I) fitted)."
+  (declare (type fixnum i) (type double-vector prices))
   (let ((next (make-array (lattice-size lattice (1+ i)) :element-type 'double-float
-                                                        :initial-element 0d0)))
+                                                        :initial-element 0d0))
+        (ks (svref (lattice-ks lattice) i))
+        (jmin (svref (lattice-jmins lattice) i))
+        (probabilities (svref (lattice-probabilities lattice) i))
+        (discounts (svref (lattice-discounts lattice) i)))
+    (declare (type double-vector next discounts) (type fixnum-vector ks) (type fixnum jmin)
+             (type simple-vector probabilities))
     (dotimes (j (lattice-size lattice i) next)
-      (let ((discount (lattice-discount lattice i j))
-            (price (aref prices j)))
+      (let ((discount (aref discounts j))
+            (price (aref prices j))
+            (first-descendant (- (aref ks j) jmin 1)))
+        (declare (type fixnum first-descendant))
         (dotimes (branch 3)
-          (incf (aref next (lattice-descendant lattice i j branch))
-                (* price discount (lattice-probability lattice i j branch))))))))
+          (incf (aref next (+ first-descendant branch))
+                (* price discount (aref (the double-vector (svref probabilities branch)) j))))))))
 
 (defun lattice-state-prices-through (lattice i)
   "The state prices at step I, which must be one the lattice kept."
@@ -266,6 +285,7 @@ State prices are kept at the steps in KEEP; their sums at every step."
                      :times grid :dxs dxs :jmins jmins :ks ks :probabilities probabilities
                      :sizes sizes
                      :phi (make-array n :element-type 'double-float :initial-element 0d0)
+                     :discounts (make-array n)
                      :state-prices (make-array (1+ n) :initial-element nil)
                      :state-price-sums (make-array (1+ n) :element-type 'double-float
                                                           :initial-element 1d0)))
@@ -281,19 +301,31 @@ State prices are kept at the steps in KEEP; their sums at every step."
             (incf value (* (aref prices j) (exp (- (* x dt)))))
             (incf x dx))
           (setf (aref (lattice-phi lattice) i) (/ (log (/ value bond)) dt)
+                (svref (lattice-discounts lattice) i) (step-discounts lattice i)
                 prices (next-state-prices lattice i prices)
                 (aref (lattice-state-price-sums lattice) (1+ i)) (reduce #'+ prices))
           (when (member (1+ i) keep) (setf (svref (lattice-state-prices lattice) (1+ i)) prices)))))))
 
 (defun lattice-step-back (lattice i values)
   "Values at step I from VALUES at step I + 1: expectation, then discount."
-  (let ((new (make-array (lattice-size lattice i) :element-type 'double-float)))
-    (dotimes (j (length new) new)
-      (let ((value 0d0))
-        (dotimes (branch 3)
-          (incf value (* (lattice-probability lattice i j branch)
-                         (aref values (lattice-descendant lattice i j branch)))))
-        (setf (aref new j) (* value (lattice-discount lattice i j)))))))
+  (declare (type fixnum i) (type double-vector values))
+  (let ((new (make-array (lattice-size lattice i) :element-type 'double-float))
+        (ks (svref (lattice-ks lattice) i))
+        (jmin (svref (lattice-jmins lattice) i))
+        (probabilities (svref (lattice-probabilities lattice) i))
+        (discounts (svref (lattice-discounts lattice) i)))
+    (declare (type double-vector new discounts) (type fixnum-vector ks) (type fixnum jmin)
+             (type simple-vector probabilities))
+    (let ((p1 (svref probabilities 0)) (p2 (svref probabilities 1)) (p3 (svref probabilities 2)))
+      (declare (type double-vector p1 p2 p3))
+      (dotimes (j (length new) new)
+        (let ((k (- (aref ks j) jmin 1))
+              (value 0d0))
+          (declare (type fixnum k) (double-float value))
+          (incf value (* (aref p1 j) (aref values k)))
+          (incf value (* (aref p2 j) (aref values (+ k 1))))
+          (incf value (* (aref p3 j) (aref values (+ k 2))))
+          (setf (aref new j) (* value (aref discounts j))))))))
 
 (defun lattice-roll-back (lattice values from to)
   "VALUES at step FROM rolled back to step TO, with nothing added between."
@@ -353,17 +385,23 @@ market time."
       ;; Each bond is a unit vector placed at the payment step and rolled
       ;; back with the swap: PENDING holds (reset-step bond coupon-value).
       (let ((pending '())
-            (coupons (append (mapcar (lambda (f)
-                                       (destructuring-bind (reset pay amount) f
-                                         `(,reset ,pay ,(lambda (p) (- (* sign amount p))))))
-                                     fixed)
-                             (mapcar (lambda (f)
-                                       (destructuring-bind (reset pay accrual spread) f
-                                         (let ((accrued-spread (* nominal accrual spread)))
-                                           `(,reset ,pay ,(lambda (p)
-                                                            (* sign (+ (* nominal (- 1d0 p))
-                                                                       (* accrued-spread p))))))))
-                                     floating))))
+            ;; Each coupon with its reset and payment steps, found once.
+            (coupons (mapcar (lambda (c)
+                               (destructuring-bind (reset pay value) c
+                                 (let ((live (>= reset 0d0)))
+                                   `(,reset ,pay ,value ,(and live (funcall index reset))
+                                     ,(and live (funcall index pay))))))
+                             (append (mapcar (lambda (f)
+                                                (destructuring-bind (reset pay amount) f
+                                                  `(,reset ,pay ,(lambda (p) (- (* sign amount p))))))
+                                              fixed)
+                                     (mapcar (lambda (f)
+                                                (destructuring-bind (reset pay accrual spread) f
+                                                  (let ((accrued-spread (* nominal accrual spread)))
+                                                    `(,reset ,pay ,(lambda (p)
+                                                                     (* sign (+ (* nominal (- 1d0 p))
+                                                                                (* accrued-spread p))))))))
+                                              floating)))))
       (flet ((add-coupons (i)
                (dolist (entry pending)
                  (destructuring-bind (reset bond value) entry
@@ -373,10 +411,10 @@ market time."
                (setf pending (remove i pending :key #'first))
                ;; Bonds of coupons paying at step I start here.
                (dolist (c coupons)
-                 (destructuring-bind (reset pay value) c
-                   (when (and (>= reset 0d0) (= i (funcall index pay)))
-                     (let ((reset-step (funcall index reset))
-                           (bond (make-array (lattice-size lattice i) :element-type 'double-float
+                 (destructuring-bind (reset pay value reset-step pay-step) c
+                   (declare (ignore reset pay))
+                   (when (and pay-step (= i pay-step))
+                     (let ((bond (make-array (lattice-size lattice i) :element-type 'double-float
                                                                       :initial-element 1d0)))
                        (if (= reset-step i)
                            (dotimes (j (length swap-values))
