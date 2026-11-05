@@ -375,7 +375,10 @@ Ibor curve on it).
                                  (* (aref data (1- i)) (exp (- (* *bootstrap-max-rate* dt))))))
                          (hi (if forward *bootstrap-max-rate*
                                  (* (aref data (1- i)) (exp (* *bootstrap-max-rate* dt)))))
-                         (k (if (= pass 1) i n)))
+                         ;; Monotone convex: the curve at node i is the start of the
+                         ;; section whose forwards read the averages up to node
+                         ;; i + 2, so later passes need no more.
+                         (k (if (= pass 1) i (min n (+ i 2)))))
                     (set-node i (solve-brent (lambda (x)
                                                (set-node i x)
                                                (- (helper-implied-quote helper (curve-through k)

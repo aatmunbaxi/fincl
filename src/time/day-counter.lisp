@@ -144,7 +144,9 @@ ROUND rounds halves to even)."
   (if (minusp x) (- (floor (+ (- x) 1/2))) (floor (+ x 1/2))))
 
 (defclass actual-actual-icma (day-counter)
-  ((schedule :initarg :schedule :initform nil :reader day-counter-schedule))
+  ((schedule :initarg :schedule :initform nil :reader day-counter-schedule)
+   (coupons :initform nil
+            :documentation "ICMA-COUPONS of the schedule, made on first use."))
   (:documentation "ACT/ACT ICMA (ISMA), as QuantLib's ActualActual(ISMA). With a
 SCHEDULE, a period is split along the schedule's coupon dates, stubs
 completed by notional coupon dates, and each piece counts its days over its
@@ -182,43 +184,62 @@ getListOfPeriodDatesIncludingQuasiPayments, indexing quirk included)."
             (setf new `(,@new ,(move notional tenor)))))))
     new))
 
-(defun icma-reference-fraction (d1 d2 d3 d4)
-  "Days from D1 to D2 over the reference period D3-D4's days times the
-coupons per year that period implies (one, over a year from D1, below 16
-days)."
-  (let ((reference (float (date- d4 d3) 1d0)) (per-year 0))
-    (if (< reference 16)
-        (setf per-year 1
-              reference (float (date- (add-tenor d1 (make-tenor 1 :years)) d1) 1d0))
-        (setf per-year (-<> (* 12 reference)
-                            (/ <> 365d0)
-                            lround
-                            (float 1d0)
-                            (/ 12d0 <>)
-                            lround)))
-    ;; A reference period over two years implies no coupons a year, where
-    ;; QuantLib divides by zero.
-    (when (zerop per-year)
-      (signal-invalid-argument '(- d4 d3) (date- d4 d3) '(integer 0 730)
-                               "a reference period of at most two years for ICMA"))
-    (/ (float (date- d2 d1) 1d0) (* reference per-year))))
+(defun icma-period-denominator (d3 d4)
+  "The reference period D3-D4's days times the coupons per year it implies,
+or NIL below 16 days, where the reference is a year from the first date."
+  (let ((reference (float (date- d4 d3) 1d0)))
+    (unless (< reference 16)
+      (let ((per-year (-<> (* 12 reference)
+                           (/ <> 365d0)
+                           lround
+                           (float 1d0)
+                           (/ 12d0 <>)
+                           lround)))
+        ;; A reference period over two years implies no coupons a year, where
+        ;; QuantLib divides by zero.
+        (when (zerop per-year)
+          (signal-invalid-argument '(- d4 d3) (date- d4 d3) '(integer 0 730)
+                                   "a reference period of at most two years for ICMA"))
+        (* reference per-year)))))
+
+(defun icma-reference-fraction (d1 d2 denominator)
+  "Days from D1 to D2 over DENOMINATOR, a reference period's
+ICMA-PERIOD-DENOMINATOR; NIL: over the days of the year from D1."
+  (/ (float (date- d2 d1) 1d0)
+     (or denominator (float (date- (add-tenor d1 (make-tenor 1 :years)) d1) 1d0))))
+
+(defun icma-coupons (dc)
+  "(dates first last denominators) for the schedule of DC: its quasi-coupon
+dates, their earliest and latest, and ICMA-PERIOD-DENOMINATOR of each period
+(:INVALID where that signals), kept on DC after the first call."
+  (or (slot-value dc 'coupons)
+      (setf (slot-value dc 'coupons)
+            (let ((dates (icma-quasi-coupon-dates (day-counter-schedule dc))))
+              `(,dates
+                ,(iter (for d in dates) (finding d minimizing (date-serial d)))
+                ,(iter (for d in dates) (finding d maximizing (date-serial d)))
+                ,(iter (for (start end) on dates)
+                       (while end)
+                       (collect (handler-case (icma-period-denominator start end)
+                                  (invalid-argument () :invalid)))))))))
 
 (defmethod year-fraction ((dc actual-actual-icma) start end &key ref-start ref-end)
   (cond ((date= start end) 0d0)
         ((day-counter-schedule dc)
-         (let* ((coupons (icma-quasi-coupon-dates (day-counter-schedule dc)))
-                (first (iter (for d in coupons) (finding d minimizing (date-serial d))))
-                (last (iter (for d in coupons) (finding d maximizing (date-serial d)))))
+         (destructuring-bind (coupons first last denominators) (icma-coupons dc)
            (unless (and (not (date< start first)) (not (date< last end)))
              (signal-invalid-argument 'end end 'date
                                       (format nil "dates within the schedule's coupon dates ~A to ~A"
                                               first last)))
            (iter (for (period-start period-end) on coupons)
+                 (for denominator in denominators)
                  (while period-end)
                  (when (and (date< start period-end) (date< period-start end))
                    (sum (icma-reference-fraction (if (date< start period-start) period-start start)
                                                  (if (date< period-end end) period-end end)
-                                                 period-start period-end))))))
+                                                 (if (eq denominator :invalid)
+                                                     (icma-period-denominator period-start period-end)
+                                                     denominator)))))))
         (t (icma-reference-year-fraction start end (or ref-start start) (or ref-end end)))))
 
 (defun icma-reference-year-fraction (d1 d2 ref-start ref-end)

@@ -253,10 +253,13 @@ workers. Pricing an instrument narrows the market to a MARKET-VIEW of the
 instrument's underlying."))
 
 (defun market-entry (table key what known)
+  "The value of KEY in TABLE. KNOWN, the keys to report when KEY is missing,
+is a list or a function of no arguments returning one, called only then."
   (multiple-value-bind (value found) (gethash key table)
     (if found
         value
-        (error 'missing-market-data :what what :key key :known known))))
+        (error 'missing-market-data :what what :key key
+                                    :known (if (functionp known) (funcall known) known)))))
 
 (defun alist-table (alist)
   (let ((table (make-hash-table :test 'equal)))
@@ -436,11 +439,11 @@ not modified. Move market data with BUMP.
 
 (defun find-yield-curve (market id)
   (market-entry (market-yield-curves market) id "yield curve"
-                (sorted-keys (market-yield-curves market))))
+                (lambda () (sorted-keys (market-yield-curves market)))))
 
 (defun discount-curve-id (market currency)
   (market-entry (market-discount-curve-for market) currency "discount curve for currency"
-                (sorted-keys (market-discount-curve-for market))))
+                (lambda () (sorted-keys (market-discount-curve-for market)))))
 
 (defun resolve-underlying (market underlying)
   "UNDERLYING, checked against MARKET; NIL means the market's only one."
@@ -544,10 +547,10 @@ A component the market lacks signals MISSING-MARKET-DATA listing what it has.
       (multiple-value-bind (what known)
           (ecase kind
             (:spot (values "underlying" (market-underlyings market)))
-            (:vol (values "vol structure for" (sorted-keys table)))
+            (:vol (values "vol structure for" (lambda () (sorted-keys table))))
             (:dividend (values "dividend curve for" (market-underlyings market)))
-            (:dividend-schedule (values "dividend schedule for" (sorted-keys table)))
-            (:curve (values "yield curve" (sorted-keys table))))
+            (:dividend-schedule (values "dividend schedule for" (lambda () (sorted-keys table))))
+            (:curve (values "yield curve" (lambda () (sorted-keys table)))))
         (market-entry table key what known)))))
 
 (defun set-market-component (market target value date)

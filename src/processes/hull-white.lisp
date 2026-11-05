@@ -62,13 +62,26 @@ forwardRate(t, t, Continuous))."
                    (* 0.25d0 temp temp (hull-white-b a 0d0 (* 2d0 t0))))))
     (/ (* (exp value) (rate-curve-discount curve t1)) (rate-curve-discount curve t0))))
 
+(defun hull-white-bond-terms (process curve t0 t1)
+  "(values A B) of the bond P(T0, T1) = A e^(-B r), which do not depend on the
+short rate r.
+
+  (hull-white-bond-terms hw (make-rate-curve m :eur) 1d0 5d0)"
+  (values (hull-white-a-factor process curve t0 t1)
+          (hull-white-b (hull-white-a process) t0 t1)))
+
+(declaim (inline hull-white-bond-from-terms))
+(defun hull-white-bond-from-terms (a-factor b rate)
+  "The bond A e^(-B RATE) for the A and B of HULL-WHITE-BOND-TERMS."
+  (* a-factor (exp (- (* b rate)))))
+
 (defun hull-white-discount-bond (process curve t0 t1 rate)
   "The zero-coupon bond P(T0, T1) when the short rate at T0 is RATE, CURVE a
 RATE-CURVE (times in its market's time).
 
   (hull-white-discount-bond hw (make-rate-curve m :eur) 1d0 5d0 0.03d0)"
-  (* (hull-white-a-factor process curve t0 t1)
-     (exp (- (* (hull-white-b (hull-white-a process) t0 t1) rate)))))
+  (multiple-value-bind (a-factor b) (hull-white-bond-terms process curve t0 t1)
+    (hull-white-bond-from-terms a-factor b rate)))
 
 (defun hull-white-discount (process curve time)
   "The model's discount factor to TIME: P(0, TIME) at the initial short rate."
