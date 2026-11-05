@@ -13,19 +13,22 @@ int main(int argc, char** argv) {
     bench::run("fd-european-bs", "FdBlackScholesVanillaEngine", equityInputs()("kind", "call"),
                grid(200, 200), [] {
                    return priced<FdBlackScholesVanillaEngine>(vanilla(Option::Call), blackScholes(),
-                                                              Size(200), Size(200));
+                                                              Size(200), Size(200), Size(2),
+                                                              FdmSchemeDesc::Douglas());
                });
 
     bench::run("fd-american-put-bs", "FdBlackScholesVanillaEngine",
                equityInputs()("kind", "put")("exercise", "american"), grid(400, 400), [] {
                    return priced<FdBlackScholesVanillaEngine>(vanilla(Option::Put, "american"),
-                                                              blackScholes(), Size(400), Size(400));
+                                                              blackScholes(), Size(400), Size(400),
+                                                              Size(2), FdmSchemeDesc::Douglas());
                });
 
     bench::run("fd-bermudan-put-bs", "FdBlackScholesVanillaEngine",
                equityInputs()("kind", "put")("exercise", "bermudan"), grid(400, 400), [] {
                    return priced<FdBlackScholesVanillaEngine>(vanilla(Option::Put, "bermudan"),
-                                                              blackScholes(), Size(400), Size(400));
+                                                              blackScholes(), Size(400), Size(400),
+                                                              Size(2), FdmSchemeDesc::Douglas());
                });
 
     bench::run("fd-barrier-dko", "FdBlackScholesBarrierEngine",
@@ -37,7 +40,8 @@ int main(int argc, char** argv) {
                        ext::make_shared<PlainVanillaPayoff>(Option::Call, strike),
                        ext::make_shared<EuropeanExercise>(expiry));
                    return priced<FdBlackScholesBarrierEngine>(option, blackScholes(), Size(400),
-                                                              Size(400));
+                                                              Size(400), Size(2),
+                                                              FdmSchemeDesc::Douglas());
                });
 
     SsviParameters ssvi;
@@ -53,7 +57,7 @@ int main(int argc, char** argv) {
                        Handle<BlackVolTermStructure>(
                            ext::make_shared<SsviVolatility>(ssvi, spot, r, q)));
                    return priced<FdBlackScholesVanillaEngine>(
-                       vanilla(Option::Put, "american"), process, Size(400), Size(400), Size(0),
+                       vanilla(Option::Put, "american"), process, Size(400), Size(400), Size(2),
                        FdmSchemeDesc::Douglas(), true);
                });
 
@@ -62,7 +66,7 @@ int main(int argc, char** argv) {
                hestonGrid, [] {
                    return priced<FdHestonVanillaEngine>(
                        vanilla(Option::Call), ext::make_shared<HestonModel>(hestonProcess()),
-                       Size(100), Size(100), Size(50));
+                       Size(100), Size(100), Size(50), Size(2));
                });
 
     bench::run("fd-heston-american", "FdHestonVanillaEngine",
@@ -70,6 +74,6 @@ int main(int argc, char** argv) {
                    return priced<FdHestonVanillaEngine>(
                        vanilla(Option::Put, "american"),
                        ext::make_shared<HestonModel>(hestonProcess()), Size(100), Size(100),
-                       Size(50));
+                       Size(50), Size(2));
                });
 }

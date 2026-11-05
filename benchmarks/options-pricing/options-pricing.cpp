@@ -26,6 +26,7 @@ int main(int argc, char** argv) {
     init(argc, argv);
     using Plist = bench::Plist;
     typedef BinomialVanillaEngine<CoxRossRubinstein> Crr;
+    typedef BinomialVanillaEngine<LeisenReimer> LeisenReimerTree;
 
     bench::run("european-call-black", "AnalyticEuropeanEngine", equityInputs()("kind", "call"),
                Plist(), [] { return priced<AnalyticEuropeanEngine>(vanilla(Option::Call), blackScholes()); });
@@ -36,10 +37,18 @@ int main(int argc, char** argv) {
                        vanilla(Option::Put, "american"), blackScholes());
                });
 
-    for (const char* id : {"american-put-crr-1000", "american-put-bbsr"})
-        bench::run(id, "BinomialVanillaEngine<CoxRossRubinstein>",
-                   equityInputs()("kind", "put")("exercise", "american"), Plist()("steps", 1000),
-                   [] { return priced<Crr>(vanilla(Option::Put, "american"), blackScholes(), 1000); });
+    bench::run("american-put-crr-1000", "BinomialVanillaEngine<CoxRossRubinstein>",
+               equityInputs()("kind", "put")("exercise", "american"), Plist()("steps", 1000),
+               [] { return priced<Crr>(vanilla(Option::Put, "american"), blackScholes(), 1000); });
+
+    // Leisen-Reimer at an odd step count: at 1000 steps it is 5e-3 from the reference, at 1001
+    // within 4e-5 of a 20,000-step CRR tree.
+    bench::run("american-put-bbsr", "BinomialVanillaEngine<LeisenReimer>",
+               equityInputs()("kind", "put")("exercise", "american"), Plist()("steps", 1001),
+               [] {
+                   return priced<LeisenReimerTree>(vanilla(Option::Put, "american"), blackScholes(),
+                                                   1001);
+               });
 
     for (const char* id : {"bermudan-put-quarterly", "bermudan-put-quarterly-cos"})
         bench::run(id, "BinomialVanillaEngine<CoxRossRubinstein>",
@@ -47,9 +56,9 @@ int main(int argc, char** argv) {
                    [] { return priced<Crr>(vanilla(Option::Put, "bermudan"), blackScholes(), 1000); });
 
     bench::run("heston-european-analytic", "AnalyticHestonEngine (Gauss-Laguerre)",
-               hestonInputs()("kind", "call"), Plist()("laguerre-points", 128), [] {
+               hestonInputs()("kind", "call"), Plist()("laguerre-points", 192), [] {
                    return priced<AnalyticHestonEngine>(vanilla(Option::Call), hestonModel(),
-                                                       Size(128));
+                                                       Size(192));
                });
 
     bench::run("heston-european-cos", "COSHestonEngine", hestonInputs()("kind", "call"),
@@ -59,7 +68,7 @@ int main(int argc, char** argv) {
                });
 
     bench::run("bates-european", "BatesEngine (Gauss-Laguerre)",
-               jumpInputs(hestonInputs()("kind", "call")), Plist()("laguerre-points", 128), [] {
+               jumpInputs(hestonInputs()("kind", "call")), Plist()("laguerre-points", 192), [] {
                    HestonParameters h;
                    Jumps j;
                    auto process = ext::make_shared<BatesProcess>(
@@ -67,7 +76,7 @@ int main(int argc, char** argv) {
                        Handle<Quote>(ext::make_shared<SimpleQuote>(spot)), h.v0, h.kappa,
                        h.theta, h.xi, h.rho, j.intensity, j.jumpMean, j.jumpVol);
                    return priced<BatesEngine>(vanilla(Option::Call),
-                                              ext::make_shared<BatesModel>(process), Size(128));
+                                              ext::make_shared<BatesModel>(process), Size(192));
                });
 
     bench::run("merton-european", "JumpDiffusionEngine",

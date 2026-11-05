@@ -4,7 +4,7 @@
 ;;;; antithetic samples count pairs, so QuantLib runs 50,000 samples.
 ;;;;
 ;;;;   benchmark                QuantLib                                   fincl                                   work
-;;;;   mc-european-gbm          MCEuropeanEngine<PseudoRandom>             :mc, :counter rng                       1 step
+;;;;   mc-european-gbm          MCEuropeanEngine<BoxMullerPseudoRandom>             :mc, :counter rng                       1 step
 ;;;;   mc-european-gbm-sobol    MCEuropeanEngine<LowDiscrepancy>           :mc, :rng :sobol (16 randomizations)    1 step
 ;;;;   mc-european-heston       MCEuropeanHestonEngine (QE martingale)     :mc, QE martingale-corrected            50 steps
 ;;;;   mc-asian-arith-cv        MCDiscreteArithmeticAPEngine, CV           :mc, :control-variates (:geometric-asian)  12 fixings
@@ -14,14 +14,16 @@
 (in-package #:fincl/benchmarks)
 
 (defun mc (&rest settings)
-  ;; QuantLib's PseudoRandom draws normals by inverse transform.
-  (apply #'make-engine :mc :n-paths 100000 :seed 42 :sampler :inverse-transform settings))
+  ;; Box-Muller normals, matching the BoxMullerPseudoRandom traits on the QuantLib side.
+  (apply #'make-engine :mc :n-paths 100000 :seed 42 :sampler :box-muller settings))
 
 (define-benchmark "mc-european-gbm"
     (:group :monte-carlo :title "European call, GBM" :engine "mc (counter)"
      :inputs (equity-inputs :kind "call") :work '(:paths 100000 :steps 1)
      :kind :statistical :parallel t
-     :reference (price o :black-scholes m))
+     :reference (price o :black-scholes m)
+     :notes "Both draw normals by Box-Muller from uniforms (QuantLib: Mersenne Twister;
+fincl: Philox counters).")
     ((m (equity-market)) (o (vanilla :call)) (e (mc)))
   (priced o e m))
 
@@ -30,9 +32,10 @@
      :inputs (equity-inputs :kind "call") :work '(:paths 100000 :steps 1)
      :kind :statistical :parallel t
      :reference (price o :black-scholes m)
-     :notes "QuantLib's Sobol sequence is unscrambled, so its value carries no
-sampling error and its sample standard deviation is not a valid standard error;
-the verdict uses fincl's, from 16 randomizations. Neither side uses antithetics")
+     :notes "QuantLib: unrandomized Sobol sequence, no standard error (its sample deviation
+is not valid for a low-discrepancy sequence). fincl: Matousek linear scrambling with a
+digital shift, 16 randomizations, standard error from their spread. Both invert the
+normal CDF. Neither side uses antithetics")
     ((m (equity-market)) (o (vanilla :call)) (e (mc :rng :sobol :antithetic nil)))
   (priced o e m))
 
@@ -42,7 +45,8 @@ the verdict uses fincl's, from 16 randomizations. Neither side uses antithetics"
      :kind :statistical :parallel t
      :reference (price o (fourier p 1024) m)
      :notes "both use Andersen's quadratic-exponential scheme with the martingale
-correction")
+correction. Both draw normals by Box-Muller from uniforms (QuantLib: Mersenne Twister;
+fincl: Philox counters).")
     ((m (equity-market)) (o (vanilla :call)) (p (apply #'make-heston *heston*))
      (e (mc :process p :n-steps 50)))
   (priced o e m))
@@ -54,7 +58,8 @@ correction")
      :work '(:paths 100000 :steps 12)
      :kind :statistical :parallel t
      :notes "QuantLib corrects with a fixed coefficient of 1 on the geometric
-Asian, fincl with the regression coefficient")
+Asian, fincl with the regression coefficient. Both draw normals by Box-Muller from uniforms
+(QuantLib: Mersenne Twister; fincl: Philox counters).")
     ((m (equity-market))
      (o (make-option-from-clauses `((:call ,(equity :strike)) (:average :arithmetic :dates ,(monthly-dates))
                                     (:expires ,*expiry*))))
@@ -70,7 +75,8 @@ Asian, fincl with the regression coefficient")
      :kind :statistical :parallel t
      :reference (price o :black-scholes m)
      :notes "both cross the barrier between steps by the Brownian-bridge
-probability")
+probability. Both draw normals by Box-Muller from uniforms (QuantLib: Mersenne Twister;
+fincl: Philox counters).")
     ((m (equity-market)) (o (barrier-option :call :down-and-out 90)) (e (mc :n-steps 252)))
   (priced o e m))
 
@@ -81,7 +87,8 @@ probability")
      :kind :statistical :parallel t
      :reference (price o (make-engine :binomial :n-steps 10000) m)
      :notes "both fit the exercise rule on one path set and price on another (fincl
-:lsm-valuation :independent), a low-biased estimate of the 50-date Bermudan")
+:lsm-valuation :independent), a low-biased estimate of the 50-date Bermudan. Both draw
+normals by Box-Muller from uniforms (QuantLib: Mersenne Twister; fincl: Philox counters).")
     ((m (equity-market)) (o (vanilla :put :exercise :american))
      (e (mc :n-steps 50 :basis-degree 3 :basis :monomial :lsm-valuation :independent)))
   (priced o e m))

@@ -7,12 +7,12 @@
 ;;;;   european-call-black          AnalyticEuropeanEngine             :black-scholes
 ;;;;   american-put-baw             BaroneAdesiWhaleyApproximation...  :baw
 ;;;;   american-put-crr-1000        BinomialVanillaEngine<CRR>         :binomial, plain CRR      1000 steps
-;;;;   american-put-bbsr            BinomialVanillaEngine<CRR>         :binomial default (BBSR)  1000 steps
+;;;;   american-put-bbsr            BinomialVanillaEngine<LeisenReimer> :binomial default (BBSR)  1001 / 1000 steps
 ;;;;   bermudan-put-quarterly       BinomialVanillaEngine<CRR>         :binomial, plain CRR      1000 steps
 ;;;;   bermudan-put-quarterly-cos   BinomialVanillaEngine<CRR>         :cos                      256 terms
-;;;;   heston-european-analytic     AnalyticHestonEngine (Laguerre)    :cos                      128 points / 256 terms
+;;;;   heston-european-analytic     AnalyticHestonEngine (Laguerre)    :cos                      192 points / 256 terms
 ;;;;   heston-european-cos          COSHestonEngine                    :cos                      256 terms, L = 12
-;;;;   bates-european               BatesEngine (Laguerre)             :cos                      128 points / 256 terms
+;;;;   bates-european               BatesEngine (Laguerre)             :cos                      192 points / 256 terms
 ;;;;   merton-european              JumpDiffusionEngine                :merton-series
 ;;;;   vg-european                  VarianceGammaEngine                :cos                      256 terms
 ;;;;   cev-european                 AnalyticCEVEngine                  :cev (r = q)
@@ -45,8 +45,9 @@
     (:group :options-pricing :title "American put, fincl's default tree" :engine "binomial (BBSR)"
      :inputs (equity-inputs :kind "put" :exercise "american") :work '(:steps 1000)
      :kind :method-error :tolerance 1d-2
-     :notes "fincl's default tree (Black-Scholes last step, Richardson over N and N/2)
-against QuantLib's plain CRR at the same N")
+     :notes "fincl: default tree (Black-Scholes last step, Richardson over N and N/2) at
+1000 steps. QuantLib: Leisen-Reimer at 1001 steps, whose error at 1000 steps is 5e-3
+because the tree needs an odd step count. fincl's Richardson step needs N even.")
     ((m (equity-market)) (o (vanilla :put :exercise :american))
      (e (make-engine :binomial :n-steps 1000)))
   (priced o e m))
@@ -69,12 +70,13 @@ against QuantLib's plain CRR at the same N")
   (priced o e m))
 
 (define-benchmark "heston-european-analytic"
-    (:group :options-pricing :title "Heston European call, unmatched work: 128 Laguerre points against 256 cosine terms"
+    (:group :options-pricing :title "Heston European call, Laguerre integration against cosine terms"
      :engine "cos"
-     :inputs (heston-inputs :kind "call") :work '(:laguerre-points 128 :terms 256)
-     :notes "unmatched work: QuantLib integrates the Heston characteristic function at
-128 Gauss-Laguerre points, fincl sums 256 cosine terms; heston-european-cos is
-the matched row")
+     :inputs (heston-inputs :kind "call") :work '(:laguerre-points 192 :terms 256)
+     :notes "QuantLib integrates the Heston characteristic function at 192 Gauss-Laguerre
+points, the most its AnalyticHestonEngine accepts, against fincl's 256 cosine terms;
+both are converged to about 1e-10 here (QuantLib's value is the same at 128 points).
+heston-european-cos is the matched method")
     ((m (equity-market)) (o (vanilla :call)) (e (fourier (apply #'make-heston *heston*))))
   (priced o e m))
 
@@ -88,7 +90,7 @@ prices the call directly, fincl the put and parity")
 
 (define-benchmark "bates-european"
     (:group :options-pricing :title "Bates European call" :engine "cos"
-     :inputs (apply #'heston-inputs :kind "call" *jumps*) :work '(:laguerre-points 128 :terms 256))
+     :inputs (apply #'heston-inputs :kind "call" *jumps*) :work '(:laguerre-points 192 :terms 256))
     ((m (equity-market)) (o (vanilla :call))
      (e (fourier (apply #'make-bates (append *heston* *jumps*)))))
   (priced o e m))
@@ -105,7 +107,8 @@ relative accuracy of 1e-12")
 (define-benchmark "vg-european"
     (:group :options-pricing :title "Variance gamma European call" :engine "cos"
      :inputs (apply #'equity-inputs :kind "call" *variance-gamma*) :work '(:terms 256)
-     :notes "QuantLib integrates the conditional Black price over the gamma density")
+     :notes "QuantLib: the conditional Black price integrated over the gamma density.
+fincl: COS, 256 terms.")
     ((m (equity-market)) (o (vanilla :call))
      (e (fourier (apply #'make-variance-gamma *variance-gamma*))))
   (priced o e m))
@@ -121,6 +124,7 @@ drift r - q; they coincide at r = q, so this row's market has q = 5%")
 
 (define-benchmark "kou-european"
     (:group :options-pricing :title "Kou jump-diffusion European call" :engine "cos"
-     :inputs (equity-inputs :kind "call") :work '(:terms 256) :kind :none)
+     :inputs (equity-inputs :kind "call") :work '(:terms 256) :kind :none
+     :notes "fincl only: QuantLib has no Kou engine in this build")
     ((m (equity-market)) (o (vanilla :call)) (e (fourier (make-kou-jump :vol (equity :vol)))))
   (priced o e m))

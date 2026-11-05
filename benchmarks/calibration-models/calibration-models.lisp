@@ -55,9 +55,9 @@ under *HESTON-TRUTH* by COS with 1024 terms."
      :inputs `(,@(equity-inputs) :expiries 5 :strikes 7 ,@*heston-truth*)
      :work '(:start (:v0 0.04 :kappa 2 :theta 0.04 :xi 0.3 :rho -0.7) :terms 256)
      :kind :method-error :tolerance 1d-4 :parallel t
-     :notes "value: the RMSE of the implied-vol residuals at the fit. QuantLib
-prices by Gauss-Laguerre (128 points), fincl by COS (256 terms); both minimize
-implied-vol errors by Levenberg-Marquardt from *HESTON*")
+     :notes "value: the RMSE of the implied-vol residuals at the fit. QuantLib: Gauss-Laguerre
+integration, 128 points. fincl: COS, 256 terms. Both minimize implied-vol errors by
+Levenberg-Marquardt from *HESTON*")
     ((m (equity-market)) (quotes (heston-quotes m)))
   (multiple-value-bind (fitted report)
       (calibrate (apply #'make-heston *heston*) m quotes :engine '(:cos :n-terms 256))
@@ -77,8 +77,8 @@ VOL-OF-STRIKE gives."
      :inputs `(,@(equity-inputs) :strikes 11 ,@*sabr-truth*)
      :kind :method-error :tolerance 1d-4
      :notes "quotes from Hagan's formula (QuantLib's sabrVolatility and fincl's
-sabr-volatility :hagan agree to the bit on the fixtures); QuantLib starts at
-alpha 1, nu 0.3, rho 0 with no restarts, fincl from its own ATM guess")
+sabr-volatility :hagan agree to the bit on the fixtures). Start points differ: QuantLib
+alpha 1, nu 0.3, rho 0, one run; fincl an ATM-volatility guess, one run")
     ((m (equity-market))
      (quotes (destructuring-bind (&key alpha beta rho nu) *sabr-truth*
                (let ((f (forward m *expiry*)))
@@ -92,8 +92,9 @@ alpha 1, nu 0.3, rho 0 with no restarts, fincl from its own ATM guess")
      :inputs `(,@(equity-inputs) :strikes 11 ,@*svi-truth*)
      :kind :method-error :tolerance 1d-4
      :notes "QuantLib: Levenberg-Marquardt on all five parameters from a = 0.04,
-b = 0.1, sigma = 0.1, rho = 0, m = 0, no restarts; fincl: Zeletskii-De Marco's
-reduction, then a Levenberg-Marquardt polish")
+b = 0.1, sigma = 0.1, rho = 0, m = 0, one run. fincl: Zeletskii-De Marco's reduction
+(Nelder-Mead over m and sigma, constrained least squares for a, b, rho), then a
+Levenberg-Marquardt polish")
     ((m (equity-market))
      (quotes (destructuring-bind (&key a b rho ((:m center)) sigma) *svi-truth*
                (let ((f (forward m *expiry*)))
