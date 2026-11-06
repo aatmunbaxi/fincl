@@ -44,7 +44,7 @@
                     segments))))
 
 (defun write-json-double (x)
-  (jzon:write-value* (if (or (sb-ext:float-nan-p x) (sb-ext:float-infinity-p x)) 'null x)))
+  (jzon:write-value* (if (or (fincl::nan-p x) (fincl::infinity-p x)) 'null x)))
 
 (defun write-json-elements (elements path)
   "Write the sequence ELEMENTS as a JSON array."

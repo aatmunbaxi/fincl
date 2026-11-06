@@ -226,7 +226,7 @@ calendar's lock on first use; outside that range built afresh."
                   (let ((entry (build-calendar-year calendar year)))
                     ;; Every write that builds ENTRY lands before the store
                     ;; that publishes it.
-                    #+sbcl (sb-thread:barrier (:write))
+                    (memory-publication-barrier)
                     (setf (svref years index) entry))))))
       (build-calendar-year calendar year)))
 

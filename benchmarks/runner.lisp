@@ -142,7 +142,7 @@ from benchmark id to its plist, HEADER the program's (:header ...) plist."
 (defun pin-lisp (cpu)
   "Bind every thread of this SBCL (and the threads it starts later) to CPU."
   (uiop:run-program `("taskset" "-a" "-p" "-c" ,(princ-to-string cpu)
-                                ,(princ-to-string (sb-unix:unix-getpid)))
+                                ,(princ-to-string (process-id)))
                     :output nil :ignore-error-status t))
 
 (defun run-group (group cpp &key quick workers)
@@ -179,8 +179,8 @@ RUN-BENCHMARKS writes at the top of a results file, minus its rows."
       (format stream "~&  machine  : ~A, ~D cores (~D threads), governor ~A~:[~; (!)~], load ~,2F~@[, pinned to CPU ~D~]~%"
               cpu cores threads (or governor "unknown")
               (and governor (string/= governor "performance")) (or load 0) pin)
-      (format stream "~&  fincl    : SBCL ~A, 1 worker (Monte Carlo and calibration also at ~D)~%"
-              (getf fincl :sbcl) (getf fincl :workers))
+      (format stream "~&  fincl    : ~A ~A, 1 worker (Monte Carlo and calibration also at ~D)~@[, clock ~A~]~%"
+              (getf fincl :implementation "SBCL") (getf fincl :sbcl) (getf fincl :workers) (getf fincl :clock))
       (format stream "~&  QuantLib : ~:[not run~;~:*~A~]~@[, g++ ~A~] ~{~A~^ ~}~%"
               (getf quantlib :quantlib) (getf quantlib :compiler) (getf run :flags))
       (format stream "~&  protocol : ~D samples (fewer for calls over ~,2F s: about ~D s a series, at least 5, 3 above 10 s), ~
@@ -245,7 +245,8 @@ benchmarks/results/<UTC time>.sexp. Returns the rows as data.
                                          results))))))
            (run `(:machine (:cpu ,(cpu-model) :cores ,(physical-cores) :threads ,(logical-cores)
                             :governor ,(governor) :load ,(load-average))
-                  :fincl (:sbcl ,(lisp-implementation-version) :workers ,threads)
+                  :fincl (:implementation ,(lisp-implementation-type) :sbcl ,(lisp-implementation-version)
+                           :workers ,threads :clock ,(clock-description))
                   :quantlib ,header :flags ,*compiler-flags* :quick ,quick :pin ,pin
                   :notice ,notice))
            (stream (if (eq output :sexp) (make-broadcast-stream) *standard-output*))

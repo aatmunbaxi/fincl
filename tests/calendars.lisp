@@ -60,7 +60,7 @@
                        (holiday-p* #D"2028-04-17") (not (holiday-p* #D"2027-03-29")) ; :except
                        (holiday-p* #D"2028-02-29")
                        (holiday-p* #D"2027-10-13") (not (holiday-p* #D"2031-10-13"))))) ; :to
-    (let ((random (sb-ext:seed-random-state 3)) (calendars (list +nyse+ +target+ +toy-holiday-calendar+)))
+    (let ((random (test-random-state 3)) (calendars (list +nyse+ +target+ +toy-holiday-calendar+)))
       (check-that "count-business-days = the day-by-day count on 1000 random spans"
                   (iter (repeat 1000)
                         (for calendar = (nth (random 3 random) calendars))

@@ -210,14 +210,15 @@ full call with the callee's name."
 
 (defun define-payoff-checks ()
   (format t "~&DEFINE-PAYOFF~%")
-  (let ((kernel (payoff-kernel (make-instance 'vanilla-payoff :kind :call :strike 100d0))))
-    (check-that "the vanilla kernel makes no generic arithmetic call"
-                (not (search "GENERIC" (disassembly kernel))))
-    (check-that "the check sees a call to a slot reader when there is one"
-                (calls-slot-readers-p (compile nil '(lambda (p) (strike p)))))
-    (check-that "the vanilla kernel calls neither KIND nor STRIKE"
-                (not (calls-slot-readers-p kernel))))
-  (let* ((state (sb-ext:seed-random-state 7))
+  (when-sbcl-checks ("vanilla kernel disassembly" "the checks read SBCL's disassembly")
+    (let ((kernel (payoff-kernel (make-instance 'vanilla-payoff :kind :call :strike 100d0))))
+      (check-that "the vanilla kernel makes no generic arithmetic call"
+                  (not (search "GENERIC" (disassembly kernel))))
+      (check-that "the check sees a call to a slot reader when there is one"
+                  (calls-slot-readers-p (compile nil '(lambda (p) (strike p)))))
+      (check-that "the vanilla kernel calls neither KIND nor STRIKE"
+                  (not (calls-slot-readers-p kernel)))))
+  (let* ((state (test-random-state 7))
          (spots (iter (repeat 1000) (collect (random 250d0 state)))))
     (dolist (kind '(:call :put))
       (let* ((p (make-instance 'capped-call :kind kind :strike 100d0 :cap 30d0))

@@ -191,7 +191,7 @@ the test suite's Gaussian elimination."
 
 (defun tridiagonal-checks ()
   (format t "~&Tridiagonal systems~%")
-  (let ((state (sb-ext:seed-random-state 11)))
+  (let ((state (test-random-state 11)))
     (dolist (n '(10 100 1000))
       (multiple-value-bind (a b c d) (random-dominant-system n state)
         (let ((x (solve-tridiagonal! a b (copy-seq c) (copy-seq d))))
@@ -214,14 +214,15 @@ the test suite's Gaussian elimination."
       (let ((c-copy (copy-seq c)) (d-copy (copy-seq d))
             (work (make-array 3000 :element-type 'double-float)))
         (solve-tridiagonal! a b c-copy (copy-seq d))         ; warm up
-        (flet ((consed (thunk)
-                 (let ((before (sb-ext:get-bytes-consed)))
-                   (funcall thunk)
-                   (- (sb-ext:get-bytes-consed) before))))
-          (check-equal "Thomas allocates nothing" 0
-                       (consed (lambda () (solve-tridiagonal! a b c-copy d-copy))))
-          (check-equal "the cyclic solve with a workspace allocates nothing" 0
-                       (consed (lambda () (solve-tridiagonal-cyclic! a b c d-copy :work work))))))))
+        (when-sbcl-checks ("tridiagonal solves allocate nothing" "bytes consed are counted on SBCL only")
+          (flet ((consed (thunk)
+                   (let ((before (bytes-consed)))
+                     (funcall thunk)
+                     (- (bytes-consed) before))))
+            (check-equal "Thomas allocates nothing" 0
+                         (consed (lambda () (solve-tridiagonal! a b c-copy d-copy))))
+            (check-equal "the cyclic solve with a workspace allocates nothing" 0
+                         (consed (lambda () (solve-tridiagonal-cyclic! a b c d-copy :work work)))))))))
   (check-error "a zero pivot signals convergence-failure"
                (solve-tridiagonal! (make-array 2 :element-type 'double-float :initial-element 1d0)
                                    (make-array 2 :element-type 'double-float :initial-element 0d0)

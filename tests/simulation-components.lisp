@@ -52,7 +52,7 @@ the valuation date too, so no statistic holds NaN."
 
 (defun nan-coded (vector)
   "VECTOR as a list, NaN written :NAN (a NaN cannot be printed readably)."
-  (map 'list (lambda (x) (if (sb-ext:float-nan-p x) :nan x)) vector))
+  (map 'list (lambda (x) (if (fincl::nan-p x) :nan x)) vector))
 
 (defun spot-only-summary (result)
   "Everything the fixture compares of RESULT: outputs, every statistic of every
@@ -184,19 +184,16 @@ paths = to the code before task 32" name workers workers)
                     (and (every (lambda (x) (= x 1d0)) (simulation-statistic r :same :min))
                          (every (lambda (x) (= x 100d0)) (simulation-statistic r :same :count))))))
     ;; One copy per (path, date), with two :derive forms.
-    (let ((copies 0) (counts '()))
-      (sb-int:encapsulate 'fincl::copy-composite-market 'count-copies
-                          (lambda (f &rest args) (incf copies) (apply f args)))
-      (unwind-protect
-           (simulate ((make-gbm) m dates :n-paths 3)
-             (:derive (:dividend :spx) (market) (market-component market '(:dividend :spx)))
-             (:derive (:vol :spx) () (make-instance 'flat-black-vol :vol 0.3d0))
-             (:every (date market)
-               (setf copies 0)
-               (spot market)
-               (spot market)
-               (push copies counts)))
-        (sb-int:unencapsulate 'fincl::copy-composite-market 'count-copies))
+    (let ((counts '()))
+      (count-calls (copies 'fincl::copy-composite-market)
+        (simulate ((make-gbm) m dates :n-paths 3)
+          (:derive (:dividend :spx) (market) (market-component market '(:dividend :spx)))
+          (:derive (:vol :spx) () (make-instance 'flat-black-vol :vol 0.3d0))
+          (:every (date market)
+            (setf (car copies) 0)
+            (spot market)
+            (spot market)
+            (push (car copies) counts))))
       (check-that "one copy-composite-market per (path, date) with two :derive forms"
                   (and (= 12 (length counts)) (every (lambda (n) (= n 1)) counts))))
     ;; Compile-time checks of :derive bodies.

@@ -636,7 +636,7 @@ BUFFER on the dates before K, on top of the initial market's."
               (maphash (lambda (d r) (setf (gethash d table) r)) old))
             (iter (for j below k)
                   (for rate = (aref buffer (+ i (* j (length fix)))))
-                  (unless (sb-ext:float-nan-p rate)
+                  (unless (nan-p rate)
                     (setf (gethash (simulation-date plan j) table) rate)))
             (setf (gethash id tables) table)))))
 
@@ -687,7 +687,8 @@ at each simulation date, updated one value at a time (Welford)."
                 (aref (date-statistics-maximum a) k) (max (aref (date-statistics-maximum a) k)
                                                           (aref (date-statistics-maximum b) k))))))))
 
-(defun quiet-nan () (sb-kernel:make-double-float -524288 0))
+(declaim (inline quiet-nan))
+(defun quiet-nan () (make-nan))
 
 (defstruct (simulation-store (:constructor %make-simulation-store))
   "What a run keeps beyond its outputs (:KEEP), shared by the chunks: every
@@ -867,7 +868,7 @@ difference is that of the paired differences.
   "The P-quantile of VALUES (NaNs dropped), linear between order statistics
 (Hyndman and Fan's type 7)."
   (check-input p (real 0 1) "a probability in [0, 1]")
-  (let* ((sorted (sort (remove-if #'sb-ext:float-nan-p (copy-seq (coerce values 'double-vector))) #'<))
+  (let* ((sorted (sort (remove-if #'nan-p (copy-seq (coerce values 'double-vector))) #'<))
          (n (length sorted)))
     (if (zerop n)
         (quiet-nan)
@@ -1531,11 +1532,6 @@ clause; CASH is NIL without :CASH."
                   (getf options :cash-curve)
                   (getf options :collect :all)))))))
 
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (defun special-variable-name-p (symbol)
-    "True if SYMBOL is declaimed special, so a clause cannot make it a symbol macro."
-    (eq :special (sb-int:info :variable :kind symbol))))
-
 (defmacro simulate ((process market dates &rest options) &body clauses)
   "Simulate paths of PROCESS from MARKET's valuation date through DATES, run
 the clauses' logic on every path, and return a SIMULATION-RESULT. DATES is an
@@ -1833,7 +1829,7 @@ The function underneath is MAP-SIMULATED-PATHS.
                  (cond ((null market-var) `(progn ,@body))
                        ;; SYMBOL-MACROLET cannot bind a special variable (a
                        ;; global MARKET from DEFVAR): rebind it, when used.
-                       ((special-variable-name-p market-var)
+                       ((special-variable-p market-var)
                         (if (member market-var (a:flatten body))
                             `(let ((,market-var (,market-fn))) ,@body)
                             `(progn ,@body)))

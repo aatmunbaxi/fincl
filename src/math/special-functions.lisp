@@ -134,7 +134,7 @@ SQRT's.
   (complex-sqrt #c(-4d0 0d0)) => #C(0.0d0 2.0d0)"
   (declare (type (complex double-float) z))
   (let* ((x (realpart z)) (y (imagpart z))
-         (r (sb-kernel:%hypot x y)))
+         (r (libm-hypot x y)))
     (declare (double-float x y r))
     (cond ((zerop r) (complex 0d0 y))
           ((not (< 1d-150 r 1d150)) (sqrt z))
@@ -153,7 +153,7 @@ cancellation in log |Z|.
   (complex-log #c(0d0 1d0)) => #C(0.0d0 1.5707963267948966d0)"
   (declare (type (complex double-float) z))
   (let* ((x (realpart z)) (y (imagpart z))
-         (r (sb-kernel:%hypot x y)))
+         (r (libm-hypot x y)))
     (declare (double-float x y r))
     (if (not (< 1d-150 r 1d150))
         (log z)
@@ -161,8 +161,8 @@ cancellation in log |Z|.
                (a (max ax ay)) (b (min ax ay)))
           (declare (double-float ax ay a b))
           (complex (if (< 0.5d0 r 2d0)
-                       (* 0.5d0 (sb-kernel:%log1p (+ (* (- a 1d0) (+ a 1d0)) (* b b))))
-                       (sb-kernel:%log r))
+                       (* 0.5d0 (libm-log1p (+ (* (- a 1d0) (+ a 1d0)) (* b b))))
+                       (libm-log r))
                    (atan y x))))))
 
 (defun complex-log1p (z)

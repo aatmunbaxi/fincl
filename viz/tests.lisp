@@ -62,10 +62,10 @@
   (check-equal "rational as double" "0.25" (json 1/4))
   (check-equal "integer stays integer" "7" (json 7))
   (check-equal "single float as double" (json (float 0.5f0 1d0)) (json 0.5f0))
-  (check-equal "NaN, infinities as null" "[null,null,null,1.0]"
-               (json (sb-int:with-float-traps-masked (:invalid :overflow :divide-by-zero)
-                       (let ((inf sb-ext:double-float-positive-infinity))
-                         (doubles (- inf inf) inf (- inf) 1)))))
+  #+sbcl (check-equal "NaN, infinities as null" "[null,null,null,1.0]"
+                      (json (let ((inf sb-ext:double-float-positive-infinity))
+                              (doubles (fincl::make-nan) inf (- inf) 1))))
+  #-sbcl (format t "~&  skip NaN, infinities as null: no infinity constant outside SBCL~%")
   (check-equal "2-D array by rows" "[[1,2,3],[4,5,6]]" (json #2A((1 2 3) (4 5 6))))
   (check-equal "2-D double array by rows" "[[1.0,2.0],[3.0,4.5]]"
                (json (make-array '(2 2) :element-type 'double-float
@@ -247,7 +247,7 @@
 (defun same-doubles (a b)
   "True if the double vectors A and B are equal, NaNs (no data) matching."
   (and (= (length a) (length b))
-       (every (lambda (x y) (or (and (sb-ext:float-nan-p x) (sb-ext:float-nan-p y)) (= x y))) a b)))
+       (every (lambda (x y) (or (and (fincl::nan-p x) (fincl::nan-p y)) (= x y))) a b)))
 
 (defun layer-checks ()
   (format t "~&Layers and PLOT~%")

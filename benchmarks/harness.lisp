@@ -103,11 +103,6 @@ fit in *SERIES-SECONDS* when fewer, but at least 5, and 3 above 10 s."
       3
       (max 5 (min (if quick 10 30) (floor *series-seconds* (max single 1d-9))))))
 
-(defun now ()
-  "Seconds on CLOCK_MONOTONIC."
-  (multiple-value-bind (seconds nanoseconds) (sb-unix:clock-gettime sb-unix:clock-monotonic)
-    (+ seconds (* nanoseconds 1d-9))))
-
 (defun time-batch (thunk n)
   (let ((start (now)))
     (dotimes (i n) (funcall thunk))
@@ -137,7 +132,7 @@ standard deviation."
   "Time THUNK under the protocol. Returns a plist: the value, standard error
 and details of the first call, the samples (seconds per call), the batch
 size, the bytes consed per call, and SAMPLE-STATISTICS."
-  (sb-ext:gc :full t)
+  (full-gc)
   (let* ((start (now))
          (first-call (multiple-value-list (funcall thunk)))
          (single (- (now) start)))
@@ -151,10 +146,10 @@ size, the bytes consed per call, and SAMPLE-STATISTICS."
                              (max 1 (ceiling *sample-seconds* (max single 1d-9)))
                              batch-size)))
              (n-samples (sample-count single quick))
-             (consed (sb-ext:get-bytes-consed))
+             (consed (bytes-consed))
              (samples (iter (repeat n-samples)
                             (collect (/ (time-batch thunk batch) batch))))
-             (consed (- (sb-ext:get-bytes-consed) consed)))
+             (consed (- (bytes-consed) consed)))
         `(:value ,(and value (float value 1d0))
           :std-error ,(and std-error (float std-error 1d0))
           :details ,details

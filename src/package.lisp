@@ -221,6 +221,7 @@
    #:make-engine #:engine-candidates #:with-engines #:engine-fallback #:no-suitable-engine
    ;; conditions and restarts
    #:fincl-error #:invalid-input #:pricing-error
+   #:portability-fallback #:seed-unsupported #:portability-report
    #:invalid-argument #:check-input #:signal-invalid-argument
    #:invalid-exercise #:invalid-literal #:unknown-parameter
    #:unsupported-combination #:model-domain-error #:convergence-failure

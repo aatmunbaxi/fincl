@@ -21,7 +21,7 @@
   (declare (ignore market times))
   (let ((stepper (call-next-method)))
     (lambda (state normals j)
-      (sb-ext:atomic-incf (car *stepper-calls*))
+      (atomic-incf-car *stepper-calls*)
       (funcall stepper state normals j))))
 
 ;;; A test payoff that pays 1 on each of its dates and stops after the second.
@@ -118,17 +118,18 @@
                                                    (fincl::make-time-grid m :dates dates)))))
   ;; Memory does not grow with the number of steps: no path matrix, and the
   ;; stepped loop conses nothing per step (GBM's stepper does not either).
-  (let* ((m (paths-market))
-         (call (make-option (call 100) (stepped-call) (expires #D"2027-09-24")))
-         (bytes (mapcar (lambda (n)
-                          (sb-ext:gc :full t)
-                          (let ((start (sb-ext:get-bytes-consed)))
-                            (price call (make-engine :mc :n-paths 20000 :n-steps n) m)
-                            (- (sb-ext:get-bytes-consed) start)))
-                        '(25 100 400))))
-    (check-that (format nil "stepped European (GBM) bytes consed flat in n-steps: ~{~:D~^, ~} at 25, ~
+  (when-sbcl-checks ("stepped European allocation is flat in n-steps" "bytes consed are counted on SBCL only")
+    (let* ((m (paths-market))
+           (call (make-option (call 100) (stepped-call) (expires #D"2027-09-24")))
+           (bytes (mapcar (lambda (n)
+                            (full-gc)
+                            (let ((start (bytes-consed)))
+                              (price call (make-engine :mc :n-paths 20000 :n-steps n) m)
+                              (- (bytes-consed) start)))
+                          '(25 100 400))))
+      (check-that (format nil "stepped European (GBM) bytes consed flat in n-steps: ~{~:D~^, ~} at 25, ~
 100, 400 steps" bytes)
-                (< (third bytes) (* 2 (first bytes))))))
+                  (< (third bytes) (* 2 (first bytes)))))))
 
 ;;; --------------------------------------------------------------------
 ;;; Phase 2: Asians, barriers and lookbacks

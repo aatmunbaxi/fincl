@@ -10,6 +10,7 @@
 PARALLEL ones inside a 4-worker kernel, and print the summary. Returns T
 when every check passed."
   (let ((*failures* 0)
+        (*skipped-checks* '())
         (lp:*kernel* nil))
     (mapc #'funcall serial)
     (setf lp:*kernel* (lp:make-kernel 4))
@@ -17,8 +18,11 @@ when every check passed."
     ;; (80 MB each) otherwise fragment SBCL's default 1 GB heap.
     (unwind-protect (dolist (check parallel)
                       (funcall check)
-                      #+sbcl (sb-ext:gc :full t))
+                      (full-gc))
       (lp:end-kernel :wait t))
+    (when *skipped-checks*
+      (format t "~&~D check(s) skipped on ~A: ~{~A~^; ~}~%" (length *skipped-checks*)
+              (lisp-implementation-type) (reverse *skipped-checks*)))
     (format t "~&~[All checks passed~:;~:*~D failure(s)~]~%" *failures*)
     (zerop *failures*)))
 
@@ -32,7 +36,7 @@ when every check passed."
         'cos-checks 'cos-term-structure-checks 'binomial-checks 'analytic-checks 'parameter-checks
         'error-checks 'condition-hierarchy-checks 'restart-checks 'lsm-basis-checks
         'lbr-reference-checks 'implied-vol-checks 'engine-implied-vol-checks
-        'optimizer-checks 'bivariate-normal-checks)
+        'optimizer-checks 'bivariate-normal-checks 'platform-checks)
   "Checks that take seconds, not minutes.")
 
 (defparameter *slow-checks*

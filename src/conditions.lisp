@@ -59,3 +59,43 @@ DATUM, which is not of EXPECTED-TYPE; EXPECTED describes valid values.
   (signal-invalid-argument 'offsets offsets 'list \"distinct real offsets\")"
   (error 'invalid-argument :place place :datum datum :expected-type expected-type
                            :expected expected))
+
+;;; --------------------------------------------------------------------
+;;; Portability
+;;; --------------------------------------------------------------------
+
+(define-condition portability-fallback (warning)
+  ((feature :initarg :feature :reader portability-fallback-feature)
+   (kind :initarg :kind :reader portability-fallback-kind)
+   (reason :initarg :reason :reader portability-fallback-reason))
+  (:report (lambda (c s)
+             (format s "~(~A~) uses a ~(~A~) fallback on ~A ~A: ~A"
+                     (portability-fallback-feature c) (portability-fallback-kind c)
+                     (lisp-implementation-type) (lisp-implementation-version)
+                     (portability-fallback-reason c))))
+  (:documentation "A facility of the running Lisp or of an optional library is
+absent, and fincl uses a substitute that is slower or less accurate (KIND
+:degraded) or computes the same quantity another way (:real). Signalled once
+per image and feature."))
+
+(define-condition seed-unsupported (invalid-input)
+  ((designator :initarg :designator :reader seed-unsupported-designator)
+   (seed :initarg :seed :reader seed-unsupported-seed))
+  (:report (lambda (c s)
+             (format s "The ~S random-number generator cannot be seeded on ~A (seed ~S): ~
+                        the implementation has no seedable generator. Use :counter, ~
+                        :mersenne-twister-64 or (:pcg n), which are seedable everywhere."
+                     (seed-unsupported-designator c) (lisp-implementation-type)
+                     (seed-unsupported-seed c))))
+  (:documentation "A seed was given to the implementation's own generator, which
+Common Lisp cannot seed portably."))
+
+(define-condition unsupported-on-this-implementation (pricing-error)
+  ((feature :initarg :feature :reader unsupported-feature)
+   (alternative :initarg :alternative :initform nil :reader unsupported-alternative))
+  (:report (lambda (c s)
+             (format s "~A is not available on ~A ~A~@[; ~A~]."
+                     (unsupported-feature c) (lisp-implementation-type)
+                     (lisp-implementation-version) (unsupported-alternative c))))
+  (:documentation "A feature that has no portable definition and no extension
+on the running Lisp."))

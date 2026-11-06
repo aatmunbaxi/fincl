@@ -85,9 +85,11 @@ or build the market with that :vol"
                                              (remove-duplicates initargs)))))
     (apply #'make-instance class settings)))
 
-(defvar *shared-engines* (make-hash-table :test 'eq :synchronized t)
+(defvar *shared-engines* (make-hash-table :test 'eq)
   "Designator keyword -> the engine with default settings. Engines are
-immutable, so one instance serves every caller.")
+immutable, so one instance serves every caller. Guarded by `*shared-engines-lock*'.")
+
+(defvar *shared-engines-lock* (bt:make-lock "fincl shared engines"))
 
 (defun ensure-engine (designator &optional process)
   "The engine DESIGNATOR names, with PROCESS for engines that take one: an
@@ -103,8 +105,11 @@ a list (keyword initarg value ...) as data, whose values are not evaluated.
                                 "an engine keyword: :AUTO selects an engine through PRICE"))
      (if process
          (make-engine designator :process process)
-         (or (gethash designator *shared-engines*)
-             (setf (gethash designator *shared-engines*) (make-engine designator)))))
+         (or (bt:with-lock-held (*shared-engines-lock*) (gethash designator *shared-engines*))
+             (let ((engine (make-engine designator)))
+               (bt:with-lock-held (*shared-engines-lock*)
+                 (or (gethash designator *shared-engines*)
+                     (setf (gethash designator *shared-engines*) engine)))))))
     (cons
      (destructuring-bind (key &rest settings) designator
        (apply #'make-engine key

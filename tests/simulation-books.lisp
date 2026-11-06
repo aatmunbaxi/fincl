@@ -11,7 +11,7 @@
 (defun nan-equal (a b)
   "True if the double vectors A and B are =, NaNs matching NaNs."
   (and (= (length a) (length b))
-       (every (lambda (x y) (or (and (sb-ext:float-nan-p x) (sb-ext:float-nan-p y)) (= x y))) a b)))
+       (every (lambda (x y) (or (and (fincl::nan-p x) (fincl::nan-p y)) (= x y))) a b)))
 
 ;;; --------------------------------------------------------------------
 ;;; Phase 1: per-path records, previous state, time
@@ -54,20 +54,20 @@ the kept paths also hold their recorded values in a list."
                 (iter (for i below 10)
                       (for live = (simulation-path-state kept i :spot))
                       ;; SEEN as held on the path's last date: every record of :LATE.
-                      (for last = (position-if-not #'sb-ext:float-nan-p live :from-end t))
+                      (for last = (position-if-not #'fincl::nan-p live :from-end t))
                       (for seen = (aref (simulation-held kept i :seen) last))
                       (for late = (simulation-path-record kept i :late))
                       (always (iter (for d in dates) (for k from 0)
                                     (for entry = (assoc d seen :test #'date=))
                                     (always (if entry
                                                 (= (aref late k) (cdr entry))
-                                                (sb-ext:float-nan-p (aref late k))))))
+                                                (fincl::nan-p (aref late k))))))
                       (always (iter (for k from 1 below (length dates))
-                                    (always (if (sb-ext:float-nan-p (aref live k))
-                                                (sb-ext:float-nan-p (aref (simulation-path-record kept i :s) k))
+                                    (always (if (fincl::nan-p (aref live k))
+                                                (fincl::nan-p (aref (simulation-path-record kept i :s) k))
                                                 (= (aref live k) (aref (simulation-path-record kept i :s) k))))))))
     (check-that "some kept path stopped early (the NaN-after-STOP case is exercised)"
-                (iter (for i below 10) (thereis (sb-ext:float-nan-p (a:last-elt (simulation-path-record kept i :s))))))
+                (iter (for i below 10) (thereis (fincl::nan-p (a:last-elt (simulation-path-record kept i :s))))))
     (check-that "the statistics with :KEEP (:PATHS 10) are = to those without"
                 (iter (for name in '(:s :late))
                       (always (iter (for statistic in '(:mean :std-dev :min :max :count))
@@ -209,18 +209,13 @@ the kept paths also hold their recorded values in a list."
     ;; A market build with a state curve evaluates no bond price: the curve
     ;; makes its bond price function (the Hull-White formula with the terms
     ;; of its date hoisted) on the first price.
-    (let ((calls (list 0)))
-      (sb-int:encapsulate 'fincl::state-discount-function 'count
-                          (lambda (f &rest args) (sb-ext:atomic-incf (car calls)) (apply f args)))
-      (unwind-protect
-           (progn
-             (simulate ((((:curve :usd) hw)) m (monthly-dates 6) :n-paths 50)
-               (:every (date market) (record :built (if market 1 0))))
-             (check-equal "building markets with a state curve evaluates no bond price function" 0 (car calls))
-             (simulate ((((:curve :usd) hw)) m (monthly-dates 6) :n-paths 50)
-               (:every (date market) (record :p (market-curve-discount market :usd (years-from date 1)))))
-             (check-equal "a price on each path and date makes one per market" 300 (car calls)))
-        (sb-int:unencapsulate 'fincl::state-discount-function 'count)))))
+    (count-calls (calls 'fincl::state-discount-function)
+      (simulate ((((:curve :usd) hw)) m (monthly-dates 6) :n-paths 50)
+        (:every (date market) (record :built (if market 1 0))))
+      (check-equal "building markets with a state curve evaluates no bond price function" 0 (car calls))
+      (simulate ((((:curve :usd) hw)) m (monthly-dates 6) :n-paths 50)
+        (:every (date market) (record :p (market-curve-discount market :usd (years-from date 1)))))
+      (check-equal "a price on each path and date makes one per market" 300 (car calls)))))
 
 ;;; --------------------------------------------------------------------
 ;;; Phase 3: cash, trades and interest

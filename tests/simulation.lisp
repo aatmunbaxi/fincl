@@ -70,7 +70,7 @@ as the Asian path kernel computes them."
       (check-that ":ON leaves the caller's date list alone (SORT must not relink it)"
                   (equal on-dates before))
       (check-that ":ON runs on its dates only, I being the position in its list"
-                  (flet ((means (r) (substitute-if 0d0 #'sb-ext:float-nan-p (simulation-statistic r :i :mean))))
+                  (flet ((means (r) (substitute-if 0d0 #'fincl::nan-p (simulation-statistic r :i :mean))))
                     (equalp (means on) (means every)))))
     (check-that "outputs are = under 1, 2 and 8 workers"
                 (let ((runs (mapcar (lambda (n) (with-workers n (lambda () (simulation-values (run-asian-pair m 2000) :geometric))))
@@ -370,19 +370,16 @@ as the Asian path kernel computes them."
                                        (:final 1))
                                      nil)
                   (missing-market-data (c) (search ":IBM" (princ-to-string c)))))
-    (let ((copies 0) (spots '()))
-      (sb-int:encapsulate 'fincl::copy-composite-market 'count-copies
-                          (lambda (f &rest args) (incf copies) (apply f args)))
-      (unwind-protect
-           (simulate (((:aapl (make-gbm)) (:msft (make-gbm))) m (list #D"2026-12-24") :n-paths 1)
-             (:state a :spot :aapl) (:state b :spot :msft)
-             (:every (date market)
-               (setf copies 0)
-               (push (list (spot (market-view market :underlying :aapl)) a
-                           (spot (market-view market :underlying :msft)) b
-                           (spot (market-view market :underlying :ibm)) copies)
-                     spots)))
-        (sb-int:unencapsulate 'fincl::copy-composite-market 'count-copies))
+    (let ((spots '()))
+      (count-calls (copies 'fincl::copy-composite-market)
+        (simulate (((:aapl (make-gbm)) (:msft (make-gbm))) m (list #D"2026-12-24") :n-paths 1)
+          (:state a :spot :aapl) (:state b :spot :msft)
+          (:every (date market)
+            (setf (car copies) 0)
+            (push (list (spot (market-view market :underlying :aapl)) a
+                        (spot (market-view market :underlying :msft)) b
+                        (spot (market-view market :underlying :ibm)) (car copies))
+                  spots))))
       (check-that "market-at-state sets both spots in one table copy and keeps an unsimulated spot"
                   (every (lambda (s) (destructuring-bind (a a* b b* ibm n) s
                                        (and (= a a*) (= b b*) (= ibm 10d0) (= n 1))))

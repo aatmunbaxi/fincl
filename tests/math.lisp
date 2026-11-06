@@ -79,7 +79,7 @@ measured against max(1, x^2)."
 
 (defun complex-function-checks ()
   (let ((worst-sqrt 0d0) (worst-log 0d0) (worst-square 0d0) (worst-exp 0d0)
-        (state (sb-ext:seed-random-state 11)))
+        (state (test-random-state 11)))
     (flet ((component ()
              (* (if (zerop (random 2 state)) 1 -1) (expt 10d0 (- (random 14d0 state) 7d0))))
            (relative (a b) (/ (abs (- a b)) (abs b))))
@@ -285,7 +285,7 @@ polynomial of DEGREE exactly, in rationals?"
                    (stencil-exact-p '(-1 0 3/2) 1 2)
                    (stencil-exact-p '(-1 0 3/2) 2 2)
                    (not (stencil-exact-p '(-1 1) 1 3))))
-  (let ((state (sb-ext:seed-random-state 5)))
+  (let ((state (test-random-state 5)))
     (check-that "the central quotient is exactly (f(x+h) - f(x-h)) / 2h, as SOLVE-NEWTON had"
                 (iter (for f in (list #'exp #'sin (lambda (x) (- (* x x x) (* 2 x) 5))
                                      (lambda (x) (- (cos x) x))))
@@ -344,7 +344,7 @@ independent uniforms plus a dominant diagonal band. Returns (values rows y)."
 
 (defun linear-algebra-checks ()
   (format t "~&Math: least squares by QR~%")
-  (let ((state (sb-ext:seed-random-state 11)))
+  (let ((state (test-random-state 11)))
     (check-that "QR = normal equations (Gaussian elimination) on 20 random well-conditioned problems"
                 (iter (repeat 20)
                       (always (multiple-value-bind (rows y) (random-least-squares 200 5 state)

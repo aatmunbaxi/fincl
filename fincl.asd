@@ -14,11 +14,14 @@
                "arrow-macros"
                "iterate"
                "named-readtables"
-               "closer-mop")
+               "closer-mop"
+               "uiop"
+               "introspect-environment")
   :pathname "src/"
   :serial t
   :components ((:file "package")
                (:file "conditions")
+               (:file "platform")
                (:file "iteration-helpers")
                (:module "math"
                 :serial t
@@ -164,6 +167,7 @@
                (:file "simulation-components")
                (:file "simulation-validation")
                (:file "simulation-books")
+               (:file "platform")
                (:file "readme")
                ;; The runners call the checks above; keep them last.
                (:file "tests"))
@@ -180,6 +184,7 @@ under one protocol. Not part of fincl; run by hand in the .#benchmarks shell."
   :pathname "benchmarks/"
   :serial t
   :components ((:file "package")
+               (:file "clock")
                (:file "harness")
                (:file "report")
                (:file "common")

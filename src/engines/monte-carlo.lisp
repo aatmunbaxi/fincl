@@ -47,21 +47,6 @@ long-running session should make one kernel and keep it."
            (unwind-protect (progn ,@body)
              (lp:end-kernel :wait t))))))
 
-(defvar *cpu-count* nil
-  "Memoized by CPU-COUNT on first use, so it describes the machine that runs
-the code, not the one that built it.")
-
-(defun cpu-count ()
-  (or *cpu-count*
-      (setf *cpu-count*
-            #+sbcl (max 1 (or (ignore-errors
-                               (parse-integer
-                                (with-output-to-string (s)
-                                  (sb-ext:run-program "nproc" '() :search t :output s))
-                                :junk-allowed t))
-                              1))
-            #-sbcl 4)))
-
 (defun chunk-ranges (n n-chunks)
   "Split [0, N) into contiguous (start . end) ranges."
   (let ((size (ceiling n (max 1 (min n n-chunks)))))
@@ -113,8 +98,7 @@ RANDOM-STATE:RANDOM-BYTES exactly, so the stream is unchanged."
                                stream is not portable between Lisps."
   (ematch designator
     (:native
-     (let ((state #+sbcl (sb-ext:seed-random-state seed)
-                  #-sbcl (make-random-state t)))
+     (let ((state (seeded-random-state seed)))
        (lambda () (random 1d0 state))))
     ((guard type (keywordp type))
      (random-state-uniform-fn (rs:make-generator type seed)))

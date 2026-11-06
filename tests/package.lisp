@@ -52,6 +52,73 @@
        (progn (incf *failures*)
               (format t "~&  FAIL ~A: no ~A signalled~%" ,name ',type))))
 
+;;; --------------------------------------------------------------------
+;;; Implementation-dependent helpers. The tests name no SBCL internal outside
+;;; this section: a check that needs one runs under WHEN-SBCL-CHECKS and is
+;;; reported as skipped elsewhere.
+;;; --------------------------------------------------------------------
+
+(defvar *skipped-checks* '()
+  "Names of the checks skipped on this implementation, newest first.")
+
+(defmacro when-sbcl-checks ((name reason) &body body)
+  "Run BODY on SBCL; elsewhere print one line saying that the check NAME was
+skipped because REASON, and record it in `*skipped-checks*'. Skipped is not passed."
+  `(progn
+     #+sbcl (progn ,@body)
+     #-sbcl (progn (push ,name *skipped-checks*)
+                   (format t "~&  skip ~A: ~A~%" ,name ,reason))))
+
+(defun test-random-state (seed)
+  "A random state determined by SEED. Where the implementation cannot seed its
+generator, a fresh state: the checks that use it draw inputs whose outcome does not
+depend on the draw."
+  (handler-case (fincl::seeded-random-state seed)
+    (seed-unsupported () (make-random-state t))))
+
+(defun bytes-consed ()
+  "Bytes allocated so far, or NIL where the implementation does not count."
+  #+sbcl (sb-ext:get-bytes-consed)
+  #-sbcl nil)
+
+(defun full-gc ()
+  "A full garbage collection where the implementation offers one."
+  #+sbcl (sb-ext:gc :full t)
+  #-sbcl (progn))
+
+(defvar *count-lock* (bt:make-lock "count"))
+
+(defmacro with-quiet-float-traps (&body body)
+  "Run BODY with the invalid-operation, overflow and divide-by-zero traps masked,
+where the implementation lets that be done, so NaN and infinity arithmetic is quiet."
+  #+sbcl `(sb-int:with-float-traps-masked (:invalid :overflow :divide-by-zero) ,@body)
+  #-sbcl `(progn ,@body))
+
+(defun positive-infinity ()
+  "Positive infinity as a double-float."
+  #+sbcl sb-ext:double-float-positive-infinity
+  #-sbcl (with-quiet-float-traps (* 2 most-positive-double-float)))
+
+(defmacro atomic-incf-car (cell)
+  "Add one to the CAR of CELL (a fixnum) without losing counts to other threads."
+  #+sbcl `(sb-ext:atomic-incf (car ,cell))
+  #-sbcl `(bt:with-lock-held (*count-lock*) (incf (car ,cell))))
+
+(defmacro count-calls ((counter function) &body body)
+  "Run BODY with the global function FUNCTION (a symbol) wrapped so each call adds
+one to the CAR of the cons COUNTER, which is bound to (0) for the extent. The
+original function is restored on exit.
+
+  (count-calls (n 'fincl::copy-composite-market) (price o e m) (car n))"
+  (a:with-gensyms (original name)
+    `(let* ((,counter (list 0)) (,name ,function) (,original (fdefinition ,name)))
+       (setf (fdefinition ,name)
+             (lambda (&rest args)
+               (bt:with-lock-held (*count-lock*) (incf (car ,counter)))
+               (apply ,original args)))
+       (unwind-protect (progn ,@body)
+         (setf (fdefinition ,name) ,original)))))
+
 (defun mc (&rest args)
   (apply #'make-instance 'monte-carlo-engine args))
 
