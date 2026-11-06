@@ -1409,6 +1409,16 @@ positions that matured or expired are removed."
   (defun simulate-clause-error (clause reason)
     (signal-invalid-argument 'clause clause 'list (format nil "a SIMULATE clause: ~A" reason)))
 
+  (defun simulate-book-engine (operator book books)
+    "The :ENGINE form of the book BOOK names in (OPERATOR book ...), BOOKS being
+((var . engine) ...) of the :PORTFOLIO clauses; signals unless BOOK is one."
+    (let ((entry (and (symbolp book) (assoc book books))))
+      (unless entry
+        (signal-invalid-argument operator book 'symbol
+                                 (format nil "a :PORTFOLIO variable as the first argument of ~(~A~), one of ~
+~:[none~;~:*~{~S~^, ~}~]" operator (mapcar #'car books))))
+      (cdr entry)))
+
   (defun clause-binding-list-p (x)
     "True if X is the optional ([market] &key time) list of :START: a list
 holding &KEY, or of at most one symbol that names no function."
@@ -1563,8 +1573,9 @@ underlying's spot. OPTIONS:
                      past fixings. Pricing needs every fixing date among DATES
                      (FIXING-DATES lists an instrument's).
 
-Optional clauses. :ACCUMULATE and :HOLD may repeat and :FINAL appears
-once; the logic clauses run in the order written.
+Optional clauses. :ACCUMULATE and :HOLD may repeat, :PORTFOLIO once per
+variable, and :FINAL appears once; the logic clauses run in the order
+written.
   (:accumulate (var init) ...)
                      per-path DOUBLE-FLOAT variables, reset to INIT on every
                      path (an integer INIT is coerced; assigning a non-double
@@ -1579,7 +1590,10 @@ once; the logic clauses run in the order written.
                      with ADJUST-POSITION and priced with ENGINE. RECORD lists
                      :VALUE, :CASH and Greek keys; each is recorded every date
                      under the name (var-keyword key), e.g. (:book :delta).
-                     Without :FINAL the one output is :VALUE.
+                     Several clauses simulate several books on the same
+                     paths, each with its own cash. Without :FINAL the
+                     outputs are the books' values: :VALUE for one book,
+                     (var-keyword) for each of several.
                      CASH (a real, evaluated per path), or a CASH-ACCOUNT
                      position in INIT, makes the book self-financing: on each
                      date after the first, before the clauses, its cash grows
@@ -1626,9 +1640,8 @@ once; the logic clauses run in the order written.
                      keyword. (:final form) is (:final (:value form)). MARKET
                      in the forms is the market of the path's last date.
 MARKET is built only if the
-clause uses it, and a global special variable may serve as its name. Clause
-code runs serially: pricing inside it starts no parallel work. An error in
-a clause is re-signalled in the caller.
+clause uses it, and a global special variable may serve as its name. Clause code runs in
+ serial. An error in a clause is re-signalled in the caller.
 
 Inside :START, :EVERY and :ON bodies these local operators are available,
 matched by name in any package:
@@ -1649,15 +1662,17 @@ matched by name in any package:
                        market's discount factor. Also available in :FINAL.
   (previous var)       the :STATE variable VAR's value at the previous date
                        (the valuation date's at the first).
-With a book holding cash, also:
-  (trade instrument &key by to engine)
-                       buys or sells INSTRUMENT to quantity TO, or BY a change,
-                       at its price on the date's market (ENGINE, else the
-                       position's, else the book's), paid from cash; returns
-                       the cash paid. A position sold to 0 leaves the book.
-  (deposit amount) (withdraw amount)
-                       move a non-negative AMOUNT into or out of cash; return
-                       the balance.
+With :PORTFOLIO clauses, also, BOOK being one of their variables and
+holding cash:
+  (trade book instrument &key by to engine)
+                       buys or sells INSTRUMENT in BOOK to quantity TO, or BY
+                       a change, at its price on the date's market (ENGINE,
+                       else the position's, else the book's), paid from
+                       BOOK's cash; returns the cash paid. A position sold
+                       to 0 leaves the book.
+  (deposit book amount) (withdraw book amount)
+                       move a non-negative AMOUNT into or out of BOOK's
+                       cash; return the balance.
 
 Results of simulation in SIMULATION-RESULT:
   :final outputs   SIMULATION-VALUES (one number per path), SIMULATION-MEAN,
@@ -1695,7 +1710,7 @@ The function underneath is MAP-SIMULATED-PATHS.
                 :cash (price call :black-scholes market) :engine :black-scholes)
     (:every (date market)
       (when (date< date expiry)
-        (trade (make-holding) :to (getf (greeks call :black-scholes market :which '(:delta)) :delta))))
+        (trade book (make-holding) :to (getf (greeks call :black-scholes market :which '(:delta)) :delta))))
     (:final (:pnl (price book :black-scholes market))))
 
   ;; The exposure of a SWAP when the curve it prices on follows Hull-White:
@@ -1713,8 +1728,7 @@ The function underneath is MAP-SIMULATED-PATHS.
          (fixings (gensym "FIXINGS"))
          (event-times (gensym "TIMES")) (event-steps (gensym "STEPS")) (previous (gensym "PREVIOUS"))
          (trade-name (intern "TRADE")) (deposit-name (intern "DEPOSIT")) (withdraw-name (intern "WITHDRAW"))
-         (accounting (gensym "ACCOUNTING")) (cash-target (gensym "CASH-TARGET"))
-         (last-discount (gensym "LAST-DISCOUNT")) (book-states (gensym "BOOK-STATES"))
+         (book-states (gensym "BOOK-STATES"))
          (book-market (gensym "BOOK-MARKET"))
          (plan (gensym "PLAN")) (store (gensym "STORE")) (stats (gensym "STATS"))
          (path (gensym "PATH")) (k (gensym "K")) (states (gensym "STATES"))
@@ -1775,17 +1789,23 @@ The function underneath is MAP-SIMULATED-PATHS.
                (push (first everys) ons)))
         (:final (when finals (simulate-clause-error clause "one :FINAL clause"))
                 (setf finals (parse-final clause)))))
-    (when (rest portfolios)
-      (simulate-clause-error (first portfolios) "one :PORTFOLIO clause"))
+    (iter (for (var) on (mapcar #'first portfolios))
+          (when (member var (rest (member var (mapcar #'first portfolios))))
+            (simulate-clause-error `(:portfolio ,var) "one :PORTFOLIO clause per variable")))
+    ;; Each book: (var init record engine cash cash-curve collect accounting
+    ;; cash-target last-discount), the last three its own variables.
+    (setf portfolios (mapcar (lambda (p) `(,@p ,(gensym "ACCOUNTING") ,(gensym "CASH-TARGET")
+                                              ,(gensym "LAST-DISCOUNT")))
+                             (nreverse portfolios)))
     (setf accumulators (nreverse accumulators) holds (nreverse holds)
           state-vars (nreverse state-vars) derives (nreverse derives) starts (nreverse starts)
           everys (nreverse everys) ons (nreverse ons))
-    (let* ((portfolio (first portfolios))
-           (book (first portfolio))
-           (book-key (when book (a:make-keyword (symbol-name book))))
+    (let* ((books (mapcar (lambda (p) (cons (first p) (fourth p))) portfolios))
            (outputs (or finals
-                        (when book `((:value (price ,book ,(fourth portfolio) (,market-fn)))))))
-           (held-vars `(,@(mapcar #'first holds) ,@(when book `(,book))))
+                        (iter (for (var nil nil engine) in portfolios)
+                              (collect `(,(if (rest portfolios) (a:make-keyword (symbol-name var)) :value)
+                                         (price ,var ,engine (,market-fn)))))))
+           (held-vars `(,@(mapcar #'first holds) ,@(mapcar #'first portfolios)))
            (uses-previous (calls-named-p clauses '("PREVIOUS"))))
       (dolist (var (named-call-arguments clauses "PREVIOUS"))
         (unless (find var state-vars :key #'first)
@@ -1793,6 +1813,10 @@ The function underneath is MAP-SIMULATED-PATHS.
                                    (format nil "a :STATE variable in (previous var), one of ~:[none~;~:*~{~S~^, ~}~] ~
 (carry other values from date to date in an :ACCUMULATE variable)"
                                            (mapcar #'first state-vars)))))
+      (when portfolios
+        (dolist (operator '(trade deposit withdraw))
+          (dolist (book (named-call-arguments clauses (symbol-name operator)))
+            (simulate-book-engine operator book books))))
       (labels ((with-states (body)
                  `(let ,(iter (for (var nil nil leg index) in state-vars)
                               (collect `(,var (aref (the double-vector (svref ,states ,leg)) ,index))))
@@ -1815,49 +1839,52 @@ The function underneath is MAP-SIMULATED-PATHS.
                             `(progn ,@body)))
                        (t `(symbol-macrolet ((,market-var (,market-fn))) ,@body))))
                (record-book ()
-                 (when book
-                   `((unless (typep ,book 'portfolio)
-                       (signal-invalid-argument ',book ,book 'portfolio
-                                                "a PORTFOLIO (set the book with ADJUST-POSITION or MAKE-PORTFOLIO)"))
-                     ,@(destructuring-bind (var init record &rest more) portfolio
-                         (declare (ignore var init more))
-                         (when (member :cash record)
-                           `((record-value ,stats ,store '(,book-key :cash) ,path ,k
-                                           (progn (check-book-cash ,book :record) (book-balance ,book))))))
-                     ,@(destructuring-bind (var init record engine &rest accounting) portfolio
-                         (declare (ignore var init accounting))
-                         (when (intersection record `(:value ,@*greek-keys*))
-                           (let ((greek-keys (remove :cash (remove :value record))))
-                             `((let ((m (,market-fn)))
-                                 ,@(when (member :value record)
-                                     `((record-value ,stats ,store '(,book-key :value) ,path ,k
-                                                     (price ,book ,engine m))))
-                                 ,@(when greek-keys
-                                     `((let ((g (live-book-greeks ,book ,engine m ',greek-keys)))
-                                         ,@(iter (for key in greek-keys)
-                                                 (collect `(record-value ,stats ,store '(,book-key ,key)
-                                                                         ,path ,k (getf g ,key)))))))))))))))
+                 (iter (for (book nil record engine) in portfolios)
+                       (for book-key = (a:make-keyword (symbol-name book)))
+                       (collect
+                           `(unless (typep ,book 'portfolio)
+                              (signal-invalid-argument ',book ,book 'portfolio
+                                                       "a PORTFOLIO (set the book with ADJUST-POSITION or MAKE-PORTFOLIO)")))
+                       (when (member :cash record)
+                         (collect `(record-value ,stats ,store '(,book-key :cash) ,path ,k
+                                                 (progn (check-book-cash ,book :record) (book-balance ,book)))))
+                       (when (intersection record `(:value ,@*greek-keys*))
+                         (let ((greek-keys (remove :cash (remove :value record))))
+                           (collect
+                               `(let ((m (,market-fn)))
+                                  ,@(when (member :value record)
+                                      `((record-value ,stats ,store '(,book-key :value) ,path ,k
+                                                      (price ,book ,engine m))))
+                                  ,@(when greek-keys
+                                      `((let ((g (live-book-greeks ,book ,engine m ',greek-keys)))
+                                          ,@(iter (for key in greek-keys)
+                                                  (collect `(record-value ,stats ,store '(,book-key ,key)
+                                                                          ,path ,k (getf g ,key)))))))))))))
                (accrue-book ()
-                 ;; D5 steps 1 and 2 for a book holding cash: interest at the
-                 ;; growth of cash over the interval, from the path's discount.
-                 (when book
-                   `((unless (eq ,cash-target :none)
-                       (let ((d (simulation-path-discount ,plan ,k ,states ,cash-target)))
-                         (check-book-cash ,book :interest)
-                         (setf ,book (set-book-balance ,book (* (book-balance ,book) (/ ,last-discount d)))
-                               ,last-discount d))
-                       ;; Income over the interval; the previous date's market
-                       ;; is the one built then, or built now from its states.
-                       (setf ,book (book-income ,book ,accounting ,k ,cash-target
-                                                (lambda ()
-                                                  (or ,book-market
-                                                      (setf ,book-market (simulation-market ,plan (1- ,k) ,book-states
-                                                                                            ,fixings))))
-                                                #',market-fn))))))
+                 ;; D5 steps 1 and 2 for each book holding cash: interest at
+                 ;; the growth of cash over the interval, from the path's
+                 ;; discount.
+                 (iter (for (book nil nil nil nil nil nil accounting cash-target last-discount) in portfolios)
+                       (collect
+                           `(unless (eq ,cash-target :none)
+                              (let ((d (simulation-path-discount ,plan ,k ,states ,cash-target)))
+                                (check-book-cash ,book :interest)
+                                (setf ,book (set-book-balance ,book (* (book-balance ,book) (/ ,last-discount d)))
+                                      ,last-discount d))
+                              ;; Income over the interval; the previous date's
+                              ;; market is the one built then, or built now
+                              ;; from its states.
+                              (setf ,book (book-income ,book ,accounting ,k ,cash-target
+                                                       (lambda ()
+                                                         (or ,book-market
+                                                             (setf ,book-market
+                                                                   (simulation-market ,plan (1- ,k) ,book-states
+                                                                                      ,fixings))))
+                                                       #',market-fn))))))
                (remember-book-date ()
                  ;; What the next date's income needs of this one.
-                 (when book
-                   `((unless (eq ,cash-target :none)
+                 (when portfolios
+                   `((unless (and ,@(iter (for p in portfolios) (collect `(eq ,(ninth p) :none))))
                        (setf ,book-market ,cached
                              ,book-states (copy-states-into ,book-states ,states))))))
                (keep-hook ()
@@ -1887,10 +1914,8 @@ The function underneath is MAP-SIMULATED-PATHS.
                 (,store (make-simulation-store ,plan ,(keep-form keep)))
                 (,event-times (simulation-event-times ,plan))
                 (,event-steps (simulation-event-steps ,event-times))
-                ,@(when book
-                    (destructuring-bind (var init record engine cash cash-curve collect) portfolio
-                      (declare (ignore var init record engine cash))
-                      `((,accounting (make-book-accounting ,plan ,cash-curve ,collect)))))
+                ,@(iter (for (nil nil nil nil nil cash-curve collect accounting) in portfolios)
+                        (collect `(,accounting (make-book-accounting ,plan ,cash-curve ,collect))))
                 ,@(iter (for (nil nil nil nil nil on-dates positions) in ons)
                         (collect `(,positions (on-positions ,plan ,on-dates)))))
            (declare (fixnum ,@(iter (for (nil nil nil leg index) in state-vars) (appending `(,leg ,index))))
@@ -1909,12 +1934,12 @@ The function underneath is MAP-SIMULATED-PATHS.
                           (,path 0) (,k 0) (,states nil) (,alive t) (,cached nil)
                           (,fixings (make-fixing-buffer ,plan))
                           ,@(when uses-previous `((,previous nil)))
-                          ,@(when book `((,cash-target :none) (,last-discount 1d0) (,book-states nil)
-                                         (,book-market nil)))
+                          ,@(iter (for p in portfolios) (appending `((,(ninth p) :none) (,(tenth p) 1d0))))
+                          ,@(when portfolios `((,book-states nil) (,book-market nil)))
                           ,@(iter (for (var) in accumulators) (collect `(,var 0d0)))
                           ,@(mapcar (lambda (v) `(,v nil)) held-vars))
                       (declare (fixnum ,path ,k)
-                               ,@(when book `((double-float ,last-discount)))
+                               ,@(when portfolios `((double-float ,@(mapcar #'tenth portfolios))))
                                ,@(when accumulators `((double-float ,@(mapcar #'first accumulators))))
                                (ignorable ,stats ,alive))
                       (flet ((,market-fn ()
@@ -1935,20 +1960,23 @@ The function underneath is MAP-SIMULATED-PATHS.
                                                 "a :STATE variable (carry other values from date to date in an :ACCUMULATE variable)"))
                                              `(aref (the double-vector (svref ,',previous ,(second entry)))
                                                     ,(third entry))))))
-                                   ,@(when book
-                                       `((,trade-name (instrument &rest keys)
-                                           (let ((b (gensym "BOOK")) (cost (gensym "COST")))
+                                   ,@(when portfolios
+                                       `((,trade-name (book instrument &rest keys)
+                                           (let ((engine (simulate-book-engine 'trade book ',books))
+                                                 (b (gensym "BOOK")) (cost (gensym "COST")))
                                              `(multiple-value-bind (,b ,cost)
-                                                  (book-trade ,',book ,instrument (function ,',market-fn)
-                                                              ,',(fourth portfolio) ,@keys)
-                                                (setf ,',book ,b)
+                                                  (book-trade ,book ,instrument (function ,',market-fn)
+                                                              ,engine ,@keys)
+                                                (setf ,book ,b)
                                                 ,cost)))
-                                         (,deposit-name (amount)
-                                           `(progn (setf ,',book (book-cash-flow ,',book ,amount 'deposit))
-                                                   (book-balance ,',book)))
-                                         (,withdraw-name (amount)
-                                           `(progn (setf ,',book (book-cash-flow ,',book ,amount 'withdraw))
-                                                   (book-balance ,',book))))))
+                                         (,deposit-name (book amount)
+                                           (simulate-book-engine 'deposit book ',books)
+                                           `(progn (setf ,book (book-cash-flow ,book ,amount 'deposit))
+                                                   (book-balance ,book)))
+                                         (,withdraw-name (book amount)
+                                           (simulate-book-engine 'withdraw book ',books)
+                                           `(progn (setf ,book (book-cash-flow ,book ,amount 'withdraw))
+                                                   (book-balance ,book))))))
                           (values
                            (lambda (p s)
                              (setf ,path p ,k 0 ,states s ,cached nil ,alive t)
@@ -1956,10 +1984,11 @@ The function underneath is MAP-SIMULATED-PATHS.
                              ,@(when uses-previous `((setf ,previous (copy-states-into ,previous s))))
                              ,@(iter (for (var init) in accumulators) (collect `(setf ,var (float ,init 1d0))))
                              ,@(iter (for (var init) in holds) (collect `(setf ,var ,init)))
-                             ,@(when book
-                                 `((setf ,book ,(second portfolio) ,last-discount 1d0)
-                                   (multiple-value-setq (,book ,cash-target)
-                                     (open-book ,book ,(fifth portfolio) ,accounting))))
+                             ,@(iter (for (book init nil nil cash nil nil accounting cash-target last-discount)
+                                      in portfolios)
+                                     (appending `((setf ,book ,init ,last-discount 1d0)
+                                                  (multiple-value-setq (,book ,cash-target)
+                                                    (open-book ,book ,cash ,accounting)))))
                              ,@(iter (for (market-var body time-var) in starts)
                                      (collect (with-states `(,(with-times time-var nil
                                                                 `(,(with-market market-var body)))))))
