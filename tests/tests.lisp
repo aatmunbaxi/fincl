@@ -42,7 +42,7 @@ when every check passed."
 (defparameter *slow-checks*
   (list 'rates-instrument-checks 'mc-checks 'counter-stream-checks 'antithetic-se-checks 'process-checks 'levy-checks 'selection-test-checks 'term-structure-checks 'clarke-parrott-checks
         'greeks-checks 'invariant-checks 'option-round-trip-checks 'path-checks 'surface-checks 'fd-checks
-        'dividend-checks 'portfolio-checks 'simulation-checks 'simulation-component-checks 'simulation-validation-checks 'simulation-book-checks 'golden-checks)
+        'dividend-checks 'portfolio-checks 'simulation-checks 'simulation-component-checks 'simulation-validation-checks 'simulation-book-checks 'measure-checks 'golden-checks)
   "Monte Carlo-heavy checks, the invariant sweep and the golden values.")
 
 (defun run-tests ()

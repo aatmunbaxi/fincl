@@ -61,6 +61,7 @@
 (define-slot-option :parameter "T for a model parameter, NIL for a setting.")
 (define-slot-option :bounds "Interval designators (lo hi).")
 (define-slot-option :market-default "Function (process market horizon) for NIL.")
+(define-slot-option :measure-dependent "T for a parameter whose value differs between measures.")
 
 (defclass parameterized-class (annotated-class) ()
   (:documentation "Metaclass whose slots accept the options :PARAMETER,
@@ -82,6 +83,9 @@ DEFCLASS by hand."))
 
 (defun slot-bounds* (slot)
   (let ((b (slot-bounds slot))) (if (eq b :unspecified) '(nil nil) b)))
+
+(defun slot-measure-dependent-p (slot)
+  (eq (slot-annotation slot :measure-dependent nil) t))
 
 (defun slot-default-function (slot)
   (let ((f (slot-market-default slot))) (if (eq f :unspecified) nil f)))
@@ -136,13 +140,31 @@ is allowed only for a slot with a market default."))
     (class object-or-class)
     (standard-object (class-of object-or-class))))
 
+(defgeneric parameter-source (process)
+  (:documentation "The process whose parameters PROCESS reports: PROCESS
+itself, or the risk-neutral process of a physical one.")
+  (:method (process) process))
+
 (defun process-parameters (process-or-class)
   "Names of the model parameters of a process, or a process class name, in
 declaration order. Settings declared with :PARAMETER NIL (a GARCH period)
 are excluded.
 
   (process-parameters 'heston) => (V0 KAPPA THETA XI RHO)"
-  (mapcar #'c2mop:slot-definition-name (parameter-slots (class-designator process-or-class))))
+  (mapcar #'c2mop:slot-definition-name
+          (parameter-slots (class-designator (if (or (symbolp process-or-class) (typep process-or-class 'class))
+                                                 process-or-class
+                                                 (parameter-source process-or-class))))))
+
+(defun measure-dependent-parameters (process-or-class)
+  "Names of the model parameters of a process, or a process class name, whose
+values differ between the risk-neutral and the physical measure (slot option
+:MEASURE-DEPENDENT), in declaration order.
+
+  (measure-dependent-parameters 'merton-jump) => (INTENSITY JUMP-MEAN JUMP-VOL)"
+  (iter (for slot in (parameter-slots (class-designator process-or-class)))
+        (when (slot-measure-dependent-p slot)
+          (collect (c2mop:slot-definition-name slot)))))
 
 (defun explicit-parameters (process)
   "Names of PROCESS's model parameters that hold a value, rather than NIL (the
@@ -150,7 +172,8 @@ market default).
 
   (explicit-parameters (make-gbm :vol 0.4d0)) => (VOL)
   (explicit-parameters (make-gbm))            => NIL"
-  (remove-if-not (lambda (name) (slot-value process name)) (process-parameters process)))
+  (let ((process (parameter-source process)))
+    (remove-if-not (lambda (name) (slot-value process name)) (process-parameters process))))
 
 (defun find-managed-slot (object-or-class name)
   "The managed slot called NAME, matched by symbol name, so :RHO, 'RHO and
@@ -172,7 +195,8 @@ MARKET at HORIZON (market time); without it, NIL is returned.
   (process-parameter (make-instance 'heston :rho -0.5d0) :rho) => -0.5d0
   (process-parameter (make-instance 'heston) :v0)            => NIL
   (process-parameter (make-instance 'heston) :v0 market)     => 0.04d0"
-  (let* ((slot (find-managed-slot process name))
+  (let* ((process (parameter-source process))
+         (slot (find-managed-slot process name))
          (value (slot-value process (c2mop:slot-definition-name slot)))
          (default (slot-default-function slot)))
     (if (and (null value) market default)
@@ -193,7 +217,8 @@ the order of PROCESS-PARAMETERS. A NIL parameter is replaced by its market
 default, evaluated on MARKET at HORIZON (market time).
 
   (parameter-vector (make-instance 'heston) m) => #(0.04d0 2d0 0.04d0 0.3d0 -0.7d0)"
-  (let* ((slots (parameter-slots (class-of process)))
+  (let* ((process (parameter-source process))
+         (slots (parameter-slots (class-of process)))
          (v (make-array (length slots) :element-type 'double-float)))
     (iter (for slot in slots)
           (for i from 0)

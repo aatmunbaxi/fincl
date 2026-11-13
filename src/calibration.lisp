@@ -362,6 +362,7 @@ a plist: :RMSE, :MAX-ERROR, :ITERATIONS, :RESIDUALS (one per quote, in
 order) and :PARAMETERS (name value ...).
 
   (calibrate (make-heston) market (quote-set quotes) :engine :cos)"
+  (require-risk-neutral process "CALIBRATE")
   (check-input objective (member :implied-vol-rmse :price-rmse) ":IMPLIED-VOL-RMSE or :PRICE-RMSE")
   (check-input method (member :levenberg-marquardt :nelder-mead :differential-evolution)
                ":LEVENBERG-MARQUARDT, :NELDER-MEAD or :DIFFERENTIAL-EVOLUTION")

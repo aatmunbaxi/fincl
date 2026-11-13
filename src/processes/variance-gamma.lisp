@@ -13,13 +13,20 @@
 (in-package #:fincl)
 
 (define-process variance-gamma (exponential-levy stochastic-process) (:factors 2)
-  ((sigma nil :bounds ((0) nil) :market-default gbm-default-vol
+  ((sigma nil :measure-dependent t :bounds ((0) nil) :market-default gbm-default-vol
               :doc "Volatility of the Brownian motion run on the gamma clock. NIL
 resolves to sigma_ATM(T) = sqrt(w(T)/T), the market's ATM-forward Black vol to
 the expiry, which the process reproduces as nu -> 0 with theta = 0.")
    (nu 0.2d0 :bounds ((0) nil) :doc "Variance rate of the gamma clock: kurtosis.")
-   (theta -0.14d0 :doc "Drift on the gamma clock: skewness."))
-  (:documentation "The variance gamma process of Madan, Carr and Chang."))
+   (theta -0.14d0 :measure-dependent t :doc "Drift on the gamma clock: skewness."))
+  (:documentation "The variance gamma process of Madan, Carr and Chang.
+
+Under a change of measure SIGMA and THETA may take physical values and NU
+may not: with NU fixed the Levy measures C e^(-G|x|)/|x| (x < 0) and C
+e^(-Mx)/x (x > 0), C = 1/NU, are equivalent for any G, M > 0 (Sato,
+Theorem 33.1), and (SIGMA, THETA) <-> (G, M) is one to one. A drift change
+is refused: a pure-jump process has no Brownian driver, and its drift beside
+the jumps is fixed by equivalence."))
 
 (defmethod exponential-moment-problem ((p variance-gamma))
   (let ((sigma (sigma p)))

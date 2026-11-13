@@ -119,7 +119,8 @@ PROCESS driving TARGET."
     (signal-invalid-argument 'options options 'list
                              (format nil "leg options for ~S: a list of keywords and values" target)))
   (when options
-    (let ((accepted (method-keywords
+    (let* ((process (if (typep process 'physical-process) (risk-neutral-process process) process))
+           (accepted (method-keywords
                      (compute-applicable-methods #'structure-at-state
                                                  `(,process ,target nil ,market ,(valuation-date market) nil)))))
       (unless (eq accepted t)
@@ -537,7 +538,9 @@ PROCESS's state is STATE, exp(-int r ds), or NIL if PROCESS does not drive
 a curve: the default reads a state component named :INTEGRAL.")
   (:method ((p stochastic-process) state)
     (a:when-let ((i (position :integral (process-state-names p))))
-      (exp (- (aref state i))))))
+      (exp (- (aref state i)))))
+  (:method ((p physical-process) state)
+    (state-discount (risk-neutral-process p) state)))
 
 (defun default-discount-target (market)
   "(:curve id) for the discount curve of the composite MARKET's only currency."
@@ -1040,14 +1043,31 @@ name lists the valid ones."
         (unless index (refuse))
         (values leg index)))))
 
+(defun simulation-measure (simulation)
+  "The measure SIMULATION's paths were stepped under: :PHYSICAL when a leg's
+process is a PHYSICAL-PROCESS, else :RISK-NEUTRAL. SIMULATION is a
+SIMULATION-RESULT or a SIMULATION-PLAN. Discounted means of a :PHYSICAL
+result are expectations under the physical measure, not prices.
+
+  (simulation-measure (simulate ((make-gbm) m dates) ...)) => :RISK-NEUTRAL"
+  (let ((plan (if (simulation-result-p simulation) (simulation-result-plan simulation) simulation)))
+    (if (some (lambda (leg) (typep (simulation-leg-process leg) 'physical-process))
+              (simulation-plan-legs plan))
+        :physical
+        :risk-neutral)))
+
 (defmethod print-object ((r simulation-result) stream)
   (print-unreadable-object (r stream :type t)
     (let ((plan (simulation-result-plan r)))
-      (format stream "~{~(~A~)~^, ~}, ~D paths, ~D dates"
+      (format stream "~{~(~A~)~^, ~}, ~(~A~) measure, ~D paths, ~D dates"
               (map 'list (lambda (l)
-                           (format nil "~@[~S ~]~A" (simulation-leg-underlying l)
-                                   (class-name (class-of (simulation-leg-process l)))))
+                           (let ((process (simulation-leg-process l)))
+                             (format nil "~@[~S ~]~A" (simulation-leg-underlying l)
+                                     (class-name (class-of (if (typep process 'physical-process)
+                                                               (risk-neutral-process process)
+                                                               process))))))
                    (simulation-plan-legs plan))
+              (simulation-measure plan)
               (simulation-n-total plan) (length (simulation-plan-event-dates plan)))
       (dolist (name (simulation-result-output-names r))
         (multiple-value-bind (mean se) (simulation-summary r (simulation-values r name))
@@ -1669,6 +1689,14 @@ holding cash:
   (deposit book amount) (withdraw book amount)
                        move a non-negative AMOUNT into or out of BOOK's
                        cash; return the balance.
+
+A leg's process may be a PHYSICAL-PROCESS (CHANGE-MEASURE): its state then
+evolves under the physical measure, while each date's market is built from
+that state with the risk-neutral process, so prices in the clauses stay
+arbitrage-free. Legs under both measures form one physical model in which
+the risk-neutral legs carry no premium. SIMULATION-MEASURE is then
+:PHYSICAL, and discounted means of outputs are physical expectations, not
+prices.
 
 Results of simulation in SIMULATION-RESULT:
   :final outputs   SIMULATION-VALUES (one number per path), SIMULATION-MEAN,

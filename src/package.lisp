@@ -112,6 +112,10 @@
    ;; self-financing books, exact simulated curves, per-path records (task 33)
    #:simulation-path-record #:state-discount-bond #:market-curve-discount
    #:cash-account #:make-cash-account
+   ;; change of measure (task 36)
+   #:change-measure #:physical-process #:risk-neutral-process
+   #:invalid-measure-change #:risk-neutral-process-required #:feller-condition-violated
+   #:simulation-measure
    ;; simulated market components (task 32)
    #:market-component #:structure-at-state #:process-targets #:fixing-dates
    #:surface-quotes #:rescale-vol-structure

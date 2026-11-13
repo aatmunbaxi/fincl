@@ -392,6 +392,38 @@
     (check-error "a style that is not a plist" (plot-figure (paths r :n 1) :style '(1 2 3)) invalid-argument)
     (check-error "make-layer with an unknown role" (make-layer :fan :time (lambda (style) style)) unknown-role)))
 
+(defun path-color-checks ()
+  (format t "~&Path colours~%")
+  (let* ((r (sample-result))
+         (palette '("#2a78d6" "#eb6834" "#2f9e6e"))
+         (truth (theme-color :truth)))
+    (check-equal "colours cycle through the list by path index"
+                 '("#2a78d6" "#eb6834" "#2f9e6e" "#2a78d6" "#eb6834")
+                 (mapcar #'line-color (coerce (getf (plot-figure (paths r :n 5 :colors palette)) :data) 'list)))
+    (check-equal "path i has the same colour in every panel that uses the list"
+                 '("#2a78d6" "#eb6834" "#2a78d6" "#eb6834")
+                 (mapcar #'line-color
+                         (coerce (getf (plot-figure (grid (panel (paths r :n 2 :colors palette))
+                                                          (panel (paths r :n 2 :colors palette :dash "dot"))))
+                                       :data)
+                                 'list)))
+    (check-equal "theme names resolve in a palette" `(,truth ,(theme-color :model))
+                 (mapcar #'line-color
+                         (coerce (getf (plot-figure (paths r :n 2 :colors '(:truth :model))) :data) 'list)))
+    (check-equal "the palette overrides the style's colour" `(,(first palette))
+                 (remove-duplicates
+                  (mapcar #'line-color
+                          (coerce (getf (plot-figure (paths r :n 1 :colors palette)
+                                                     :style '(:paths (:color :model)))
+                                        :data)
+                                  'list))
+                  :test #'equal))
+    (check-equal "the other look keywords still apply to every path" '(0.4 0.4)
+                 (mapcar (lambda (trace) (getf trace :opacity))
+                         (coerce (getf (plot-figure (paths r :n 2 :colors palette :opacity 0.4)) :data) 'list)))
+    (check-error "colours with a colour" (paths r :n 2 :color "black" :colors palette) invalid-argument)
+    (check-error "a colour that is not a list" (paths r :n 2 :colors "black") invalid-argument)))
+
 (defun plottable-checks ()
   (format t "~&Other plottables and the marginal layout~%")
   (let ((r (sample-result)))
@@ -510,6 +542,7 @@
   (configuration-checks)
   (layer-checks)
   (style-checks)
+  (path-color-checks)
   (plottable-checks)
   (simulation-plot-checks)
   (all-plots-checks)

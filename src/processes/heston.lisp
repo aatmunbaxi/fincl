@@ -36,8 +36,8 @@ HORIZON = T."
   ((v0 nil :bounds (0 nil) :market-default heston-default-v0
            :doc "Initial variance. NIL resolves to sigma_ATM(T)^2 = w(T)/T, T the
 expiry, w the market's ATM-forward Black variance.")
-   (kappa 2d0 :bounds ((0) nil) :doc "Mean-reversion speed of the variance.")
-   (theta nil :bounds (0 nil) :market-default heston-default-theta
+   (kappa 2d0 :measure-dependent t :bounds ((0) nil) :doc "Mean-reversion speed of the variance.")
+   (theta nil :measure-dependent t :bounds (0 nil) :market-default heston-default-theta
               :doc "Long-run variance. NIL resolves to V0.")
    (xi 0.3d0 :bounds (0 nil) :doc "Vol of vol.")
    (rho -0.7d0 :bounds (-1 1) :doc "Correlation of the spot and variance shocks.")
@@ -276,3 +276,100 @@ GROWTH = log(F(HORIZON)/S0)."
               (declare (type (complex double-float) iu a beta d bmd/xi2 g e c dd))
               (exp (+ c (* dd v0)))))))))
 
+
+;;; --------------------------------------------------------------------
+;;; Change of measure
+;;; --------------------------------------------------------------------
+;;;
+;;; ln S is driven by sqrt(v) W1 and v by xi sqrt(v) W2. A variance premium
+;;; is taken only where it keeps the variance a square-root process, so the
+;;; QE or Euler scheme runs unchanged with physical parameters (Heston 1993;
+;;; Cheridito, Filipovic and Kimmel 2007): lambda = c xi sqrt(v), a drift
+;;; change c xi^2 v, gives kappa^P = kappa - c xi^2; a constant drift change d
+;;; gives theta^P = (kappa theta + d) / kappa^P.
+
+(define-condition feller-condition-violated (warning)
+  ((process :initarg :process :reader feller-process)
+   (measure :initarg :measure :reader feller-measure)
+   (kappa :initarg :kappa :reader feller-kappa)
+   (theta :initarg :theta :reader feller-theta)
+   (xi :initarg :xi :reader feller-xi))
+  (:report (lambda (c s)
+             (format s "Under the ~(~A~) measure, ~A has 2 kappa theta = ~,6F <= xi^2 = ~,6F: ~
+the variance reaches 0, and a variance premium keeps the two measures equivalent only when ~
+the Feller condition holds under both."
+                     (feller-measure c) (feller-process c)
+                     (* 2 (feller-kappa c) (feller-theta c)) (expt (feller-xi c) 2))))
+  (:documentation "A Heston change of measure whose variance violates the
+Feller condition 2 kappa theta > xi^2 under the risk-neutral or the
+physical measure, so the measures may not be equivalent. Signalled once per
+image for each set of parameters."))
+
+(defvar *feller-warnings* (make-hash-table :test 'equal)
+  "Parameter lists FELLER-CONDITION-VIOLATED has been signalled for.")
+
+(defvar *feller-warnings-lock* (bt:make-lock "fincl Feller warnings"))
+
+(defun warn-feller (process measure kappa theta xi)
+  "Signal FELLER-CONDITION-VIOLATED once per image for these parameters if
+2 KAPPA THETA <= XI^2."
+  (when (<= (* 2 kappa theta) (* xi xi))
+    (let ((key `(,measure ,kappa ,theta ,xi)))
+      (unless (bt:with-lock-held (*feller-warnings-lock*)
+                (prog1 (gethash key *feller-warnings*)
+                  (setf (gethash key *feller-warnings*) t)))
+        (warn 'feller-condition-violated :process process :measure measure
+                                         :kappa kappa :theta theta :xi xi)))))
+
+(defmethod state-coordinate ((p heston) name)
+  (case name (:spot :log) (:variance :level)))
+
+(defmethod state-diffusion ((p heston) market name times)
+  (declare (ignore market times))
+  (values (if (eq name :spot)
+              (lambda (j time state)
+                (declare (ignore j time) (type double-vector state))
+                (sqrt (max 0d0 (aref state 1))))
+              (let ((xi (xi p)))
+                (declare (double-float xi))
+                (lambda (j time state)
+                  (declare (ignore j time) (type double-vector state))
+                  (* xi (sqrt (max 0d0 (aref state 1)))))))
+          nil))
+
+(defmethod premium-form-problem ((p heston) name kind spec)
+  (when (and (eq name :variance)
+             (not (or (and (eq kind :price-of-risk) (consp spec))
+                      (and (eq kind :drift-change) (realp spec)))))
+    (format nil "on :variance (:scaled c), a price of risk proportional to its diffusion, or a ~
+constant drift change, which keep the variance a square-root process; or physical :kappa and ~
+:theta through :parameters")))
+
+(defmethod measure-change-dynamics ((q heston) premia market horizon)
+  (multiple-value-bind (kind spec) (premium-on premia :variance)
+    (let* ((given (getf premia :parameters))
+           (kappa (kappa q)) (theta (theta q)) (xi (xi q))
+           (kappa-p (getf given 'kappa kappa))
+           (theta-p (getf given 'theta theta)))
+      (when kind
+        (when (or (member 'kappa given) (member 'theta given))
+          (refuse-measure-change q "a premium on :variance and physical :kappa or :theta together; ~
+give one or the other"))
+        (if (eq kind :price-of-risk)
+            (setf kappa-p (- kappa (* (second spec) xi xi))
+                  theta-p (if (plusp kappa-p) (/ (* kappa theta) kappa-p) theta))
+            (setf theta-p (/ (+ (* kappa theta) spec) kappa)))
+        (unless (plusp kappa-p)
+          (refuse-measure-change q "the variance premium gives kappa^P = ~,6F; it must be positive ~
+(c < kappa / xi^2 = ~,6F)" kappa-p (/ kappa (* xi xi))))
+        (when (minusp theta-p)
+          (refuse-measure-change q "the variance premium gives theta^P = ~,6F; it must be non-negative"
+                                 theta-p)))
+      (when (or kind (member 'kappa given) (member 'theta given))
+        (warn-feller q :risk-neutral kappa theta xi)
+        (warn-feller q :physical kappa-p theta-p xi))
+      (if kind
+          (call-next-method q (premia-with-parameters (premia-without premia :variance)
+                                                      'kappa kappa-p 'theta theta-p)
+                            market horizon)
+          (call-next-method)))))

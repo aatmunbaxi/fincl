@@ -14,7 +14,8 @@
            #:run-readme-check #:run-rates-instrument-tests
            #:run-path-tests #:run-surface-tests #:run-fd-tests #:run-dividend-tests
            #:run-portfolio-tests #:run-simulation-tests #:run-simulation-component-tests
-           #:run-simulation-validation-tests #:run-simulation-book-tests))
+           #:run-simulation-validation-tests #:run-simulation-book-tests
+           #:run-measure-tests))
 
 (in-package #:fincl/tests)
 (named-readtables:in-readtable fincl:syntax)

@@ -49,6 +49,7 @@ process's DIVIDEND-MODEL setting if it has one of its own.
   (make-engine :binomial :n-steps 4000)
   (make-engine :cos :process (make-heston :xi 0.5d0) :n-terms 512)"
   (check-input key keyword "an engine designator keyword")
+  (require-risk-neutral (getf settings :process) "MAKE-ENGINE")
   (let* ((class (designated-class key))
          (initargs (class-initargs class))
          (process (getf settings :process)))
@@ -270,6 +271,7 @@ overrides (priority 0), then ENGINE-CANDIDATES by priority."
 (defun price-with-model (option process market)
   "Price OPTION under PROCESS with the first engine that can: (values npv
 standard-error engine)."
+  (require-risk-neutral process "Automatic engine selection")
   (incf *selections*)
   (let ((declined '()) (warned nil))
     (iter (for (priority designator) in (engine-choices option process))

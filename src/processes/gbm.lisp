@@ -122,3 +122,17 @@ market's total variance falls."
       (declare (type (simple-array double-float (*)) normals)
                (optimize (speed 3) (safety 0)))
       (* s0 (exp (+ drift (* diffusion (aref normals 0))))))))
+
+;;; Change of measure: ln S is driven by W with the per-interval vol.
+(defmethod state-coordinate ((p gbm) name)
+  (when (eq name :spot) :log))
+
+(defmethod state-diffusion ((p gbm) market name times)
+  (declare (ignore name) (type double-vector times))
+  (let ((dt (interval-lengths times)))
+    (constant-diffusion
+     (interval-sigmas (iter (for (t0 t1) in-intervals times)
+                            (collect-double (gbm-forward-variance p market t0 t1)
+                                            into v length (length dt))
+                            (finally (return v)))
+                      dt))))

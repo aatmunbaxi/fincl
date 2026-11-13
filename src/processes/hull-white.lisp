@@ -12,7 +12,7 @@
 (in-package #:fincl)
 
 (define-process hull-white (stochastic-process) (:state-size 2 :factors 2)
-  ((a 0.05d0 :bounds (0 nil) :reader hull-white-a
+  ((a 0.05d0 :measure-dependent t :bounds (0 nil) :reader hull-white-a
              :doc "Mean-reversion speed of the short rate.")
    (sigma 0.01d0 :bounds (0 nil) :doc "Normal volatility of the short rate."))
   (:documentation "Hull-White one-factor short-rate model, fitted to a yield
@@ -141,7 +141,10 @@ no discrete dividends."))
 
 (define-process fitted-hull-white (hull-white) ()
   ((rate-curve nil :parameter nil :type t :reader fitted-rate-curve
-               :doc "The RATE-CURVE the process is fitted to."))
+               :doc "The RATE-CURVE the process is fitted to.")
+   (rate-shift nil :parameter nil :type (or null double-float function) :reader fitted-rate-shift
+               :doc "A drift sigma lambda(t) added to the short rate: a real, a function
+of market time, or NIL for none. Set by a change of measure."))
   (:constructor nil)
   (:documentation "A Hull-White process fitted to one curve of a market, as
 SIMULATE resolves a Hull-White leg."))
@@ -185,6 +188,7 @@ SIMULATE resolves a Hull-White leg."))
          (a (hull-white-a p))
          (s2 (expt (sigma p) 2))
          (curve (fitted-rate-curve p))
+         (shift (fitted-rate-shift p))
          (alpha (map 'double-vector (lambda (time) (hw-alpha p curve time)) times))
          (decay (make-array n :element-type 'double-float))
          (bs (make-array n :element-type 'double-float))
@@ -207,6 +211,10 @@ SIMULATE resolves a Hull-White leg."))
                   (aref s1 j) sd1
                   (aref l21 j) (if (plusp sd1) (/ c sd1) 0d0)
                   (aref l22 j) (sqrt (max 0d0 (- v2 (expt (aref l21 j) 2)))))))
+    (when shift
+      (multiple-value-bind (means integrals) (hw-shift-terms a shift times)
+        (map-into alpha #'+ alpha means)
+        (map-into alpha-integral #'+ alpha-integral integrals)))
     (lambda (state normals j)
       (declare (type double-vector state normals) (fixnum j)
                (optimize speed))
@@ -217,6 +225,77 @@ SIMULATE resolves a Hull-White leg."))
                                 (* (aref l21 j) z0) (* (aref l22 j) z1)))
         (setf (aref state 0) (+ (aref alpha (1+ j)) (* x (aref decay j)) (* (aref s1 j) z0)))
         nil))))
+
+;;; A drift delta(t) = sigma lambda(t) added to dr shifts the mean of r by
+;;; m(t) = int_0^t e^(-a (t - s)) delta(s) ds and leaves x = r - alpha(t) -
+;;; m(t) the same Ornstein-Uhlenbeck process, so the step stays exact. Over
+;;; [t0, t1], d = t1 - t0: m(t1) = m(t0) e^(-a d) + int e^(-a (t1 - s))
+;;; delta(s) ds, and int m = m(t0) B(d) + int delta(u) B(t1 - u) du. For a
+;;; constant delta the two integrals are delta B(d) and delta d^2 k(a d).
+
+(defun hw-k (y)
+  "(y - 1 + e^(-y))/y^2, the integral of B over [0, d] divided by d^2 at y = a d."
+  (if (< y 1d-2)
+      (+ 1/2 (* y (+ -1/6 (* y (+ 1/24 (* y (+ -1/120 (* y 1/720))))))))
+      (/ (+ y (expm1 (- y))) (* y y))))
+
+(defun hw-shift-terms (a shift times)
+  "(values means integrals): m(t) at each of TIMES and the integral of m over
+each interval, for the drift SHIFT (a real or a function of market time)."
+  (declare (type double-vector times))
+  (let* ((n (1- (length times)))
+         (means (make-array (1+ n) :element-type 'double-float :initial-element 0d0))
+         (integrals (make-array n :element-type 'double-float)))
+    (iter (for (t0 t1) in-intervals times)
+          (for j from 0)
+          (let* ((d (- t1 t0))
+                 (b (* d (hw-h (* a d))))
+                 (increment (if (realp shift)
+                                (* shift b)
+                                (integrate-gauss-legendre
+                                 (lambda (s) (* (exp (- (* a (- t1 s)))) (float (funcall shift s) 1d0)))
+                                 t0 t1 :panels 4)))
+                 (inner (if (realp shift)
+                            (* shift d d (hw-k (* a d)))
+                            (integrate-gauss-legendre
+                             (lambda (u) (* (float (funcall shift u) 1d0) (- t1 u) (hw-h (* a (- t1 u)))))
+                             t0 t1 :panels 4))))
+            (setf (aref integrals j) (+ (* (aref means j) b) inner)
+                  (aref means (1+ j)) (+ (* (aref means j) (exp (- (* a d)))) increment))))
+    (values means integrals)))
+
+;;; Change of measure: r is driven by sigma W; the integral has no driver of
+;;; its own. A premium on the short rate becomes the drift shift above (a
+;;; real lambda, (:scaled c) or a drift change, constant or a function of
+;;; time); a physical A refits theta(t) to the curve with that A, a market
+;;; price of risk affine in r.
+(defmethod state-coordinate ((p hull-white) name)
+  (when (eq name :short-rate) :level))
+
+(defmethod state-diffusion ((p hull-white) market name times)
+  (declare (ignore market name))
+  (constant-diffusion (make-array (1- (length times)) :element-type 'double-float
+                                                      :initial-element (sigma p))))
+
+(defmethod measure-change-dynamics ((q hull-white) premia market horizon)
+  (declare (ignore market horizon))
+  (multiple-value-bind (kind spec) (premium-on premia :short-rate)
+    (let ((stepping (process-with-parameters q (getf premia :parameters))))
+      (when (and kind (not (typep q 'fitted-hull-white)))
+        (refuse-measure-change q "Hull-White steps only as a simulated curve leg, ((:curve id) process)"))
+      (values
+       (if kind
+           (let ((sigma (sigma q)))
+             (process-with-parameters
+              stepping
+              `(rate-shift
+                ,(cond ((eq kind :drift-change)
+                        (if (functionp spec) (lambda (time) (funcall spec time nil)) spec))
+                       ((realp spec) (* sigma spec))
+                       ((consp spec) (* (second spec) sigma sigma))
+                       (t (lambda (time) (* sigma (float (funcall spec time nil) 1d0))))))))
+           stepping)
+       nil))))
 
 (defparameter *default-curve-knots*
   (append (mapcar (lambda (n) (make-tenor n :months)) '(1 3 6))

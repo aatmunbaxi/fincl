@@ -125,7 +125,8 @@ DEFINE-PROCESS superclasses, for constructor lambda lists.")
 defaults to (STOCHASTIC-PROCESS). STATE-SIZE and FACTORS, when given, define
 PROCESS-STATE-SIZE and PROCESS-FACTORS (both default to 1). Each of SLOTS is
 
-  (slot-name default &key bounds market-default (parameter t) doc reader type)
+  (slot-name default &key bounds market-default (parameter t) measure-dependent
+                          doc reader type)
 
 - DEFAULT is the initform, evaluated per instance. NIL, with a
   MARKET-DEFAULT, means \"take it from the market\".
@@ -134,6 +135,9 @@ PROCESS-STATE-SIZE and PROCESS-FACTORS (both default to 1). Each of SLOTS is
 - MARKET-DEFAULT names a function (process market horizon) -> double-float.
 - PARAMETER NIL declares a setting: validated, but not a model parameter
   (not in PROCESS-PARAMETERS or PARAMETER-VECTOR).
+- MEASURE-DEPENDENT T marks a parameter whose physical value may differ from
+  its risk-neutral one (CHANGE-MEASURE's :PARAMETERS); the default NIL keeps
+  it fixed under a change of measure.
 - READER defaults to SLOT-NAME, and the initarg is the keyword SLOT-NAME.
 - TYPE defaults to DOUBLE-FLOAT, or (OR NULL DOUBLE-FLOAT) when DEFAULT is NIL.
 
@@ -153,7 +157,8 @@ stay ordinary DEFMETHODs.
   (flet ((slot-form (spec)
            (destructuring-bind (slot default &key (bounds nil bounds-p)
                                                (market-default nil market-default-p)
-                                               (parameter t) doc (reader slot) type)
+                                               (parameter t) measure-dependent
+                                               doc (reader slot) type)
                spec
              `(,slot :initarg ,(a:make-keyword slot)
                      :initform ,default
@@ -162,6 +167,7 @@ stay ordinary DEFMETHODs.
                      :parameter ,parameter
                      ,@(when bounds-p `(:bounds ,bounds))
                      ,@(when market-default-p `(:market-default ,market-default))
+                     ,@(when measure-dependent `(:measure-dependent t))
                      ,@(when doc `(:documentation ,doc))))))
     (let* ((constructor-option (assoc :constructor class-options))
            (class-options (remove :constructor class-options :key #'first))
@@ -334,8 +340,14 @@ the last on which an exercise still collects the dividend."
           (when (and cum (date< today (date+ ex -1)))
             (collect (date+ ex -1))))))
 
+(defvar *apply-discrete-dividends* t
+  "When NIL, MAKE-STEPPER returns the primary stepper without discrete
+dividends, for a wrapper that applies them itself.")
+
 (defmethod make-stepper :around ((p stochastic-process) market times)
-  (dividend-stepper (call-next-method) p market times))
+  (if *apply-discrete-dividends*
+      (dividend-stepper (call-next-method) p market times)
+      (call-next-method)))
 
 (defgeneric simulatable-p (process)
   (:documentation "True if PROCESS can generate paths (MAKE-STEPPER). A

@@ -64,6 +64,14 @@ A run to draw:
 
 A role's look is a plist of =:color= (a name from =*theme*='s =:colors=, or a CSS string), =:width=, =:dash=, =:opacity=. From the weakest: =*theme*='s =:roles=, =with-theme=, the =:style= of =plot=, the =:style= of the =panel=; within a =:style=, an entry for the layer's =:name= beats its role; then the layer's own keywords (=(paths r :color "red")=). The layer's =:raw= (Plotly trace attributes) is merged last, and =plot='s =:layout= and =:config= are plain Plotly. An unknown role signals =unknown-role=.
 
+A =paths= layer can colour each path separately: =:colors= takes a list of colours (CSS strings or theme names), and path i takes element =(mod i (length colors))=, so the same list gives the same colour to path i in every panel. It replaces =:color= for the paths and beats the style, as the layer's own keywords do; the other keywords (=:dash=, =:width=, =:opacity=) still apply to every path, so two layers of one result can share a palette and differ in dash.
+
+#+begin_src lisp
+  (let ((palette '("#2a78d6" "#eb6834" "#2f9e6e")))
+    (plot (grid (panel (paths *r* :n 3 :colors palette :state :spot :underlying :eq))
+                (panel (paths *r* :n 3 :colors palette :record :iv :dash "dot")))))
+#+end_src
+
 * Adding a layer, or a plottable
 
 A layer is built with =make-layer=: a role, an x-kind, and a function of the style that returns trace plists (the builders in =figure.lisp=):

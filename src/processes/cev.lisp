@@ -107,3 +107,19 @@ ATM-forward Black vol to T.")
                                  (* deviation (aref normals 0))))))))))
     ;; Steppers return nothing: a double-float result would be boxed.
     nil))
+
+;;; Change of measure: ln S has the local vol sigma S^(beta - 1).
+(defmethod state-coordinate ((p cev) name)
+  (when (eq name :spot) :log))
+
+(defmethod state-diffusion ((p cev) market name times)
+  (declare (ignore name))
+  (let* ((p (resolve-process p market (aref times (1- (length times)))))
+         (sigma (sigma p))
+         (exponent (- (beta p) 1d0)))
+    (declare (double-float sigma exponent))
+    (values (lambda (j time state)
+              (declare (ignore j time) (type double-vector state))
+              (let ((s (aref state 0)))
+                (if (plusp s) (* sigma (expt s exponent)) 0d0)))
+            nil)))

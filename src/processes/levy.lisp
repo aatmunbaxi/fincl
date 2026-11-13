@@ -159,3 +159,34 @@ default) vol term structures."))
 
 (defmethod diffusion-variance ((p jump-diffusion) market t0 t1)
   (gbm-forward-variance p market t0 t1))
+
+;;; Change of measure: ln S is driven by the Brownian part's W. A pure-jump
+;;; process has no Brownian driver (the default NIL coordinate).
+(defmethod state-coordinate ((p jump-diffusion) name)
+  (when (eq name :spot) :log))
+
+(defmethod state-diffusion ((p jump-diffusion) market name times)
+  (declare (ignore name) (type double-vector times))
+  (let ((dt (interval-lengths times)))
+    (constant-diffusion
+     (interval-sigmas (iter (for (t0 t1) in-intervals times)
+                            (collect-double (float (diffusion-variance p market t0 t1) 1d0)
+                                            into v length (length dt))
+                            (finally (return v)))
+                      dt))))
+
+;;; A pure-jump process changes measure through its Levy measure alone.
+;;; Equivalence (Sato, Levy Processes and Infinitely Divisible
+;;; Distributions, Theorem 33.1) fixes the parameters that set the small
+;;; jumps (variance gamma's nu, NIG's delta) and the drift beside the jumps,
+;;; so the physical log-spot is growth + omega^Q t + L^P(t): the stepping
+;;; process with physical parameters, whose own drift is omega^P, plus the
+;;; deterministic drift change omega^Q - omega^P = psi^P(-i) - psi^Q(-i).
+(defmethod measure-change-dynamics ((q exponential-levy) premia market horizon)
+  (if (state-coordinate q :spot)
+      (call-next-method)
+      (multiple-value-bind (stepping drift) (call-next-method)
+        (declare (ignore drift))
+        (values stepping
+                (unless (eq stepping q)
+                  `(:drift-change ,(- (levy-drift q) (levy-drift stepping))))))))

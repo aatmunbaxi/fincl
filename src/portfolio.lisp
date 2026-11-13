@@ -293,6 +293,7 @@ model); SELECT-ENGINE and PRICE-PORTFOLIO move on when it does.
   (applicable-engines (make-option (put 100) (american) (expires d)) m :process (make-heston))
   => (#<ENGINE (make-engine :fd :process (make-heston))> #<ENGINE (make-engine :mc ...)>)")
   (:method ((o option) market &key (candidates *default-engines*) (process (make-gbm)))
+    (require-risk-neutral process "APPLICABLE-ENGINES")
     (let ((market (pricing-market market o)))
       (-> (iter (for key in candidates)
                 (for class = (designated-class key))

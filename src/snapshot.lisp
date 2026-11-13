@@ -17,7 +17,8 @@
 strings, keywords, dates), QUOTE, LIST and the constructors READ-SNAPSHOT
 allows. Defined for composite markets, the flat, interpolated and
 dividend-schedule term structures, smile, grid, SVI and SSVI surfaces, day
-counters, options, holdings, positions and portfolios; anything else
+counters, options, holdings, positions, portfolios and physical processes
+whose premia are data; anything else
 (bootstrapped curves among them) signals INVALID-ARGUMENT.
 
   (snapshot-form (make-holding :underlying :spx)) => (MAKE-HOLDING :UNDERLYING :SPX)")
@@ -101,6 +102,14 @@ give its leg :KNOTS (tenors) to simulate an interpolated curve instead"))
 (defmethod snapshot-form ((p portfolio))
   `(make-portfolio ,(portfolio-name p) ,@(mapcar #'snapshot-form (portfolio-members p))))
 
+(defmethod snapshot-form ((p physical-process))
+  (a:when-let ((state (function-premium-state p)))
+    (signal-invalid-argument 'process p 'physical-process
+                             (format nil "a physical process whose premia are data: the premium on ~S ~
+is a function, which a snapshot cannot hold" state)))
+  (destructuring-bind (head q-form &rest options) (physical-form p)
+    `(,head (,(first q-form) ,@(mapcar #'snapshot-form (rest q-form))) ,@options)))
+
 (defun structure-or-number (structure flat-class reader)
   "STRUCTURE's snapshot form, or its number if it is the flat FLAT-CLASS (the
 form MAKE-MARKET's list DSL takes)."
@@ -167,7 +176,7 @@ back.
   '(make-market make-dividend-schedule make-instance make-interpolated-smile make-svi-slice
     make-smile-surface make-ssvi-surface make-option-from-clauses make-holding make-position
     make-portfolio make-cash-account make-engine make-gbm make-heston make-cev make-local-vol make-merton-jump
-    make-kou-jump make-variance-gamma make-nig make-bates make-garch)
+    make-kou-jump make-variance-gamma make-nig make-bates make-garch change-measure)
   "The functions a snapshot may call.")
 
 (defparameter *snapshot-classes*

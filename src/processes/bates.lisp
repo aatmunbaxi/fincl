@@ -14,9 +14,9 @@
 (in-package #:fincl)
 
 (define-process bates (heston) (:factors 4)
-  ((intensity 0.5d0 :bounds (0 nil) :doc "Jumps per unit of market time, lambda.")
-   (jump-mean -0.1d0 :doc "Mean of the log jump size, mu_J.")
-   (jump-vol 0.15d0 :bounds (0 nil) :doc "Standard deviation of the log jump size, sigma_J."))
+  ((intensity 0.5d0 :measure-dependent t :bounds (0 nil) :doc "Jumps per unit of market time, lambda.")
+   (jump-mean -0.1d0 :measure-dependent t :doc "Mean of the log jump size, mu_J.")
+   (jump-vol 0.15d0 :measure-dependent t :bounds (0 nil) :doc "Standard deviation of the log jump size, sigma_J."))
   (:documentation "Bates's model: Heston stochastic volatility plus Merton
 jumps."))
 

@@ -13,10 +13,17 @@
 (in-package #:fincl)
 
 (define-process nig (exponential-levy stochastic-process) (:factors 3)
-  ((alpha 15d0 :bounds ((0) nil) :doc "Tail heaviness: larger is lighter.")
-   (beta -5d0 :doc "Asymmetry, |beta| < alpha.")
+  ((alpha 15d0 :measure-dependent t :bounds ((0) nil) :doc "Tail heaviness: larger is lighter.")
+   (beta -5d0 :measure-dependent t :doc "Asymmetry, |beta| < alpha.")
    (delta 0.5d0 :bounds ((0) nil) :doc "Scale per unit of market time."))
-  (:documentation "Barndorff-Nielsen's normal inverse Gaussian process."))
+  (:documentation "Barndorff-Nielsen's normal inverse Gaussian process.
+
+Under a change of measure ALPHA and BETA may take physical values and DELTA
+may not: the Levy density (DELTA ALPHA / pi) e^(BETA x) K_1(ALPHA |x|) / |x|
+behaves as DELTA / (pi x^2) near 0, so two NIG measures are equivalent only
+with the same DELTA (Sato, Theorem 33.1), and then for any ALPHA > |BETA|.
+A drift change is refused: a pure-jump process has no Brownian driver, and
+its drift beside the jumps is fixed by equivalence."))
 
 (defun nig-gamma (p)
   (sqrt (- (expt (alpha p) 2) (expt (beta p) 2))))

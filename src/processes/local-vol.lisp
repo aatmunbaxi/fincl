@@ -174,3 +174,44 @@ times kept exactly."
                         (for a = (aref table row i))
                         (sum (+ a (* u (- (aref table row (1+ i)) a)))))))
           nil)))))
+
+;;; Change of measure: ln S has the stepper's tabulated local vol, the sum
+;;; of a grid step's substep variances at the state's moneyness over the
+;;; step's length. The log-forward is interpolated linearly in time within
+;;; the step, so it is exact at both ends.
+(defmethod state-coordinate ((p local-vol) name)
+  (when (eq name :spot) :log))
+
+(defmethod state-diffusion ((p local-vol) market name times)
+  (declare (ignore name) (type double-vector times))
+  (let ((substeps (local-vol-substeps p)))
+    (multiple-value-bind (ks table) (local-variance-table p market (refine-times times substeps))
+      (let* ((log-forwards (map 'double-vector (lambda (time) (log (forward market time))) times))
+             (dt (interval-lengths times))
+             (nk (length ks))
+             (k0 (aref ks 0))
+             (dk (/ (- (aref ks (1- nk)) k0) (1- nk))))
+        (declare (type double-vector ks log-forwards dt)
+                 (type (simple-array double-float (* *)) table)
+                 (fixnum nk substeps) (double-float k0 dk))
+        (values
+         (lambda (j time state)
+           (declare (type double-vector state) (fixnum j) (double-float time))
+           (let ((s (aref state 0)) (h (aref dt j)))
+             (if (or (not (plusp s)) (not (plusp h)))
+                 0d0
+                 (let* ((t0 (aref times j))
+                        (log-forward (+ (aref log-forwards j)
+                                        (* (/ (- time t0) h)
+                                           (- (aref log-forwards (1+ j)) (aref log-forwards j)))))
+                        (x (/ (- (- (log s) log-forward) k0) dk))
+                        (i (max 0 (min (- nk 2) (the fixnum (truncate (the (double-float -2d0 1d9)
+                                                                           (max -1d0 (min x (float nk 1d0)))))))))
+                        (u (max 0d0 (min 1d0 (- x i)))))
+                   (declare (double-float log-forward x u) (fixnum i))
+                   (sqrt (/ (max 0d0 (iter (for sub below substeps)
+                                           (for row = (+ (* j substeps) sub))
+                                           (for a = (aref table row i))
+                                           (sum (+ a (* u (- (aref table row (1+ i)) a))))))
+                            h))))))
+         nil)))))

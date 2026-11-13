@@ -48,7 +48,7 @@ with sigma_ATM(T)^2 = w(T)/T from the ATM-forward Black variance to HORIZON
 model, not a numerical setting, but not calibrated either.")
    (alpha 0.1d0 :bounds (0 nil) :doc "ARCH coefficient.")
    (beta 0.8d0 :reader garch-beta :bounds (0 nil) :doc "GARCH coefficient.")
-   (gamma 0.5d0 :doc "Leverage: negative shocks raise variance more.")
+   (gamma 0.5d0 :measure-dependent t :doc "Leverage: negative shocks raise variance more.")
    (omega nil :bounds ((0) nil) :market-default garch-default-omega
               :doc "Variance intercept. NIL resolves to the omega whose stationary
 variance is sigma_ATM(T)^2 * period, T the expiry, sigma_ATM(T) the market's
@@ -99,3 +99,46 @@ ATM-forward Black vol to T.")
               (+ omega (* beta h) (* alpha h (expt (- z gamma) 2)))))
       ;; Steppers return nothing: a double-float result would be boxed.
       nil)))
+
+;;; --------------------------------------------------------------------
+;;; Change of measure
+;;; --------------------------------------------------------------------
+;;;
+;;; Duan's model (Mathematical Finance 5, 1995) under P:
+;;;   log S_t = log S_{t-1} + (r - q) d - h_t/2 + lambda sqrt(h_t) + sqrt(h_t) e_t
+;;;   h_{t+1} = omega + beta h_t + alpha h_t (e_t - (gamma - lambda))^2,
+;;; e_t standard normal under P, the risk-neutral process being this one with
+;;; z_t = e_t + lambda. The physical stepper is the risk-neutral stepper with
+;;; gamma - lambda fed the P normal e_t, then lambda sqrt(h_t) added, exactly.
+
+(defmethod state-coordinate ((p garch) name)
+  (when (eq name :spot) :log))
+
+(defmethod state-diffusion ((p garch) market name times)
+  (declare (ignore market name times))
+  (let ((period (period p)))
+    (values (lambda (j time state)
+              (declare (ignore j time) (type double-vector state))
+              (sqrt (/ (max 0d0 (aref state 1)) period)))
+            nil)))
+
+(defmethod premium-form-problem ((p garch) name kind spec)
+  (declare (ignore name))
+  (unless (and (eq kind :price-of-risk) (realp spec))
+    "on :spot a real price of risk lambda per period (Duan's model); or a physical :gamma through :parameters"))
+
+(defmethod measure-change-dynamics ((q garch) premia market horizon)
+  (declare (ignore market horizon))
+  (multiple-value-bind (kind lambda*) (premium-on premia :spot)
+    (declare (ignore kind))
+    (let ((given (getf premia :parameters)))
+      (if (null lambda*)
+          (call-next-method)
+          (progn
+            (when (member 'gamma given)
+              (refuse-measure-change q "a price of risk on :spot and a physical :gamma together: the price ~
+of risk sets gamma^P = gamma - lambda"))
+            (values (process-with-parameters q `(gamma ,(- (gamma q) lambda*) ,@given))
+                    `(:increment ,(lambda (j state)
+                                    (declare (ignore j) (type double-vector state))
+                                    (* lambda* (sqrt (max 0d0 (aref state 1))))))))))))

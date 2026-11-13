@@ -253,19 +253,29 @@ on a date the path ran signals."
                      (format nil "a real held value of ~S on every date stored path ~D ran" name path))))))
        (fincl::kept-dates result path :held)))
 
-(defun paths (result &key n state record held underlying name color width dash opacity raw)
+(defun paths (result &key n state record held underlying name color colors width dash opacity raw)
   "The stored paths of RESULT (:KEEP (:PATHS k)) at the simulation dates,
 for the first N paths, all of them by default (at most *MAX-PLOTTED-PATHS*):
 state component STATE (of UNDERLYING, with several; default :SPOT), or the
 values the path recorded under RECORD (see SIMULATION-PATH-RECORD), or the
 :HOLD variable HELD (a keyword; reals on every date the path ran). At most
-one of STATE, RECORD and HELD. Role :PATHS.
+one of STATE, RECORD and HELD. COLORS, a non-empty list of colours (CSS
+strings or theme names), colours path i with element (mod i (length COLORS)),
+so a path keeps its colour in every layer given the same list; COLOR gives
+every path one colour; at most one of the two. The other look keywords
+apply to every path. Role :PATHS.
 
   (plot (paths r :n 20))
-  (plot (paths r :record '(:book :value)))"
+  (plot (paths r :record '(:book :value)))
+  (plot (paths r :n 5 :colors '(\"#2a78d6\" \"#eb6834\" \"#2f9e6e\")))"
   (when (< 1 (count-if-not #'null `(,state ,record ,held)))
     (fincl::signal-invalid-argument 'paths `(:state ,state :record ,record :held ,held) 'list
                                     "at most one of :STATE, :RECORD and :HELD"))
+  (when (and color colors)
+    (fincl::signal-invalid-argument 'paths `(:color ,color :colors ,colors) 'list
+                                    "at most one of :COLOR and :COLORS"))
+  (when (and colors (not (consp colors)))
+    (fincl::signal-invalid-argument 'paths colors 'list "a non-empty list of colours"))
   (let* ((kept (simulation-kept-paths result))
          (label (format nil "PATHS layer of ~S" result))
          (n (or n (and (plusp kept) kept) *max-plotted-paths*))
@@ -283,9 +293,12 @@ one of STATE, RECORD and HELD. Role :PATHS.
                     (lambda (style)
                       (let ((look (funcall style)))
                         (iter (for i below n)
+                              (for path-look = (if colors
+                                                   (merge-spec look `(:color ,(resolve-color (nth (mod i (length colors)) colors))))
+                                                   look))
                               (collect (line-trace dates (series i)
                                                    :name name
-                                                   :style `(,@(line-attributes look)
+                                                   :style `(,@(line-attributes path-look)
                                                             :legendgroup ,name
                                                             :showlegend ,(zerop i)))))))
                     :data-needs needs :name name :ylabel (label-of (or record held state :spot))

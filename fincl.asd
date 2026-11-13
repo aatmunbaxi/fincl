@@ -88,6 +88,7 @@
                 :serial t
                 :components ((:file "parameters")
                              (:file "process")
+                             (:file "measure")
                              (:file "gbm")
                              (:file "levy")
                              (:file "merton")
@@ -167,6 +168,7 @@
                (:file "simulation-components")
                (:file "simulation-validation")
                (:file "simulation-books")
+               (:file "measure")
                (:file "platform")
                (:file "readme")
                ;; The runners call the checks above; keep them last.
