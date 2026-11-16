@@ -13,10 +13,10 @@
 An additional package =fincl-viz= is provided that provides helper utilities to visualize data that comes out of fincl. 
 
 * Dependencies
-- =fincl= requires SBCL, alexandria, special-functions, statistics, random-state, lparallel, bordeaux-threads, arrow-macros, iterate, named-readtables, and closer-mop.
-- =fincl/tests= requires fincl, lparallel, closer-mop, bordeaux-threads, and iterate
-- =fincl/benchmarks= fincl, lparallel, iterate, and uiop, as well as QuantLib's C++ library to build the corresponding =.cpp= files
-- =fincl-viz= (not part of =fincl=) requires jzon, and python with plotly (and kaleido for images) to render the Plotly JSON it writes through =viz/render.py=
+- =fincl= is built with SBCL, alexandria, special-functions, statistics, random-state, lparallel, bordeaux-threads, arrow-macros, iterate, named-readtables, and closer-mop.
+- =fincl/tests= is built with fincl, lparallel, closer-mop, bordeaux-threads, and iterate
+- =fincl/benchmarks= is built with fincl, lparallel, iterate, and uiop, as well as QuantLib's C++ library to build the corresponding =.cpp= files
+- =fincl-viz= (not part of =fincl=) is built with jzon, and python with plotly (and kaleido for images) to render the Plotly JSON it writes through =viz/render.py=
 
 
 
