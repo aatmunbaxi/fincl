@@ -36,6 +36,17 @@ LOG-CUMULANTS, with the martingale drift -psi(-i)."))
 part of PROCESS (resolved; see RESOLVE-PROCESS), for a real or complex U.
 psi(0) = 0, and psi(-i) is the log of the exponential moment."))
 
+(defgeneric levy-exponent-function (process)
+  (:documentation "A closure (lambda (u)) -> psi(U), a (complex double-float),
+for a double-float U, equal to (LEVY-EXPONENT PROCESS U). PROCESS is resolved.
+A method reads the parameters of PROCESS and everything else that does not
+depend on U once, before it returns the closure; the default method calls
+LEVY-EXPONENT on every call.")
+  (:method ((p exponential-levy))
+    (lambda (u)
+      (declare (double-float u))
+      (coerce (levy-exponent p u) '(complex double-float)))))
+
 (defgeneric diffusion-variance (process market t0 t1)
   (:documentation "Variance over [T0, T1] of the Brownian part beside the
 Levy part: 0 for pure-jump processes.")
@@ -76,12 +87,13 @@ a martingale."
 (defmethod increment-characteristic-function ((p exponential-levy) market t0 t1)
   (let* ((dt (- t1 t0))
          (v (float (diffusion-variance p market t0 t1) 1d0))
-         (mean (+ (log-growth market t0 t1) (* -0.5d0 v) (* (levy-drift p) dt))))
-    (declare (double-float dt v mean))
+         (mean (+ (log-growth market t0 t1) (* -0.5d0 v) (* (levy-drift p) dt)))
+         (psi (levy-exponent-function p)))
+    (declare (double-float dt v mean) (type function psi))
     (lambda (u)
       (declare (double-float u))
       (exp (+ (complex (* -0.5d0 v u u) (* mean u))
-              (* dt (levy-exponent p u)))))))
+              (* dt (the (complex double-float) (funcall psi u))))))))
 
 (defmethod characteristic-function ((p exponential-levy) market horizon)
   (increment-characteristic-function p market 0d0 horizon))

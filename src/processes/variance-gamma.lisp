@@ -39,6 +39,16 @@ the jumps is fixed by equivalence."))
                                '(complex double-float))))
        nu)))
 
+(defmethod levy-exponent-function ((p variance-gamma))
+  (let* ((sigma (sigma p)) (nu (nu p)) (theta (theta p))
+         (half-s2-nu (* 0.5d0 sigma sigma nu)))
+    (declare (double-float sigma nu theta half-s2-nu))
+    (lambda (u)
+      (declare (double-float u))
+      (/ (- (complex-log (coerce (+ 1d0 (* #c(0d0 -1d0) u theta nu) (* half-s2-nu u u))
+                                 '(complex double-float))))
+         nu))))
+
 (defmethod levy-cumulants ((p variance-gamma))
   (let ((s2 (expt (sigma p) 2)) (nu (nu p)) (theta (theta p)))
     (values theta
