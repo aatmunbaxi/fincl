@@ -33,7 +33,7 @@ fixings and forecast curves to floating coupons; fixed flows ignore it."))
    (ref-start :initarg :ref-start :reader coupon-ref-start :type date)
    (ref-end :initarg :ref-end :reader coupon-ref-end :type date)
    (day-counter :initarg :day-counter :reader coupon-day-counter :type day-counter)
-   (period :reader %accrual-period :type double-float
+   (period :reader %accrual-period :type year-fraction
            :documentation "The year fraction from ACCRUAL-START to ACCRUAL-END,
 computed once: coupons are immutable."))
   (:documentation "Interest on NOMINAL accrued from ACCRUAL-START to
@@ -106,7 +106,7 @@ rate's compound factor over the accrual period, less one."))
 (defclass floating-rate-coupon (coupon)
   ((index :initarg :index :reader coupon-index :type interest-rate-index)
    (gearing :initarg :gearing :reader coupon-gearing :type double-float :initform 1d0)
-   (spread :initarg :spread :reader coupon-spread :type double-float :initform 0d0))
+   (spread :initarg :spread :reader coupon-spread :type rate :initform 0d0))
   (:documentation "Interest at GEARING times an index rate plus SPREAD."))
 
 (defclass ibor-coupon (floating-rate-coupon)

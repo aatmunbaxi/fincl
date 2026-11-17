@@ -40,7 +40,7 @@ compounded; :COMPOUNDED-THEN-SIMPLE the reverse."
 
 (defstruct (interest-rate (:constructor %make-interest-rate (rate day-counter compounding frequency)))
   "RATE quoted under DAY-COUNTER, COMPOUNDING and FREQUENCY. Read-only."
-  (rate 0d0 :type double-float :read-only t)
+  (rate 0d0 :type rate :read-only t)
   (day-counter nil :type day-counter :read-only t)
   (compounding :continuous :type compounding :read-only t)
   (frequency :annual :type frequency :read-only t))

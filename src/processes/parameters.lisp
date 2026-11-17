@@ -47,6 +47,27 @@
             (or (null lo) (consp lo)) (cond ((null lo) "-inf") ((consp lo) (first lo)) (t lo))
             (or (null hi) (consp hi)) (cond ((null hi) "inf") ((consp hi) (first hi)) (t hi)))))
 
+(defun bounds-type (bounds)
+  "The type specifier of the double-floats inside BOUNDS, (LO HI) in
+interval-designator form: ((0) NIL) => (DOUBLE-FLOAT (0D0) *)."
+  (flet ((bound (b)
+           (cond ((null b) '*)
+                 ((consp b) `(,(float (first b) 1d0)))
+                 (t (float b 1d0)))))
+    (destructuring-bind (lo hi) bounds
+      `(double-float ,(bound lo) ,(bound hi)))))
+
+(defun check-bounds-within-type (class slot bounds type)
+  "Signal INVALID-ARGUMENT unless every double-float inside BOUNDS of parameter
+SLOT of CLASS is of TYPE, a subtype of DOUBLE-FLOAT or (OR NULL that)."
+  (let ((numeric (if (and (consp type) (eq (first type) 'or))
+                     `(or ,@(remove 'null (rest type)))
+                     type)))
+    (unless (subtypep (bounds-type bounds) numeric)
+      (signal-invalid-argument 'bounds bounds numeric
+                               (format nil "bounds of ~A's parameter ~A inside its type ~S"
+                                       class slot type)))))
+
 (defun within-bounds-p (x bounds)
   (destructuring-bind (lo hi) bounds
     (typep x `(real ,(or lo '*) ,(or hi '*)))))

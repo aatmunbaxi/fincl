@@ -8,7 +8,7 @@
 (in-package #:fincl)
 
 (defclass call-put-payoff (payoff)
-  ((kind :initarg :kind :reader kind :type (member :call :put)
+  ((kind :initarg :kind :reader kind :type option-kind
          :initform (a:required-argument :kind) :fact :kind))
   (:metaclass component-class)
   (:documentation "A payoff that comes as a call or a put."))

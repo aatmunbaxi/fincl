@@ -43,17 +43,17 @@ with sigma_ATM(T)^2 = w(T)/T from the ATM-forward Black variance to HORIZON
   (/ (garch-omega process market horizon) (- 1d0 (garch-persistence process))))
 
 (define-process garch (stochastic-process) (:state-size 2)
-  ((period (/ 1d0 252d0) :parameter nil :bounds ((0) nil)
+  ((period (/ 1d0 252d0) :parameter nil :type positive-double :bounds ((0) nil)
                          :doc "Length of one model period in years. Part of the
 model, not a numerical setting, but not calibrated either.")
-   (alpha 0.1d0 :bounds (0 nil) :doc "ARCH coefficient.")
-   (beta 0.8d0 :reader garch-beta :bounds (0 nil) :doc "GARCH coefficient.")
+   (alpha 0.1d0 :type non-negative-double :bounds (0 nil) :doc "ARCH coefficient.")
+   (beta 0.8d0 :reader garch-beta :type non-negative-double :bounds (0 nil) :doc "GARCH coefficient.")
    (gamma 0.5d0 :measure-dependent t :doc "Leverage: negative shocks raise variance more.")
-   (omega nil :bounds ((0) nil) :market-default garch-default-omega
+   (omega nil :type (or null positive-double) :bounds ((0) nil) :market-default garch-default-omega
               :doc "Variance intercept. NIL resolves to the omega whose stationary
 variance is sigma_ATM(T)^2 * period, T the expiry, sigma_ATM(T) the market's
 ATM-forward Black vol to T.")
-   (h0 nil :bounds ((0) nil) :market-default garch-default-h0
+   (h0 nil :type (or null non-negative-double) :bounds ((0) nil) :market-default garch-default-h0
            :doc "Initial conditional variance. NIL resolves to the stationary level."))
   (:documentation "Duan's NGARCH(1,1)."))
 

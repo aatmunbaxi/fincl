@@ -13,9 +13,9 @@
 (in-package #:fincl)
 
 (define-process merton-jump (jump-diffusion) (:factors 3)
-  ((intensity 0.5d0 :measure-dependent t :bounds (0 nil) :doc "Jumps per unit of market time, lambda.")
+  ((intensity 0.5d0 :measure-dependent t :type non-negative-double :bounds (0 nil) :doc "Jumps per unit of market time, lambda.")
    (jump-mean -0.1d0 :measure-dependent t :doc "Mean of the log jump size, mu_J.")
-   (jump-vol 0.15d0 :measure-dependent t :bounds (0 nil) :doc "Standard deviation of the log jump size, sigma_J."))
+   (jump-vol 0.15d0 :measure-dependent t :type volatility :bounds (0 nil) :doc "Standard deviation of the log jump size, sigma_J."))
   (:documentation "Merton's jump diffusion: GBM plus normally distributed
 log jumps at Poisson times."))
 

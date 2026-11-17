@@ -25,7 +25,7 @@ REFERENCE-DATE to the expiry DATE.
   (year-fraction (rates-vol-day-counter structure) reference-date date))
 
 (defclass flat-rates-vol (rates-vol-structure)
-  ((vol :initarg :vol :reader rates-vol :type double-float))
+  ((vol :initarg :vol :reader rates-vol :type volatility))
   (:documentation "One volatility for every expiry (QuantLib's constant
 optionlet and swaption volatilities).
 

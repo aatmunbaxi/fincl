@@ -34,7 +34,7 @@ smile admits butterfly arbitrage."
 ;;; --------------------------------------------------------------------
 
 (defclass smile ()
-  ((expiry :initarg :expiry :reader smile-expiry :type double-float
+  ((expiry :initarg :expiry :reader smile-expiry :type market-time
            :initform (a:required-argument :expiry)))
   (:documentation "Total Black variance at one expiry (market time) as a
 function of log-forward moneyness."))
@@ -108,10 +108,10 @@ beyond the knots.
 
 (defclass svi-slice (smile)
   ((a :initarg :a :reader svi-a :type double-float)
-   (b :initarg :b :reader svi-b :type double-float)
-   (rho :initarg :rho :reader svi-rho :type double-float)
+   (b :initarg :b :reader svi-b :type non-negative-double)
+   (rho :initarg :rho :reader svi-rho :type correlation)
    (m :initarg :m :reader svi-m :type double-float)
-   (sigma :initarg :sigma :reader svi-sigma :type double-float))
+   (sigma :initarg :sigma :reader svi-sigma :type positive-double))
   (:documentation "Gatheral's raw SVI: w(k) = a + b (rho (k - m) + sqrt((k -
 m)^2 + sigma^2))."))
 
@@ -146,11 +146,11 @@ non-negative minimum, a + b sigma sqrt(1 - rho^2) >= 0.
 ;;; SABR.
 
 (defclass sabr-smile (smile)
-  ((alpha :initarg :alpha :reader sabr-alpha :type double-float)
-   (beta :initarg :beta :reader sabr-beta :type double-float)
-   (rho :initarg :rho :reader sabr-rho :type double-float)
-   (nu :initarg :nu :reader sabr-nu :type double-float)
-   (forward :initarg :forward :reader sabr-forward :type double-float)
+  ((alpha :initarg :alpha :reader sabr-alpha :type positive-double)
+   (beta :initarg :beta :reader sabr-beta :type unit-interval)
+   (rho :initarg :rho :reader sabr-rho :type correlation)
+   (nu :initarg :nu :reader sabr-nu :type non-negative-double)
+   (forward :initarg :forward :reader sabr-forward :type positive-double)
    (approximation :initarg :approximation :reader sabr-approximation
                   :type (member :obloj :hagan)))
   (:documentation "The lognormal SABR smile at one expiry and forward, by
@@ -370,9 +370,9 @@ calendar arbitrage between expiries signals CALENDAR-ARBITRAGE.
 ;;; SSVI.
 
 (defclass ssvi-surface (moneyness-vol-structure)
-  ((rho :initarg :rho :reader ssvi-rho :type double-float)
-   (eta :initarg :eta :reader ssvi-eta :type double-float)
-   (gamma :initarg :gamma :reader ssvi-gamma :type double-float)
+  ((rho :initarg :rho :reader ssvi-rho :type correlation)
+   (eta :initarg :eta :reader ssvi-eta :type positive-double)
+   (gamma :initarg :gamma :reader ssvi-gamma :type unit-interval)
    (times :initarg :times :reader ssvi-times :type double-vector)
    (thetas :initarg :thetas :reader ssvi-thetas :type double-vector))
   (:documentation "Gatheral and Jacquier's SSVI: w(k, T) = theta/2 (1 + rho

@@ -19,7 +19,7 @@ is NIL follows the full term structure w(t)."
   (sqrt (/ (atm-forward-variance market horizon) horizon)))
 
 (define-process gbm (stochastic-process independent-increments) ()
-  ((vol nil :reader process-vol :bounds ((0) nil) :market-default gbm-default-vol
+  ((vol nil :reader process-vol :type (or null volatility) :bounds ((0) nil) :market-default gbm-default-vol
             :doc "Constant volatility. NIL follows the market's ATM-forward Black
 variance w(t): the variance of ln S over [t0, t1] is w(t1) - w(t0), so every
 ATM European is repriced, whatever the vol term structure. RESOLVE-PROCESS

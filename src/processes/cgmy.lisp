@@ -13,9 +13,9 @@
 (in-package #:fincl)
 
 (define-process cgmy (exponential-levy stochastic-process) ()
-  ((c 1d0 :reader cgmy-c :bounds ((0) nil) :doc "Overall activity.")
-   (g 5d0 :reader cgmy-g :bounds ((0) nil) :doc "Exponential decay of the left tail.")
-   (m 5d0 :reader cgmy-m :bounds ((1) nil) :doc "Exponential decay of the right tail; above 1.")
+  ((c 1d0 :reader cgmy-c :type positive-double :bounds ((0) nil) :doc "Overall activity.")
+   (g 5d0 :reader cgmy-g :type positive-double :bounds ((0) nil) :doc "Exponential decay of the left tail.")
+   (m 5d0 :reader cgmy-m :type positive-double :bounds ((1) nil) :doc "Exponential decay of the right tail; above 1.")
    (y 0.5d0 :reader cgmy-y :bounds (nil (2)) :doc "Fine structure: Y < 0 finite activity, 0 <= Y < 1
 infinite activity with finite variation, 1 <= Y < 2 infinite variation."))
   (:documentation "The CGMY tempered stable process."))

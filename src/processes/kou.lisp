@@ -14,11 +14,11 @@
 (in-package #:fincl)
 
 (define-process kou-jump (jump-diffusion) (:factors 5)
-  ((intensity 1d0 :measure-dependent t :bounds (0 nil) :doc "Jumps per unit of market time, lambda.")
-   (up-probability 0.4d0 :measure-dependent t :bounds (0 1) :doc "Probability p that a jump is upwards.")
-   (eta1 10d0 :measure-dependent t :bounds ((1) nil) :doc "Rate of the upward exponential jumps; the mean
+  ((intensity 1d0 :measure-dependent t :type non-negative-double :bounds (0 nil) :doc "Jumps per unit of market time, lambda.")
+   (up-probability 0.4d0 :measure-dependent t :type unit-interval :bounds (0 1) :doc "Probability p that a jump is upwards.")
+   (eta1 10d0 :measure-dependent t :type positive-double :bounds ((1) nil) :doc "Rate of the upward exponential jumps; the mean
 up jump is 1/eta1.")
-   (eta2 5d0 :measure-dependent t :bounds ((0) nil) :doc "Rate of the downward exponential jumps; the
+   (eta2 5d0 :measure-dependent t :type positive-double :bounds ((0) nil) :doc "Rate of the downward exponential jumps; the
 mean down jump is 1/eta2."))
   (:documentation "Kou's jump diffusion: GBM plus double-exponential log
 jumps at Poisson times."))

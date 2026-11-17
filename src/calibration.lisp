@@ -13,9 +13,9 @@
 
 (defclass option-quote ()
   ((instrument :initarg :instrument :reader quote-instrument)
-   (price :initarg :price :reader %quote-price :initform nil)
-   (vol :initarg :vol :reader %quote-vol :initform nil)
-   (weight :initarg :weight :reader quote-weight :initform 1d0))
+   (price :initarg :price :reader %quote-price :initform nil :type (or null non-negative-double))
+   (vol :initarg :vol :reader %quote-vol :initform nil :type (or null volatility))
+   (weight :initarg :weight :reader quote-weight :initform 1d0 :type non-negative-double))
   (:documentation "A market quote for a European vanilla option: its price or
 its Black implied vol, and a weight for fitting."))
 

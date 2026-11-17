@@ -145,8 +145,8 @@ European vanillas under CEV with absorption at zero, beta <= 1.
   ((process :initarg :process :initform (make-instance 'gbm) :reader process
             :documentation "Path-generation backend. The engine is model
 agnostic: everything model-specific comes from the process.")
-   (n-paths :initarg :n-paths :initform 100000 :reader n-paths)
-   (n-steps :initarg :n-steps :initform 50 :reader n-steps
+   (n-paths :initarg :n-paths :initform 100000 :reader n-paths :type (integer 1))
+   (n-steps :initarg :n-steps :initform 50 :reader n-steps :type (integer 1)
             :documentation "Time steps; also the exercise dates for LSM.")
    (seed :initarg :seed :initform 42 :reader seed)
    (rng :initarg :rng :initform :counter :reader rng
@@ -205,7 +205,7 @@ PROCESS-REGRESSORS: spot and variance for Heston and GARCH, spot otherwise."))
   ((process :initarg :process :initform (make-instance 'gbm) :reader process
             :documentation "The lattice's dynamics. Cox-Ross-Rubinstein trees
 model GBM only.")
-   (n-steps :initarg :n-steps :initform 2000 :reader n-steps
+   (n-steps :initarg :n-steps :initform 2000 :reader n-steps :type (integer 1)
             :documentation "Time steps in the tree.")
    (smooth :initarg :smooth :initform t :reader smooth
            :documentation "If true, value the last step with the
@@ -225,13 +225,13 @@ cancels the O(1/N) error of the tree. Reliable only with SMOOTH."))
   ((process :initarg :process :initform (make-instance 'gbm) :reader process
             :documentation "Supplies the characteristic function and
 cumulants of the log-return.")
-   (n-terms :initarg :n-terms :initform 256 :reader n-terms
+   (n-terms :initarg :n-terms :initform 256 :reader n-terms :type (integer 1)
             :documentation "Terms in the Fourier-cosine expansion.")
-   (truncation :initarg :truncation :initform 12d0 :reader truncation
+   (truncation :initarg :truncation :initform 12d0 :reader truncation :type (real (0))
                :documentation "L in the truncation range
 [c1 - L sqrt(c2 + sqrt(c4)), c1 + L sqrt(c2 + sqrt(c4))].")
    (richardson-dates :initarg :richardson-dates :initform 16
-                     :reader richardson-dates
+                     :reader richardson-dates :type (integer 1)
                      :documentation "Exercise dates M of the coarsest
 Bermudan in the American extrapolation, which uses M, 2M, 4M and 8M."))
   (:metaclass engine-class)
@@ -249,24 +249,25 @@ mixin; GBM).
   ((process :initarg :process :initform (make-instance 'gbm) :reader process
             :documentation "The dynamics: GBM, CEV and local vol on a log-spot
 grid (PDE-COEFFICIENTS), Heston on a (log-spot, variance) grid by ADI.")
-   (n-space :initarg :n-space :initform 200 :reader n-space
+   (n-space :initarg :n-space :initform 200 :reader n-space :type (integer 1)
             :documentation "Log-spot grid points.")
-   (n-variance :initarg :n-variance :initform 50 :reader n-variance
+   (n-variance :initarg :n-variance :initform 50 :reader n-variance :type (integer 1)
                :documentation "Variance grid points (Heston).")
-   (n-time :initarg :n-time :initform 200 :reader n-time
+   (n-time :initarg :n-time :initform 200 :reader n-time :type (integer 1)
            :documentation "Time steps to expiry; exercise and monitoring dates are
 grid times, with gaps filled evenly.")
-   (theta :initarg :theta :initform 1/2 :reader fd-theta
+   (theta :initarg :theta :initform 1/2 :reader fd-theta :type (real 0 1)
           :documentation "The theta-scheme weight: 1/2 Crank-Nicolson, 1 implicit.
 Heston's ADI uses Hundsdorfer-Verwer's 1/2 + sqrt(3)/6 instead.")
    (rannacher-steps :initarg :rannacher-steps :initform 2 :reader rannacher-steps
+                    :type (integer 0)
                     :documentation "Fully implicit substeps replacing the step after
 each payoff discontinuity (expiry, Bermudan exercise, barrier monitoring).
 0 disables the smoothing.")
    (concentration :initarg :concentration :initform 2 :reader concentration
                   :documentation "Width of the sinh concentration around the strike,
 in standard deviations of ln S_T; NIL for a uniform grid.")
-   (width :initarg :width :initform 5 :reader grid-width
+   (width :initarg :width :initform 5 :reader grid-width :type (real (0))
           :documentation "Half-width of the log-spot grid, in standard deviations of
 ln S_T around the spot."))
   (:metaclass engine-class)

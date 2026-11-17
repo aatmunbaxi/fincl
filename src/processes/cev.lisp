@@ -27,8 +27,8 @@ instantaneous vol at the spot matches the market's vol to expiry."
      (expt (spot market) (- 1d0 (beta process)))))
 
 (define-process cev (stochastic-process) ()
-  ((beta 1d0 :bounds (0 nil) :doc "Elasticity: 1 is GBM, 0 is Bachelier.")
-   (sigma nil :bounds ((0) nil) :market-default cev-default-sigma
+  ((beta 1d0 :type non-negative-double :bounds (0 nil) :doc "Elasticity: 1 is GBM, 0 is Bachelier.")
+   (sigma nil :type (or null volatility) :bounds ((0) nil) :market-default cev-default-sigma
               :doc "Scale parameter; its units change with beta. NIL resolves to
 sigma_ATM(T) S0^(1 - beta), T the expiry, sigma_ATM(T) the market's
 ATM-forward Black vol to T.")

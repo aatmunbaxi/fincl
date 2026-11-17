@@ -155,7 +155,7 @@ MAKE-STEPPER and TERMINAL-SAMPLER are built on it.")
 ;;; --------------------------------------------------------------------
 
 (define-process jump-diffusion (exponential-levy stochastic-process) ()
-  ((vol nil :reader process-vol :bounds ((0) nil) :market-default gbm-default-vol
+  ((vol nil :reader process-vol :type (or null volatility) :bounds ((0) nil) :market-default gbm-default-vol
             :doc "Volatility of the Brownian part. NIL follows the market's
 ATM-forward Black variance w(t), as for GBM, so with no jumps every ATM
 European is repriced. RESOLVE-PROCESS keeps it NIL."))

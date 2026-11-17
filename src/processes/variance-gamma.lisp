@@ -13,11 +13,11 @@
 (in-package #:fincl)
 
 (define-process variance-gamma (exponential-levy stochastic-process) (:factors 2)
-  ((sigma nil :measure-dependent t :bounds ((0) nil) :market-default gbm-default-vol
+  ((sigma nil :measure-dependent t :type (or null volatility) :bounds ((0) nil) :market-default gbm-default-vol
               :doc "Volatility of the Brownian motion run on the gamma clock. NIL
 resolves to sigma_ATM(T) = sqrt(w(T)/T), the market's ATM-forward Black vol to
 the expiry, which the process reproduces as nu -> 0 with theta = 0.")
-   (nu 0.2d0 :bounds ((0) nil) :doc "Variance rate of the gamma clock: kurtosis.")
+   (nu 0.2d0 :type positive-double :bounds ((0) nil) :doc "Variance rate of the gamma clock: kurtosis.")
    (theta -0.14d0 :measure-dependent t :doc "Drift on the gamma clock: skewness."))
   (:documentation "The variance gamma process of Madan, Carr and Chang.
 

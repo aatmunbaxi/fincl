@@ -140,6 +140,8 @@ PROCESS-STATE-SIZE and PROCESS-FACTORS (both default to 1). Each of SLOTS is
   it fixed under a change of measure.
 - READER defaults to SLOT-NAME, and the initarg is the keyword SLOT-NAME.
 - TYPE defaults to DOUBLE-FLOAT, or (OR NULL DOUBLE-FLOAT) when DEFAULT is NIL.
+  A given TYPE (a domain type such as VOLATILITY, or (OR NULL VOLATILITY)) must
+  contain every value BOUNDS allows, which is checked when the form is expanded.
 
 MAKE-NAME takes the initargs of NAME and its DEFINE-PROCESS superclasses as
 keywords, passing only those given, so omitted ones keep their defaults. The
@@ -160,6 +162,8 @@ stay ordinary DEFMETHODs.
                                                (parameter t) measure-dependent
                                                doc (reader slot) type)
                spec
+             (when (and type bounds-p)
+               (check-bounds-within-type name slot bounds type))
              `(,slot :initarg ,(a:make-keyword slot)
                      :initform ,default
                      :reader ,reader

@@ -12,9 +12,9 @@
 (in-package #:fincl)
 
 (define-process hull-white (stochastic-process) (:state-size 2 :factors 2)
-  ((a 0.05d0 :measure-dependent t :bounds (0 nil) :reader hull-white-a
+  ((a 0.05d0 :measure-dependent t :type non-negative-double :bounds (0 nil) :reader hull-white-a
              :doc "Mean-reversion speed of the short rate.")
-   (sigma 0.01d0 :bounds (0 nil) :doc "Normal volatility of the short rate."))
+   (sigma 0.01d0 :type volatility :bounds (0 nil) :doc "Normal volatility of the short rate."))
   (:documentation "Hull-White one-factor short-rate model, fitted to a yield
 curve. Priced through rates engines (:JAMSHIDIAN, :HULL-WHITE-TREE); it does
 not drive an equity spot. In SIMULATE it drives a yield curve, ((:curve id)

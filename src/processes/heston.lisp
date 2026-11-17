@@ -33,14 +33,14 @@ HORIZON = T."
   (or (v0 process) (heston-default-v0 process market horizon)))
 
 (define-process heston (stochastic-process) (:state-size 2 :factors 2)
-  ((v0 nil :bounds (0 nil) :market-default heston-default-v0
+  ((v0 nil :type (or null non-negative-double) :bounds (0 nil) :market-default heston-default-v0
            :doc "Initial variance. NIL resolves to sigma_ATM(T)^2 = w(T)/T, T the
 expiry, w the market's ATM-forward Black variance.")
-   (kappa 2d0 :measure-dependent t :bounds ((0) nil) :doc "Mean-reversion speed of the variance.")
-   (theta nil :measure-dependent t :bounds (0 nil) :market-default heston-default-theta
+   (kappa 2d0 :measure-dependent t :type positive-double :bounds ((0) nil) :doc "Mean-reversion speed of the variance.")
+   (theta nil :measure-dependent t :type (or null non-negative-double) :bounds (0 nil) :market-default heston-default-theta
               :doc "Long-run variance. NIL resolves to V0.")
-   (xi 0.3d0 :bounds (0 nil) :doc "Vol of vol.")
-   (rho -0.7d0 :bounds (-1 1) :doc "Correlation of the spot and variance shocks.")
+   (xi 0.3d0 :type volatility :bounds (0 nil) :doc "Vol of vol.")
+   (rho -0.7d0 :type correlation :bounds (-1 1) :doc "Correlation of the spot and variance shocks.")
    (scheme :quadratic-exponential :parameter nil
            :type (member :quadratic-exponential :full-truncation)
            :doc "Path discretization: :QUADRATIC-EXPONENTIAL (Andersen's QE with

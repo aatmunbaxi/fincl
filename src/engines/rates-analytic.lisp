@@ -27,6 +27,7 @@ option's expiry."))
 
 (defclass black-rates-engine (volatility-rates-engine)
   ((displacement :initarg :displacement :initform 0d0 :reader engine-displacement
+                 :type (real 0)
                  :documentation "Added to rate and strike: the vol is lognormal in
 rate + displacement."))
   (:metaclass engine-class)

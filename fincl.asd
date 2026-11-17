@@ -22,6 +22,7 @@
   :components ((:file "package")
                (:file "conditions")
                (:file "platform")
+               (:file "types")
                (:file "iteration-helpers")
                (:module "math"
                 :serial t
@@ -170,6 +171,7 @@
                (:file "simulation-books")
                (:file "measure")
                (:file "platform")
+               (:file "types")
                (:file "readme")
                ;; The runners call the checks above; keep them last.
                (:file "tests"))

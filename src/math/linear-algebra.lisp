@@ -14,8 +14,6 @@
 
 (in-package #:fincl)
 
-(deftype double-vector () '(simple-array double-float (*)))
-
 (define-condition rank-deficient (pricing-error)
   ((index :initarg :index :reader rank-deficient-index)
    (pivot :initarg :pivot :reader rank-deficient-pivot))

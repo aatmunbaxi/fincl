@@ -13,9 +13,9 @@
 (in-package #:fincl)
 
 (define-process nig (exponential-levy stochastic-process) (:factors 3)
-  ((alpha 15d0 :measure-dependent t :bounds ((0) nil) :doc "Tail heaviness: larger is lighter.")
+  ((alpha 15d0 :measure-dependent t :type positive-double :bounds ((0) nil) :doc "Tail heaviness: larger is lighter.")
    (beta -5d0 :measure-dependent t :doc "Asymmetry, |beta| < alpha.")
-   (delta 0.5d0 :bounds ((0) nil) :doc "Scale per unit of market time."))
+   (delta 0.5d0 :type positive-double :bounds ((0) nil) :doc "Scale per unit of market time."))
   (:documentation "Barndorff-Nielsen's normal inverse Gaussian process.
 
 Under a change of measure ALPHA and BETA may take physical values and DELTA

@@ -7,14 +7,14 @@
 (in-package #:fincl)
 
 (defclass flat-yield-curve (yield-curve)
-  ((rate :initarg :rate :reader flat-rate :type double-float
+  ((rate :initarg :rate :reader flat-rate :type rate
          :initform (a:required-argument :rate)))
   (:documentation "A constant continuously compounded rate.
 
   (make-instance 'flat-yield-curve :rate 0.04d0)"))
 
 (defclass flat-dividend-curve (dividend-curve)
-  ((rate :initarg :rate :reader flat-rate :type double-float :initform 0d0))
+  ((rate :initarg :rate :reader flat-rate :type rate :initform 0d0))
   (:documentation "A constant continuously compounded dividend yield.
 
   (make-instance 'flat-dividend-curve :rate 0.015d0)"))

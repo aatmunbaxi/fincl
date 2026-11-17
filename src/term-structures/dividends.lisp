@@ -109,6 +109,6 @@ moved by SHIFT."
 and AMOUNT: for :CASH the drop in the price at the ex-date (the amount
 discounted from its pay date to the ex-date), for :PROPORTIONAL the fraction."
   (date nil :type date :read-only t)
-  (time 0d0 :type double-float :read-only t)
+  (time 0d0 :type market-time :read-only t)
   (kind :cash :type (member :cash :proportional) :read-only t)
   (amount 0d0 :type double-float :read-only t))
