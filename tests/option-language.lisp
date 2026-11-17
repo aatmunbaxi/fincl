@@ -43,7 +43,7 @@
 (defun dates= (expected actual)
   (and (= (length expected) (length actual)) (every #'date= expected actual)))
 
-(defun option-language-checks ()
+(define-checks option-language-checks
   (format t "~&Option language: clauses and defaults~%")
   (let* ((d #D"2027-09-24")
          (k 95)
@@ -226,7 +226,7 @@
                    (prin1-to-string (make-option (put 95) (bermudan :dates (list #D"2027-03-24" d)))))
                  :test #'string=)))
 
-(defun option-round-trip-checks ()
+(define-checks option-round-trip-checks
   (format t "~&Option language: every invariant-grid option rebuilds from its clauses~%")
   (let ((market (invariant-market))
         (gbm (make-instance 'gbm))

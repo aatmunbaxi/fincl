@@ -3,7 +3,7 @@
 (in-package #:fincl/tests)
 (named-readtables:in-readtable fincl:syntax)
 
-(defun mc-checks ()
+(define-checks mc-checks
   "Monte Carlo under GBM against Black-Scholes and the LSM benchmark."
   (with-standard-fixtures
     (format t "~&Monte Carlo, GBM (benchmarks 10.4506 / 4.478)~%")
@@ -53,7 +53,7 @@
     (funcall thunk)
     (/ (- (get-internal-real-time) t0) (float internal-time-units-per-second 1d0))))
 
-(defun counter-stream-checks ()
+(define-checks counter-stream-checks
   (format t "~&Counter-based random streams~%")
   (with-standard-fixtures
     (let ((heston (make-instance 'heston :xi 0.5d0 :rho -0.7d0)))
@@ -118,7 +118,7 @@
 ;;; State-aware LSM (task 08)
 ;;; --------------------------------------------------------------------
 
-(defun lsm-basis-checks ()
+(define-checks lsm-basis-checks
   (format t "~&LSM bases~%")
   (check-equal "graded exponents, two regressors, degree 2"
                '((0 0) (1 0) (0 1) (2 0) (1 1) (0 2)) (fincl::basis-exponents 2 2))
@@ -147,7 +147,7 @@
                                (* w (/ (+ (- (* x x x)) (* 9 x x) (* -18 x) 6) 6)))
                          basis)))))
 
-(defun clarke-parrott-checks ()
+(define-checks clarke-parrott-checks
   ;; K = 10, T = 0.25, r = 0.1, q = 0, kappa = 5, theta = 0.16, xi = 0.9,
   ;; rho = 0.1, v0 = 0.0625. Reference values: Ikonen and Toivanen's RK-IT
   ;; method, as tabulated in Haentjens and in 't Hout, "ADI schemes for

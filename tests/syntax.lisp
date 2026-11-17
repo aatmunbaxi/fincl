@@ -38,7 +38,7 @@
                              (tenor-equal-p days (make-tenor 10 :days))
                              (tenor-equal-p years (make-tenor -1 :years))))))))))
 
-(defun syntax-checks ()
+(define-checks syntax-checks
   (format t "~&Reader syntax~%")
   (check-equal "#D reads a date" (make-date 2027 6 15) #D"2027-06-15" :test #'date=)
   (check-equal "#T reads a tenor" (make-tenor 3 :months) #T"3M" :test #'tenor-equal-p)
@@ -72,7 +72,4 @@
 
 (defun run-syntax-tests ()
   "Run only the reader-syntax checks. Returns T when all pass."
-  (let ((*failures* 0))
-    (syntax-checks)
-    (format t "~&~[All syntax checks passed~:;~:*~D failure(s)~]~%" *failures*)
-    (zerop *failures*)))
+  (run-suite-list '(syntax-checks)))

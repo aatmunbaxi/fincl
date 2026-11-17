@@ -35,7 +35,7 @@ the key's own tolerance in the plist OVERRIDES; prints the offenders."
           (setf ok nil)
           (format t "~&    ~(~A~): expected ~,10F, got ~,10F~%" key e a))))))
 
-(defun greeks-checks ()
+(define-checks greeks-checks
   (format t "~&Greeks~%")
   ;; 10^9 paths: a simulation started before the check would not finish.
   (check-error "Monte Carlo Greeks with one batch signal before simulating"

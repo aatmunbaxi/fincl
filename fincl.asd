@@ -140,7 +140,7 @@
 
 (defsystem "fincl/tests"
   :description "Tests for fincl"
-  :depends-on ("fincl" "lparallel" "closer-mop" "bordeaux-threads" "iterate")
+  :depends-on ("fincl" "lparallel" "closer-mop" "bordeaux-threads" "iterate" "parachute")
   :pathname "tests/"
   :serial t
   :components ((:file "package")

@@ -367,7 +367,7 @@ over DAYS. The output is the discounted residual at the last date."
         (check-that (format nil "payer - receiver ~,1F = the forward swap's value ~,1F within 3 SE (~,1F)" mean forward se)
                     (<= (abs (- mean forward)) (* 3 se)))))))
 
-(defun simulation-validation-checks ()
+(define-checks simulation-validation-checks
   (let ((*validation-rows* '()))
     (v1-checks)
     (v2-checks)
@@ -380,8 +380,5 @@ over DAYS. The output is the discounted residual at the last date."
 (defun run-simulation-validation-tests ()
   "Run only the simulation validation studies (task 32, Phase 4). Returns T
 when all pass."
-  (let ((*failures* 0))
-    (with-pricing-kernel ()
-      (simulation-validation-checks))
-    (format t "~&~[All simulation validation checks passed~:;~:*~D failure(s)~]~%" *failures*)
-    (zerop *failures*)))
+  (with-pricing-kernel ()
+    (run-suite-list '(simulation-validation-checks))))

@@ -107,7 +107,7 @@ measured against max(1, x^2)."
     (check-that "complex-log1p of a small argument keeps its digits"
                 (< (abs (- (fincl::complex-log1p #c(1d-20 2d-20)) #c(1d-20 2d-20))) 1d-38))))
 
-(defun math-checks ()
+(define-checks math-checks
   (format t "~&Math: special functions~%")
   (let ((worst (iter (for x in *expm1-log1p-points*)
                      (maximize (relative-error (expm1 x) (reference-expm1 (rational x)))))))
@@ -380,7 +380,7 @@ independent uniforms plus a dominant diagonal band. Returns (values rows y)."
                        2)
                fincl::rank-deficient))
 
-(defun iteration-helper-checks ()
+(define-checks iteration-helper-checks
   (format t "~&Iteration helpers~%")
   (check-equal "in-plist: each key with its value"
                '((:a 1) (:b 2) (:c 3))
@@ -423,11 +423,5 @@ independent uniforms plus a dominant diagonal band. Returns (values rows y)."
 
 (defun run-math-tests ()
   "Run only the math checks, numerics.lisp's included. Returns T when all pass."
-  (let ((*failures* 0))
-    (math-checks)
-    (iteration-helper-checks)
-    (interpolation-checks)
-    (tridiagonal-checks)
-    (optimizer-checks)
-    (format t "~&~[All math checks passed~:;~:*~D failure(s)~]~%" *failures*)
-    (zerop *failures*)))
+  (run-suite-list '(math-checks iteration-helper-checks interpolation-checks
+                    tridiagonal-checks optimizer-checks)))

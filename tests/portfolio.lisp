@@ -289,7 +289,7 @@ Asians, holdings, under several engines, long and short."
     (check-error "a snapshot does not read-eval"
                  (with-input-from-string (s "#.(delete-file \"x\")") (read-snapshot s)) reader-error)))
 
-(defun portfolio-checks ()
+(define-checks portfolio-checks
   (holding-checks)
   (engine-introspection-checks)
   (portfolio-pricing-checks)
@@ -300,8 +300,5 @@ Asians, holdings, under several engines, long and short."
 
 (defun run-portfolio-tests ()
   "Run only the portfolio and risk checks. Returns T when all pass."
-  (let ((*failures* 0))
-    (with-pricing-kernel ()
-      (portfolio-checks))
-    (format t "~&~[All portfolio checks passed~:;~:*~D failure(s)~]~%" *failures*)
-    (zerop *failures*)))
+  (with-pricing-kernel ()
+    (run-suite-list '(portfolio-checks))))

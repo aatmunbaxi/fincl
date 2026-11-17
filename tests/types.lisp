@@ -184,7 +184,7 @@ with an argument of the wrong type is reported at compile time."
         (check-that (format nil "~S is reported when compiled" form)
                     (wrong-type-call-warns-p form))))))
 
-(defun type-checks ()
+(define-checks type-checks
   "Run the domain-type and function-type checks."
   (domain-type-checks)
   (domain-slot-checks)

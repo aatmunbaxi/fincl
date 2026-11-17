@@ -120,7 +120,7 @@
 ;;; Phase 2: Europeans and the tree
 ;;; --------------------------------------------------------------------
 
-(defun bivariate-normal-checks ()
+(define-checks bivariate-normal-checks
   (format t "~&Bivariate normal CDF~%")
   (flet ((oracle (a b rho)
            (let ((s (sqrt (- 1 (* rho rho)))))
@@ -307,7 +307,7 @@
     (check "implied vol of a spot-model price under its own engine round-trips"
            0.25d0 (implied-volatility call (price call :black-scholes m) :black-scholes m) 1d-8)))
 
-(defun dividend-checks ()
+(define-checks dividend-checks
   (dividend-market-checks)
   (dividend-european-checks)
   (dividend-binomial-checks)
@@ -316,9 +316,5 @@
 
 (defun run-dividend-tests ()
   "Run only the discrete-dividend checks. Returns T when all pass."
-  (let ((*failures* 0))
-    (with-pricing-kernel ()
-      (bivariate-normal-checks)
-      (dividend-checks))
-    (format t "~&~[All dividend checks passed~:;~:*~D failure(s)~]~%" *failures*)
-    (zerop *failures*)))
+  (with-pricing-kernel ()
+    (run-suite-list '(bivariate-normal-checks dividend-checks))))

@@ -118,7 +118,7 @@
   (not (or (weekend-p c date)
            (member date (holidays c) :test #'date=))))
 
-(defun calendar-checks ()
+(defun weekend-calendar-checks ()
   (format t "~&Calendars~%")
   (let* ((weekends (make-instance 'weekends-only))
          (null-cal (make-instance 'null-calendar))
@@ -200,8 +200,7 @@
 
 (defun day-counter-fixture-checks ()
   (unless (probe-file (fixture-path))
-    (incf *failures*)
-    (format t "~&  FAIL ~A is missing; run tests/fixtures/generate_day_counters.py~%"
+    (check-failed "~A is missing; run tests/fixtures/generate_day_counters.py"
             (fixture-path))
     (return-from day-counter-fixture-checks))
   (let ((results (make-hash-table :test #'equal)))
@@ -242,15 +241,12 @@
   (check-equal "ACT/365F one year" 1d0
                (year-fraction +actual-365-fixed+ (d "2027-01-01") (d "2028-01-01"))))
 
-(defun time-checks ()
+(define-checks time-checks
   (date-checks)
   (tenor-checks)
-  (calendar-checks)
+  (weekend-calendar-checks)
   (day-counter-checks))
 
 (defun run-time-tests ()
   "Run only the time-layer checks. Returns T when all pass."
-  (let ((*failures* 0))
-    (time-checks)
-    (format t "~&~[All time checks passed~:;~:*~D failure(s)~]~%" *failures*)
-    (zerop *failures*)))
+  (run-suite-list '(time-checks calendar-checks)))

@@ -55,7 +55,7 @@ second derivatives by Gaussian elimination, then the cubic on each segment."
 (defun non-decreasing-p (f lo hi n)
   (iter (for (a b) on (mapcar f (sample-points lo hi n))) (while b) (always (<= a b))))
 
-(defun interpolation-checks ()
+(define-checks interpolation-checks
   (format t "~&Interpolation~%")
   (let ((xs '(0d0 0.3d0 1d0 1.7d0 2.5d0 3.1d0 4d0 5.2d0 6d0 7.5d0))
         (inside (sample-points 0d0 7.5d0 157)))
@@ -189,7 +189,7 @@ the test suite's Gaussian elimination."
   (/ (iter (for i below (length x)) (maximize (abs (- (aref x i) (aref reference i)))))
      (iter (for i below (length x)) (maximize (abs (aref reference i))))))
 
-(defun tridiagonal-checks ()
+(define-checks tridiagonal-checks
   (format t "~&Tridiagonal systems~%")
   (let ((state (test-random-state 11)))
     (dolist (n '(10 100 1000))
@@ -253,7 +253,7 @@ the test suite's Gaussian elimination."
 (defun distance-to-ones (x)
   (iter (for v in-vector x) (maximize (abs (- v 1)))))
 
-(defun optimizer-checks ()
+(define-checks optimizer-checks
   (format t "~&Optimization~%")
   ;; r = (x0 e^x1, sin x2 + x0 x2) at (0.5, -1.5, 2).
   (let ((x (coerce '(0.5d0 -1.5d0 2d0) 'double-vector)))

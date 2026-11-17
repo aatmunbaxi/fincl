@@ -3,7 +3,7 @@
 (in-package #:fincl/tests)
 (named-readtables:in-readtable fincl:syntax)
 
-(defun binomial-checks ()
+(define-checks binomial-checks
   (let* ((bs (make-instance 'black-scholes-engine))
          (cos (make-instance 'cos-engine))
          (m (make-bs-market :valuation-date *today* :spot 100 :rate 0.05d0
@@ -88,7 +88,4 @@
 
 (defun run-binomial-tests ()
   "Run only the binomial engine checks. Returns T when all pass."
-  (let ((*failures* 0))
-    (binomial-checks)
-    (format t "~&~[All binomial checks passed~:;~:*~D failure(s)~]~%" *failures*)
-    (zerop *failures*)))
+  (run-suite-list '(binomial-checks)))

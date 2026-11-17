@@ -219,7 +219,7 @@
                                                     (price put (make-gbm) m))))
                          :baw)))))
 
-(defun selection-test-checks ()
+(define-checks selection-test-checks
   (explicit-parameter-checks)
   (constructor-checks)
   (option-name-checks)
@@ -229,8 +229,5 @@
 
 (defun run-selection-tests ()
   "Run only the checks of this file. Returns T when all pass."
-  (let ((*failures* 0))
-    (with-pricing-kernel ()
-      (selection-test-checks))
-    (format t "~&~[All selection checks passed~:;~:*~D failure(s)~]~%" *failures*)
-    (zerop *failures*)))
+  (with-pricing-kernel ()
+    (run-suite-list '(selection-test-checks))))

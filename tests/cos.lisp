@@ -58,7 +58,7 @@ product C_k = DISCOUNT Re sum_j cf_j V_j (I(j+k) + I(j-k)) / (b - a)."
              (iter (for k below n) (maximize (abs (- (aref fft k) (aref direct k)))))
              1d-11))))
 
-(defun cos-checks ()
+(define-checks cos-checks
   (let* ((bs (make-instance 'black-scholes-engine))
          (m (make-bs-market :valuation-date *today* :spot 100 :rate 0.05d0
                             :dividend 0.03d0 :vol 0.25d0)))
@@ -177,17 +177,13 @@ product C_k = DISCOUNT Re sum_j cf_j V_j (I(j+k) + I(j-k)) / (b - a)."
 
 (defun run-cos-tests ()
   "Run only the COS engine checks. Returns T when all pass."
-  (let ((*failures* 0))
-    (cos-checks)
-    (cos-term-structure-checks)
-    (format t "~&~[All COS checks passed~:;~:*~D failure(s)~]~%" *failures*)
-    (zerop *failures*)))
+  (run-suite-list '(cos-checks cos-term-structure-checks)))
 
 ;;; --------------------------------------------------------------------
 ;;; Term structure (task 08)
 ;;; --------------------------------------------------------------------
 
-(defun cos-term-structure-checks ()
+(define-checks cos-term-structure-checks
   (format t "~&COS: term structure~%")
   (let* ((pm (make-piecewise-market))
          ;; Piecewise rates and dividends, flat vol: the model a CRR tree,

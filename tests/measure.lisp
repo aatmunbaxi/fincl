@@ -514,7 +514,7 @@ so Var r_t is unchanged" name)
                   (< (reduce #'max (simulation-values r :worst)) 1d-12))
       (check-equal "simulation-measure of a mixed run (P curve, Q spot)" :physical (simulation-measure r)))))
 
-(defun measure-checks ()
+(define-checks measure-checks
   (measure-stepping-checks)
   (measure-error-checks)
   (measure-distribution-checks)
@@ -527,8 +527,5 @@ so Var r_t is unchanged" name)
 
 (defun run-measure-tests ()
   "Run only the change-of-measure checks. Returns T when all pass."
-  (let ((*failures* 0))
-    (with-pricing-kernel ()
-      (measure-checks))
-    (format t "~&~[All change-of-measure checks passed~:;~:*~D failure(s)~]~%" *failures*)
-    (zerop *failures*)))
+  (with-pricing-kernel ()
+    (run-suite-list '(measure-checks))))

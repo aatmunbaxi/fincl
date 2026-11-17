@@ -177,8 +177,7 @@ skipped unless all of them priced."
            (tol (* scale (invariant-tolerance engine (abs value) se))))
       (unless (>= value (- bound tol))
         (setf *cell-failed* t)
-        (incf *failures*)
-        (format t "~&  FAIL ~A: ~A~%       ~,8F < ~,8F (tolerance ~,2E)~%"
+        (check-failed "~A: ~A ~,8F < ~,8F (tolerance ~,2E)"
                 label description value bound tol)))))
 
 (defun check-invariants (engine grid market style label)
@@ -300,8 +299,7 @@ ENGINE's tolerance."
         (cond ((eq g :unsupported))
               ((eq (first g) :error)
                (setf *cell-failed* t)
-               (incf *failures*)
-               (format t "~&  FAIL ~A ~A Greeks: ~A~%" label where (second g)))
+               (check-failed "~A ~A Greeks: ~A" label where (second g)))
               (t
                (let ((delta (getf g :delta)))
                  (invariant engine label `((1 ,delta)) 0 (format nil "~A: delta >= 0" where))
@@ -368,8 +366,7 @@ barriers at 85 and up barriers at 120, at the money; and, under GBM, arithmetic 
                       (let ((grid (price-grid engine market)))
                         (maphash (lambda (key r)
                                    (when (and (consp r) (eq (first r) :error))
-                                     (incf *failures*)
-                                     (format t "~&  FAIL ~A ~S: ~A~%" where key (second r))))
+                                     (check-failed "~A ~S: ~A" where key (second r))))
                                  grid)
                         (dolist (style *invariant-styles*)
                           (let ((*cell-failed* nil))
@@ -399,8 +396,7 @@ A cell automatic selection cannot price is a failure."
                           (price-grid process market))))
               (maphash (lambda (key r)
                          (when (or (eq r :unsupported) (and (consp r) (eq (first r) :error)))
-                           (incf *failures*)
-                           (format t "~&  FAIL ~A ~S: ~A~%" where key
+                           (check-failed "~A ~S: ~A" where key
                                    (if (consp r) (second r) "no engine prices it"))))
                        grid)
               (dolist (style *invariant-styles*)
@@ -411,14 +407,14 @@ A cell automatic selection cannot price is a failure."
                       (appending (iter (for (label) in processes)
                                        (collect (gethash (list style label) cells))))))))
 
-(defun invariant-checks ()
+(define-checks invariant-checks
+  :depends-on (selection-test-checks)
   (format t "~&Invariants: no-arbitrage relations over every engine~%")
   (let ((processes (invariant-processes))
         (*invariant-count* 0))
     (dolist (class (engine-classes))
       (when (and (concrete-engine-class-p class) (not (has-test-instance-p class)))
-        (incf *failures*)
-        (format t "~&  FAIL ~(~A~) is untested: define a TEST-ENGINE-INSTANCE method~%"
+        (check-failed "~(~A~) is untested: define a TEST-ENGINE-INSTANCE method"
                 (class-name class))))
     (iter (for (label market) in (invariant-markets))
           (format t "~&  ~A market~%" label)
@@ -429,8 +425,5 @@ A cell automatic selection cannot price is a failure."
 
 (defun run-invariant-tests ()
   "Run only the invariant sweep. Returns T when all pass."
-  (let ((*failures* 0))
-    (with-pricing-kernel ()
-      (invariant-checks))
-    (format t "~&~[All invariant checks passed~:;~:*~D failure(s)~]~%" *failures*)
-    (zerop *failures*)))
+  (with-pricing-kernel ()
+    (run-suite-list '(invariant-checks))))

@@ -417,7 +417,7 @@ up (down) exponentials (Kou 2002, Proposition B.1)."
       (check-that "log-Euler is biased beyond 3 SE at 12 steps/year"
                   (> (abs (run :log-euler 12)) 3)))))
 
-(defun levy-checks ()
+(define-checks levy-checks
   (levy-math-checks)
   (jump-diffusion-checks)
   (pure-jump-checks)
@@ -426,8 +426,5 @@ up (down) exponentials (Kou 2002, Proposition B.1)."
 
 (defun run-levy-tests ()
   "Run only the checks of this file. Returns T when all pass."
-  (let ((*failures* 0))
-    (with-pricing-kernel ()
-      (levy-checks))
-    (format t "~&~[All Levy checks passed~:;~:*~D failure(s)~]~%" *failures*)
-    (zerop *failures*)))
+  (with-pricing-kernel ()
+    (run-suite-list '(levy-checks))))

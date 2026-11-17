@@ -742,7 +742,7 @@ SPOTS[k] is the spot on grid point k, DISCOUNTS[k] the discount factor to it."
                          :method :likelihood-ratio :which '(:vega))
                  invalid-argument)))
 
-(defun path-checks ()
+(define-checks path-checks
   (grid-checks)
   (lsm-and-greek-checks)
   (sobol-reference-checks)
@@ -754,8 +754,5 @@ SPOTS[k] is the spot on grid point k, DISCOUNTS[k] the discount factor to it."
 
 (defun run-path-tests ()
   "Run only the task 19 checks. Returns T when all pass."
-  (let ((*failures* 0))
-    (with-pricing-kernel ()
-      (path-checks))
-    (format t "~&~[All path checks passed~:;~:*~D failure(s)~]~%" *failures*)
-    (zerop *failures*)))
+  (with-pricing-kernel ()
+    (run-suite-list '(path-checks))))

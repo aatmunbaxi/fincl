@@ -52,7 +52,7 @@ Returns ((form value ...) ...); an error is returned as (form :error c)."
       (when lp:*kernel* (lp:end-kernel :wait t)))
     (nreverse results)))
 
-(defun readme-checks ()
+(define-checks readme-checks
   (format t "~&README.org session~%")
   (let* ((results (evaluate-readme))
          (failed (remove-if-not (lambda (r) (eq (second r) :error)) results)))
@@ -86,7 +86,4 @@ Returns ((form value ...) ...); an error is returned as (form :error c)."
 
 (defun run-readme-check ()
   "Run README.org's session and check its results. Returns T when all pass."
-  (let ((*failures* 0))
-    (readme-checks)
-    (format t "~&~[README session checks passed~:;~:*~D failure(s)~]~%" *failures*)
-    (zerop *failures*)))
+  (run-suite-list '(readme-checks)))

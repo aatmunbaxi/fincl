@@ -498,7 +498,7 @@ as the Asian path kernel computes them."
     (check-equal "an indefinite matrix reports its pivot" '(nil 1)
                  (multiple-value-list (fincl::cholesky-factor (coerce '(1d0 2d0 2d0 1d0) 'fincl:double-vector) 2)))))
 
-(defun simulation-checks ()
+(define-checks simulation-checks
   (cholesky-checks)
   (simulation-core-checks)
   (simulation-market-checks)
@@ -508,8 +508,5 @@ as the Asian path kernel computes them."
 
 (defun run-simulation-tests ()
   "Run only the market path simulation checks. Returns T when all pass."
-  (let ((*failures* 0))
-    (with-pricing-kernel ()
-      (simulation-checks))
-    (format t "~&~[All simulation checks passed~:;~:*~D failure(s)~]~%" *failures*)
-    (zerop *failures*)))
+  (with-pricing-kernel ()
+    (run-suite-list '(simulation-checks))))

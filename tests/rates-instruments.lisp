@@ -469,7 +469,7 @@ prices on one curve."
                   (and (= (hull-white-a fitted) 0.08d0)
                        (< (abs (- (process-parameter fitted :sigma) 0.009d0)) 1d-6))))))
 
-(defun rates-instrument-checks ()
+(define-checks rates-instrument-checks
   (bond-checks)
   (swap-checks)
   (fra-checks)
@@ -481,8 +481,5 @@ prices on one curve."
 
 (defun run-rates-instrument-tests ()
   "Run only the interest-rate instrument checks (task 16). Returns T when all pass."
-  (let ((*failures* 0))
-    (with-pricing-kernel ()
-      (rates-instrument-checks))
-    (format t "~&~[All rates instrument checks passed~:;~:*~D failure(s)~]~%" *failures*)
-    (zerop *failures*)))
+  (with-pricing-kernel ()
+    (run-suite-list '(rates-instrument-checks))))

@@ -379,7 +379,7 @@
 (defun find-yield-curve-for-test (market id)
   (fincl::find-yield-curve market id))
 
-(defun rates-checks ()
+(define-checks rates-checks
   (currency-checks)
   (interest-rate-checks)
   (yield-curve-checks)
@@ -389,8 +389,5 @@
 
 (defun run-rates-tests ()
   "Run only the checks of this file. Returns T when all pass."
-  (let ((*failures* 0))
-    (with-pricing-kernel ()
-      (rates-checks))
-    (format t "~&~[All rates checks passed~:;~:*~D failure(s)~]~%" *failures*)
-    (zerop *failures*)))
+  (with-pricing-kernel ()
+    (run-suite-list '(rates-checks))))

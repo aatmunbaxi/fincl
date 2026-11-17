@@ -41,7 +41,7 @@ portable branches, named PORTABLE-NAME."
 (defun relative-difference (a b)
   (/ (abs (- a b)) (max (abs b) least-positive-normalized-double-float)))
 
-(defun platform-checks ()
+(define-checks platform-checks
   (format t "~&Platform~%")
   (with-quiet-float-traps
     (let ((nan (fincl::make-nan)) (inf (positive-infinity)))

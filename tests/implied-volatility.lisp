@@ -11,7 +11,7 @@
 (defun relative-difference (a b)
   (if (= a b) 0d0 (abs (/ (- a b) (if (zerop b) 1d0 b)))))
 
-(defun lbr-reference-checks ()
+(define-checks lbr-reference-checks
   (format t "~&Let's Be Rational against Jäckel's reference C++~%")
   (let ((worst (make-hash-table)) (identical (make-hash-table)) (count (make-hash-table)))
     (iter (for (op args expected) in (lbr-fixture))
@@ -44,7 +44,7 @@
   "The relative error in sigma that one ulp of PRICE implies."
   (/ (* double-float-epsilon 2 price) (* sigma vega)))
 
-(defun implied-vol-checks ()
+(define-checks implied-vol-checks
   (format t "~&Implied Black volatility (Let's Be Rational)~%")
   (let ((cases 0) (well-conditioned 0) (worst-well 0d0) (worst-ratio 0d0) (clamped 0) (at-limit 0)
         (seconds 0d0) (discount 0.9d0) (forward 100d0))
@@ -68,16 +68,14 @@
                      ;; Signalled: correct only if the price rounded to its limit.
                      (incf at-limit)
                      (unless (>= undiscounted (if (plusp phi) forward strike))
-                       (incf *failures*)
-                       (format t "~&  FAIL ~A: out of bounds below the limit~%"
+                       (check-failed "~A: out of bounds below the limit"
                                `(:sigma ,sigma :tau ,tau :z ,z :phi ,phi))))
                     ((zerop implied)
                      ;; The time value rounded away: the price is the
                      ;; intrinsic value, and 0 is the documented answer.
                      (incf clamped)
                      (unless (= undiscounted (max 0d0 (* phi (- forward strike))))
-                       (incf *failures*)
-                       (format t "~&  FAIL ~A: vol 0 for a price above intrinsic~%"
+                       (check-failed "~A: vol 0 for a price above intrinsic"
                                `(:sigma ,sigma :tau ,tau :z ,z :phi ,phi))))
                     ((< attainable 1d-14)
                      (incf well-conditioned)
@@ -153,7 +151,7 @@ relative error < 1e-12 (worst ~,1E)" well worst-well)
   (check-error "a normal price below intrinsic"
                (implied-normal-vol 1 0.001d0 0.03d0 0.02d0 1d0 1d0) price-out-of-bounds))
 
-(defun engine-implied-vol-checks ()
+(define-checks engine-implied-vol-checks
   (format t "~&Implied volatility from any engine~%")
   (let* ((m (make-bs-market :valuation-date *today* :spot 100 :rate 0.05d0 :dividend 0.02d0
                             :vol 0.3d0))

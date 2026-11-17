@@ -3,7 +3,7 @@
 (in-package #:fincl/tests)
 (named-readtables:in-readtable fincl:syntax)
 
-(defun dated-pricing-checks ()
+(define-checks dated-pricing-checks
   (let* ((bs (make-instance 'black-scholes-engine))
          (baw (make-instance 'barone-adesi-whaley-engine))
          (engines (list bs baw)))
@@ -141,7 +141,7 @@ payoff with no kind and no strike works through the generic code."))
 (defmethod payoff-value ((p digital-payoff) x)
   (if (> x (digital-level p)) 1d0 0d0))
 
-(defun payoff-protocol-checks ()
+(define-checks payoff-protocol-checks
   (format t "~&Payoff protocol~%")
   (let* ((bs (make-instance 'black-scholes-engine))
          (m (make-bs-market :valuation-date *today* :spot 100 :rate 0.05d0 :vol 0.2d0))
@@ -208,7 +208,7 @@ full call with the callee's name."
   (let ((code (disassembly function)))
     (or (search "STRIKE" code) (search "KIND" code))))
 
-(defun define-payoff-checks ()
+(define-checks define-payoff-checks
   (format t "~&DEFINE-PAYOFF~%")
   (when-sbcl-checks ("vanilla kernel disassembly" "the checks read SBCL's disassembly")
     (let ((kernel (payoff-kernel (make-instance 'vanilla-payoff :kind :call :strike 100d0))))
@@ -294,7 +294,7 @@ full call with the callee's name."
 ;;; Exercise masks
 ;;; --------------------------------------------------------------------
 
-(defun exercise-mask-checks ()
+(define-checks exercise-mask-checks
   (format t "~&Exercise masks~%")
   (let ((m (make-bs-market :valuation-date *today* :spot 100 :rate 0.05d0 :vol 0.2d0))
         (grid (fincl::uniform-time-grid 1d0 4)))          ; 0, 0.25, 0.5, 0.75, 1

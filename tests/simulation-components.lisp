@@ -919,7 +919,8 @@ with fincl:syntax."
     (if hits
         (dolist (h hits)
           (format t "~&  review ~(~A~): ~S in ...~A...~%" (first h) (second h) (substitute #\Space #\Newline (third h))))
-        (format t "~&  ok   no unglossed jargon (~{~A~^, ~}) in the new docstrings or the manual section~%" *jargon*)))
+        (check-that (format nil "no unglossed jargon (~{~A~^, ~}) in the new docstrings or the manual section" *jargon*)
+                    t)))
   (let ((manual (simulated-components-manual-text)))
     (check-that "the manual's pitfalls each appear with a numeric example"
                 (and manual
@@ -935,7 +936,7 @@ with fincl:syntax."
                 (and manual (every (lambda (w) (search w manual))
                                    '("- *World*" "- *Desk*" "- *Target*" "- *Derived component*"))))))
 
-(defun simulation-component-checks ()
+(define-checks simulation-component-checks
   (spot-only-fixture-checks)
   (simulation-target-checks)
   (hw-martingale-checks)
@@ -953,8 +954,5 @@ with fincl:syntax."
 (defun run-simulation-component-tests ()
   "Run only the simulated market component checks (task 32). Returns T when
 all pass."
-  (let ((*failures* 0))
-    (with-pricing-kernel ()
-      (simulation-component-checks))
-    (format t "~&~[All simulated component checks passed~:;~:*~D failure(s)~]~%" *failures*)
-    (zerop *failures*)))
+  (with-pricing-kernel ()
+    (run-suite-list '(simulation-component-checks))))

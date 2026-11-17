@@ -3,7 +3,7 @@
 (in-package #:fincl/tests)
 (named-readtables:in-readtable fincl:syntax)
 
-(defun analytic-checks ()
+(define-checks analytic-checks
   "Black-Scholes and Barone-Adesi-Whaley against known values."
   (with-standard-fixtures
     (format t "~&Analytic~%")

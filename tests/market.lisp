@@ -3,7 +3,7 @@
 (in-package #:fincl/tests)
 (named-readtables:in-readtable fincl:syntax)
 
-(defun market-checks ()
+(define-checks market-checks
   "Protocol functions on a flat market."
   (with-standard-fixtures
     (format t "~&Market protocol~%")
@@ -35,7 +35,7 @@ instruments."
   `(,(make-instance 'black-scholes-engine) ,(make-instance 'barone-adesi-whaley-engine)
     ,(binomial 500) ,(make-instance 'cos-engine) ,(mc :n-paths 4000 :n-steps 20)))
 
-(defun composite-market-checks ()
+(define-checks composite-market-checks
   (format t "~&Composite markets and views~%")
   (let* ((m (two-index-market))
          (spx-alone (make-bs-market :valuation-date *today* :spot 100 :rate 0.04d0

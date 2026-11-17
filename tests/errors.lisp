@@ -3,30 +3,21 @@
 (in-package #:fincl/tests)
 (named-readtables:in-readtable fincl:syntax)
 
-(defun error-checks ()
+(define-checks error-checks
   "Unsupported combinations, refused time steps and the LSM restart."
   (with-standard-fixtures
     (format t "~&Errors and restarts~%")
-    (handler-case
-        (progn (price aput bs mkt2)
-               (incf *failures*)
-               (format t "~&  FAIL unsupported combination not signalled~%"))
-      (unsupported-combination (c)
-        (format t "~&  ok   unsupported: ~A~%" c)))
+    (check-error "an American put under Black-Scholes is an unsupported combination"
+                 (price aput bs mkt2) unsupported-combination)
     ;; A discrete-time process refuses a time grid it cannot represent.
-    (handler-case
-        (progn (price call (mc :n-paths 1000 :n-steps 7
-                               :process (make-instance 'garch))
-                      mkt)
-               (incf *failures*)
-               (format t "~&  FAIL GARCH accepted a wrong time step~%"))
-      (incompatible-time-step (c)
-        (format t "~&  ok   ~A~%" c)))
+    (check-error "GARCH refuses a time step that is not its period"
+                 (price call (mc :n-paths 1000 :n-steps 7 :process (make-instance 'garch)) mkt)
+                 incompatible-time-step)
     (handler-bind ((regression-failure
                      (lambda (c) (declare (ignore c))
                        (invoke-restart 'skip-exercise-date))))
       (price aput (mc :n-paths 10000) mkt2))
-    (format t "~&  ok   regression-failure restart is available~%")))
+    (check-that "regression-failure restart is available" t)))
 
 ;;; --------------------------------------------------------------------
 ;;; The hierarchy (task 10): every error is a FINCL-ERROR
@@ -135,7 +126,7 @@ errors the suite provokes, each with the condition type it must signal."
         ("Brent without a sign change" convergence-failure
          ,(lambda () (solve-brent (lambda (x) (+ 1 (* x x))) -1d0 1d0)))))))
 
-(defun condition-hierarchy-checks ()
+(define-checks condition-hierarchy-checks
   (format t "~&Condition hierarchy~%")
   (check-that "INVALID-INPUT and PRICING-ERROR are FINCL-ERRORs"
               (and (subtypep 'invalid-input 'fincl-error) (subtypep 'pricing-error 'fincl-error)
@@ -161,7 +152,7 @@ errors the suite provokes, each with the condition type it must signal."
 ;;; Restarts and policies (task 10)
 ;;; --------------------------------------------------------------------
 
-(defun restart-checks ()
+(define-checks restart-checks
   (format t "~&Restarts and pricing policies~%")
   (with-standard-fixtures
     (let* ((garch (make-instance 'garch))

@@ -104,36 +104,36 @@
         (tolerance (<= (abs (- expected actual)) (* tolerance (max 1d0 (abs expected)))))
         (t (= expected actual))))
 
-(defun golden-checks (&optional label)
-  "Compare every case against the fixture in the current kernel."
-  (format t "~&Golden values~@[ (~A)~]~%" label)
+(defvar *golden-label* nil
+  "What GOLDEN-CHECKS names in its heading, e.g. the worker count.")
+
+(define-checks golden-checks
+  :depends-on (math-checks time-checks process-checks)
+  (format t "~&Golden values~@[ (~A)~]~%" *golden-label*)
   (let ((fixture (read-golden-fixture))
         (actual (evaluate-golden-cases)))
     (iter (for (name price se . options) in fixture)
           (for tolerance = (getf options :tolerance))
           (for found = (find name actual :key #'first :test #'string=))
           (cond ((null found)
-                 (incf *failures*)
-                 (format t "~&  FAIL ~A: in the fixture but no longer a case~%" name))
+                 (check-failed "~A: in the fixture but no longer a case" name))
                 ((and (golden-match-p price (second found) tolerance)
                       (golden-match-p se (third found) tolerance))
-                 (format t "~&  ok   ~A~:[~; (tolerance ~:*~,1E)~]~%" name tolerance))
+                 (check-that (format nil "~A~:[~; (tolerance ~:*~,1E)~]" name tolerance) t))
                 (t
-                 (incf *failures*)
-                 (format t "~&  FAIL ~A: expected ~S ~S, got ~S ~S~%"
-                         name price se (second found) (third found)))))
+                 (check-failed "~A: expected ~S ~S, got ~S ~S"
+                               name price se (second found) (third found)))))
     (dolist (a actual)
       (unless (find (first a) fixture :key #'first :test #'string=)
-        (incf *failures*)
-        (format t "~&  FAIL ~A: not in the fixture; regenerate it~%" (first a))))))
+        (check-failed "~A: not in the fixture; regenerate it" (first a))))))
 
 (defun run-golden-tests (&key (workers '(1 2 8)))
   "Check the golden values under each worker count in WORKERS. Returns T when
 all pass."
-  (let ((*failures* 0))
-    (dolist (n workers)
-      (let ((lp:*kernel* (lp:make-kernel n)))
-        (unwind-protect (golden-checks (format nil "~D worker~:P" n))
-          (lp:end-kernel :wait t))))
-    (format t "~&~[All golden checks passed~:;~:*~D failure(s)~]~%" *failures*)
-    (zerop *failures*)))
+  (every #'identity
+         (mapcar (lambda (n)
+                   (let ((lp:*kernel* (lp:make-kernel n))
+                         (*golden-label* (format nil "~D worker~:P" n)))
+                     (unwind-protect (run-suite-list '(golden-checks))
+                       (lp:end-kernel :wait t))))
+                 workers)))

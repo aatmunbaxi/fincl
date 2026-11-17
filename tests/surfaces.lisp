@@ -264,7 +264,7 @@ ln(K/F(tau)): by Black price with PRICE, else by vol."
                           (process-parameter fit :beta) (getf report :rmse))
                   (< (abs (- (process-parameter fit :beta) 0.6d0)) 1d-2)))))
 
-(defun surface-checks ()
+(define-checks surface-checks
   (grid-surface-checks)
   (smile-fit-checks)
   (local-vol-checks)
@@ -272,8 +272,5 @@ ln(K/F(tau)): by Black price with PRICE, else by vol."
 
 (defun run-surface-tests ()
   "Run only the task 17 checks. Returns T when all pass."
-  (let ((*failures* 0))
-    (with-pricing-kernel ()
-      (surface-checks))
-    (format t "~&~[All surface checks passed~:;~:*~D failure(s)~]~%" *failures*)
-    (zerop *failures*)))
+  (with-pricing-kernel ()
+    (run-suite-list '(surface-checks))))

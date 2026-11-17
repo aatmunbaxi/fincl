@@ -3,7 +3,7 @@
 (in-package #:fincl/tests)
 (named-readtables:in-readtable fincl:syntax)
 
-(defun process-checks ()
+(define-checks process-checks
   "Degenerate cases reduce to GBM; qualitative behaviour of the parameters."
   (with-standard-fixtures
     (format t "~&Processes: each must reduce to GBM in its degenerate case~%")
@@ -98,7 +98,7 @@
               (exp (+ x (fincl::log-growth market t0 (+ t0 dt)) (* -0.5d0 vol vol dt)
                       (- (* pull (- x x0) dt)) (* vol (sqrt dt) (aref normals 0)))))))))
 
-(defun parameter-checks ()
+(define-checks parameter-checks
   (format t "~&Process parameters~%")
   (let ((m (make-bs-market :valuation-date *today* :spot 100 :rate 0.05d0 :vol 0.2d0)))
     (flet ((names (process) (mapcar #'symbol-name (process-parameters process))))
@@ -203,7 +203,7 @@ error is that of the pair means."
           (unless (<= (abs (- mean (forward market time))) (+ (* 4 se) 1d-12))
             (collect (list time mean (forward market time) se))))))
 
-(defun term-structure-checks ()
+(define-checks term-structure-checks
   (format t "~&Term structure: processes on a piecewise market~%")
   (let ((pm (make-piecewise-market))
         (flat (make-bs-market :valuation-date *today* :spot 100 :rate 0.05d0 :vol 0.2d0)))
@@ -254,7 +254,7 @@ error is that of the pair means."
                                (fincl::uniform-time-grid 1d0 4))
                  calendar-arbitrage)))
 
-(defun antithetic-se-checks ()
+(define-checks antithetic-se-checks
   (format t "~&Antithetic standard errors~%")
   ;; The stepped path and the terminal sampler both average antithetic
   ;; pairs before the statistics, so they report the same estimator's SE.

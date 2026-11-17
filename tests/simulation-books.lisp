@@ -685,7 +685,7 @@ rebalanced monthly after a withdrawal."
                                      (read-from-string (subseq doc (search "(state-discount-bond process" doc))))))))
                   (< 0d0 v 1d0)))))
 
-(defun simulation-book-checks ()
+(define-checks simulation-book-checks
   (book-docstring-checks)
   (path-record-checks)
   (exact-curve-checks)
@@ -696,8 +696,5 @@ rebalanced monthly after a withdrawal."
 
 (defun run-simulation-book-tests ()
   "Run only the task 33 checks. Returns T when all pass."
-  (let ((*failures* 0))
-    (with-pricing-kernel ()
-      (simulation-book-checks))
-    (format t "~&~[All simulation book checks passed~:;~:*~D failure(s)~]~%" *failures*)
-    (zerop *failures*)))
+  (with-pricing-kernel ()
+    (run-suite-list '(simulation-book-checks))))

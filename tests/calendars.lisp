@@ -24,7 +24,7 @@
 (defun naive-business-days (calendar from to)
   (iter (for d in-dates from below to) (counting (business-day-p calendar d))))
 
-(defun calendar-checks ()
+(define-checks calendar-checks
   (format t "~&Holiday calendars~%")
   (let ((fixture (calendar-fixture)))
     (check-that "Easter matches QuantLib's table for 1901-2199, and 1900 is April 15th"
@@ -125,7 +125,7 @@
     (let ((*read-default-float-format* 'double-float))
       (iter (for entry = (read s nil s)) (until (eq entry s)) (collect entry)))))
 
-(defun schedule-checks ()
+(define-checks schedule-checks
   (format t "~&Schedules and ACT/ACT ICMA~%")
   (let ((cases 0) (bad-dates '()) (bad-regular 0) (icma-count 0) (worst-icma 0d0)
         (bad-refusals 0) (worst-reference 0d0))

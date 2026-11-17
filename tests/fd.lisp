@@ -172,15 +172,12 @@
                         (make-engine :fd :process (make-bates)) (fd-market))
                  unsupported-combination)))
 
-(defun fd-checks ()
+(define-checks fd-checks
   (fd-gbm-checks)
   (fd-cev-local-vol-checks)
   (fd-heston-checks))
 
 (defun run-fd-tests ()
   "Run only the task 20 checks. Returns T when all pass."
-  (let ((*failures* 0))
-    (with-pricing-kernel ()
-      (fd-checks))
-    (format t "~&~[All FD checks passed~:;~:*~D failure(s)~]~%" *failures*)
-    (zerop *failures*)))
+  (with-pricing-kernel ()
+    (run-suite-list '(fd-checks))))

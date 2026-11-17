@@ -255,7 +255,7 @@
                   (equalp (object-clauses 'toy-exchange x)
                           (object-clauses 'toy-exchange rebuilt))))))
 
-(defun construction-checks ()
+(define-checks construction-checks
   (construction-table-checks)
   (construction-language-checks)
   (construction-printing-checks))
