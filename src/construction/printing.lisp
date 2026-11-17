@@ -29,6 +29,7 @@ data function turns back into an object equivalent to OBJECT.
   "CLAUSE (data) as it would be written in the language macro."
   `(,(first clause) ,@(mapcar (lambda (arg) (argument-source language arg)) (rest clause))))
 
+(declaim (ftype (function (t t t) (values t &optional)) print-clause-form))
 (defun print-clause-form (language object stream)
   "Print OBJECT as its clauses: readably as the language macro form under
 *PRINT-READABLY*, otherwise as #<TYPE clause...>."
@@ -40,6 +41,7 @@ data function turns back into an object equivalent to OBJECT.
         (print-unreadable-object (object stream :type t)
           (format stream "~{~A~^ ~}" (mapcar #'describe-clause clauses))))))
 
+(declaim (ftype (function (t t &key (:test t)) (values t &optional)) round-trip-p))
 (defun round-trip-p (language object &key (test #'equalp))
   "True if rebuilding OBJECT from its clauses gives an object with the same
 clauses, under TEST."

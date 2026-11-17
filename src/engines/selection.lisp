@@ -38,6 +38,7 @@
 (defun class-models-process-p (class process)
   (some (lambda (model) (typep process model)) (engine-class-models class)))
 
+(declaim (ftype (function (t &rest t) (values engine &optional)) make-engine))
 (defun make-engine (key &rest settings)
   "The engine designated by KEY (:black-scholes, :baw, :rgw, :binomial, :cos,
 :fd, :mc, :merton-series, :cev, or any class's (:designator ...)) with SETTINGS, its

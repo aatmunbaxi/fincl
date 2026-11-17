@@ -19,6 +19,9 @@ a number of calendar days, or a date to move the valuation date to)."
   (bumps '() :type list :read-only t)
   (age nil :read-only t))
 
+(declaim (ftype (function (t &key (:bumps list) (:age t))
+                    (values scenario &optional))
+          make-scenario))
 (defun make-scenario (name &key bumps age)
   "A SCENARIO called NAME: BUMPS, a list of (factor shift) applied in order
 (see BUMP), then AGE, calendar days to age the market by or a date.
@@ -33,6 +36,7 @@ a number of calendar days, or a date to move the valuation date to)."
   (print-unreadable-object (s stream :type t)
     (format stream "~S~@[ ~{~S~^ ~}~]~@[ aged ~A~]" (scenario-name s) (scenario-bumps s) (scenario-age s))))
 
+(declaim (ftype (function (scenario t) (values market &optional)) apply-scenario))
 (defun apply-scenario (scenario market)
   "The market SCENARIO turns the composite MARKET into."
   (let ((m (reduce (lambda (m b) (bump m (first b) (second b))) (scenario-bumps scenario)
@@ -42,6 +46,7 @@ a number of calendar days, or a date to move the valuation date to)."
       (integer (derive-market m :valuation-date (date+ (valuation-date m) (scenario-age scenario))))
       (date (derive-market m :valuation-date (scenario-age scenario))))))
 
+(declaim (ftype (function (t t &key (:kind t)) (values list &optional)) parallel-shift-scenarios))
 (defun parallel-shift-scenarios (factor shifts &key (kind :absolute))
   "One scenario per shift of SHIFTS applied to FACTOR as (KIND shift).
 
@@ -50,6 +55,7 @@ a number of calendar days, or a date to move the valuation date to)."
         (collect (make-scenario (format nil "~S ~(~A~) ~A" factor kind x)
                                 :bumps `((,factor (,kind ,x)))))))
 
+(declaim (ftype (function (t t t) (values list &optional)) spot-vol-grid))
 (defun spot-vol-grid (underlying spot-shifts vol-shifts)
   "The scenarios of every relative spot shift in SPOT-SHIFTS combined with
 every absolute vol shift in VOL-SHIFTS for UNDERLYING, spot shifts varying
@@ -62,6 +68,7 @@ slowest.
                                                 :bumps `(((:spot ,underlying) (:relative ,s))
                                                          ((:vol ,underlying) (:absolute ,v)))))))))
 
+(declaim (ftype (function (t t) (values list &optional)) historical-scenarios))
 (defun historical-scenarios (market history)
   "One scenario per observation of HISTORY, a list of (factor kind changes):
 FACTOR as BUMP takes it, KIND :RELATIVE (returns) or :ABSOLUTE (differences),
@@ -100,6 +107,9 @@ PORTFOLIO with its base unit price and the engine that priced it on MARKET
             (map 'list #'position-result-engine results)
             (map 'list #'position-result-condition results))))
 
+(declaim (ftype (function (portfolio t t &key (:engine t))
+                    (values (simple-array double-float (* *)) list &optional))
+          revalue))
 (defun revalue (portfolio market scenarios &key (engine :auto))
   "The P&L of PORTFOLIO's positions under SCENARIOS relative to MARKET:
 (values pnl unpriced), PNL an N-POSITIONS x N-SCENARIOS array of doubles,
@@ -140,6 +150,7 @@ result does not depend on the number of workers.
                       (push x unpriced))))
       (values pnl (nreverse unpriced)))))
 
+(declaim (ftype (function (t) (values double-vector &optional)) scenario-pnl))
 (defun scenario-pnl (pnl)
   "The portfolio's P&L in each scenario: the column sums of a REVALUE matrix,
 as a DOUBLE-VECTOR."
@@ -162,6 +173,7 @@ ceiling(n (1 - CONFIDENCE)), at least 1."
       (signal-invalid-argument 'pnl pnl 'sequence "a non-empty sample of P&L"))
     (subseq losses 0 (min k (length losses)))))
 
+(declaim (ftype (function (t real) (values double-float &optional)) historical-var))
 (defun historical-var (pnl confidence)
   "Value at risk at CONFIDENCE (e.g. 0.99) from the P&L sample PNL (a
 sequence, e.g. SCENARIO-PNL): the K-th largest loss, K = ceiling(n (1 -
@@ -171,6 +183,7 @@ the 5th largest loss.
   (historical-var (scenario-pnl (revalue book m scenarios)) 0.99d0)"
   (float (a:lastcar (tail-losses pnl confidence)) 1d0))
 
+(declaim (ftype (function (t real) (values double-float &optional)) expected-shortfall))
 (defun expected-shortfall (pnl confidence)
   "Expected shortfall at CONFIDENCE from the P&L sample PNL: the mean of the
 K largest losses, K as in HISTORICAL-VAR."
@@ -181,6 +194,9 @@ K largest losses, K as in HISTORICAL-VAR."
 ;;; Delta-normal VaR
 ;;; --------------------------------------------------------------------
 
+(declaim (ftype (function (portfolio t t &key (:engine t) (:step real))
+                    (values double-vector &optional))
+          factor-sensitivities))
 (defun factor-sensitivities (portfolio market factors &key (engine :auto) (step 1d-3))
   "dV/dx for each of FACTORS, a list of (factor kind): the change in
 PORTFOLIO's value per unit of the factor's change of KIND (:RELATIVE: per
@@ -214,6 +230,9 @@ the latter."
            (let ((v (make-array (* n n) :element-type 'double-float)))
              (dotimes (j n v) (dotimes (i n) (setf (aref v (+ i (* j n))) (float (aref covariance i j) 1d0))))))))
 
+(declaim (ftype (function (portfolio t t t real &key (:engine t) (:step real))
+                    (values double-float double-vector &optional))
+          delta-normal-var))
 (defun delta-normal-var (portfolio market factors covariance confidence &key (engine :auto) (step 1d-3))
   "Parametric VaR at CONFIDENCE: z sqrt(s' C s), z the normal quantile, s the
 FACTOR-SENSITIVITIES to FACTORS (a list of (factor kind)), C the COVARIANCE
@@ -237,6 +256,9 @@ for a portfolio linear in the factors whose changes are jointly normal.
 ;;; Sensitivity ladders
 ;;; --------------------------------------------------------------------
 
+(declaim (ftype (function (portfolio t t &key (:engine t) (:step real))
+                    (values list &optional))
+          curve-delta-ladder))
 (defun curve-delta-ladder (portfolio market curve-id &key (engine :auto) (step 1d-4))
   "((label . dV/dq) ...): PORTFOLIO's sensitivity to each input quote of the
 bootstrapped curve CURVE-ID, per unit of the quote, by central differences
@@ -255,6 +277,7 @@ move of every quote, (:curve id), to first order.
                                                      :engine engine :step step)
                                0))))))
 
+(declaim (ftype (function (portfolio t t &key (:engine t)) (values list &optional)) vega-ladder))
 (defun vega-ladder (portfolio market buckets &key (engine :auto))
   "((label . vega) ...): PORTFOLIO's vega (per unit vol, quantity-weighted)
 by the expiry of its options, BUCKETS a list of tenors from the valuation
@@ -302,6 +325,7 @@ days between the valuation dates."
                   days))
         (values (- (spot v1) (spot v0)) 0d0 0d0 0d0 days))))
 
+(declaim (ftype (function (portfolio t t &key (:engine t)) (values cons &optional)) explain-pnl))
 (defun explain-pnl (portfolio market-0 market-1 &key (engine :auto))
   "PORTFOLIO's P&L from the composite MARKET-0 to MARKET-1, explained by a
 Taylor expansion in the Greeks at MARKET-0, position by position, as a plist:

@@ -59,6 +59,9 @@ restarts."
 ;;; Bisection
 ;;; --------------------------------------------------------------------
 
+(declaim (ftype (function ((or function symbol) real real &key (:expand-hi t) (:epsilon real) (:delta real))
+                    (values real &optional))
+          solve-bisection))
 (defun solve-bisection (f lo hi &key expand-hi (epsilon 1d-12) (delta 1d-12))
   "Root of F on [LO, HI] by bisection (NU:ROOT-BISECTION): stops when the
 bracket is narrower than DELTA or |F| is below EPSILON. See
@@ -122,6 +125,9 @@ Derivatives, 1973, ch. 4). Returns (values root iterations)."
     (signal-convergence-failure
      "Brent's method: no convergence in ~D iterations near ~,12F" max-iterations b)))
 
+(declaim (ftype (function ((or function symbol) real real &key (:expand-hi t) (:tolerance real) (:max-iterations (integer 0)))
+                    (values real &optional integer))
+          solve-brent))
 (defun solve-brent (f lo hi &key expand-hi (tolerance 1d-12) (max-iterations 1000))
   "Root of F on [LO, HI] by Brent's method, to within TOLERANCE in x.
 Converges superlinearly for smooth F. Its worst case, on flat roots such as
@@ -152,6 +158,9 @@ EXPAND-HI and the restarts.
             (< diff (* tolerance tolerance))
             (and (<= diff (* tolerance (abs x))) (<= diff (* tolerance (abs y))))))))
 
+(declaim (ftype (function ((or function symbol) real real real &key (:tolerance real) (:max-evaluations (integer 0)))
+                    (values real &optional))
+          solve-brent-from-guess))
 (defun solve-brent-from-guess (f lo hi guess &key (tolerance 1d-8) (max-evaluations 10000))
   "Root of F on [LO, HI] by QuantLib's Brent solver started from GUESS
 inside the bracket, to within TOLERANCE in x: the same iterates as
@@ -213,6 +222,9 @@ SOLVE-BRENT is the general solver.
           (signal-convergence-failure "Brent's method: no convergence in ~D evaluations near ~,12F"
                                       max-evaluations root))))))
 
+(declaim (ftype (function ((or function symbol) real &key (:lo (or null real)) (:hi (or null real)) (:tolerance real) (:max-iterations (integer 0)) (:relative-step real))
+                    (values real &optional integer))
+          solve-newton))
 (defun solve-newton (f x0 &key lo hi (tolerance 1d-12) (max-iterations 50)
                               (relative-step 1d-6))
   "Root of F by Newton's method from X0, with F' estimated by the central

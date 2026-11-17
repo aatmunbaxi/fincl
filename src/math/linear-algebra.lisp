@@ -31,6 +31,7 @@ of Q'y of the rows folded in so far."
   (qty nil :type (simple-array double-float (*)) :read-only t)
   (rows 0 :type fixnum))
 
+(declaim (ftype (function (index) (values qr-accumulator &optional)) make-qr-accumulator))
 (defun make-qr-accumulator (n)
   "An empty least-squares accumulator for N unknowns: fold rows in with
 QR-ADD-ROW!, combine accumulators with QR-MERGE!, and solve with QR-SOLVE.
@@ -42,6 +43,7 @@ QR-ADD-ROW!, combine accumulators with QR-MERGE!, and solve with QR-SOLVE.
                         (make-array n :element-type 'double-float :initial-element 0d0)))
 
 (declaim (inline hypot))
+(declaim (ftype (function (double-float double-float) (values double-float &optional)) hypot))
 (defun hypot (a b)
   "sqrt(a^2 + b^2) without overflow or underflow in the squares."
   (declare (double-float a b))
@@ -50,6 +52,9 @@ QR-ADD-ROW!, combine accumulators with QR-MERGE!, and solve with QR-SOLVE.
     (if (zerop a) 0d0 (let ((q (/ b a))) (* a (sqrt (+ 1d0 (* q q))))))))
 
 (declaim (inline qr-add-row!))
+(declaim (ftype (function (qr-accumulator double-vector real)
+                    (values qr-accumulator &optional))
+          qr-add-row!))
 (defun qr-add-row! (acc x y)
   "Fold the observation row X (length N; used as scratch and overwritten)
 with right-hand side Y into ACC by Givens rotations. Returns ACC."
@@ -83,6 +88,9 @@ with right-hand side Y into ACC by Givens rotations. Returns ACC."
     (incf (qr-accumulator-rows acc))
     acc))
 
+(declaim (ftype (function (qr-accumulator qr-accumulator)
+                    (values qr-accumulator &optional))
+          qr-merge!))
 (defun qr-merge! (acc other)
   "Fold the rows summarized by OTHER into ACC: the result is the
 accumulator of both row sets. OTHER is unchanged. Returns ACC."
@@ -102,6 +110,9 @@ accumulator of both row sets. OTHER is unchanged. Returns ACC."
           (+ (- (qr-accumulator-rows acc) n) (qr-accumulator-rows other)))
     acc))
 
+(declaim (ftype (function (qr-accumulator &key (:tolerance real))
+                    (values double-vector &optional))
+          qr-solve))
 (defun qr-solve (acc &key (tolerance 1d-12))
   "The least-squares solution b of the rows folded into ACC, by back
 substitution in R b = Q'y. Signals RANK-DEFICIENT when a diagonal entry of R
@@ -163,6 +174,9 @@ scratch in one vector. Returns T, or NIL at a zero pivot."
   (signal-convergence-failure "zero pivot in a tridiagonal solve of size ~D; the matrix ~
 is singular or not diagonally dominant" n))
 
+(declaim (ftype (function (double-vector double-vector double-vector double-vector)
+                    (values double-vector &optional))
+          solve-tridiagonal!))
 (defun solve-tridiagonal! (a b c d)
   "Solve the tridiagonal system with sub-diagonal A, diagonal B and
 super-diagonal C (A[0] and C[n-1] unused) for the right-hand side D by the
@@ -179,6 +193,9 @@ value in place of the solution.
       d
       (signal-zero-pivot (length d))))
 
+(declaim (ftype (function (double-vector double-vector double-vector double-vector &key (:work double-vector))
+                    (values double-vector &optional))
+          solve-tridiagonal-cyclic!))
 (defun solve-tridiagonal-cyclic! (a b c d &key (work (make-array (* 3 (length d))
                                                                  :element-type 'double-float)))
   "Solve the cyclic tridiagonal system whose row i is a[i] x[i-1] + b[i] x[i]
@@ -224,6 +241,9 @@ allocating. Needs n >= 3 and, like SOLVE-TRIDIAGONAL!, diagonal dominance.
         (dotimes (i n d)
           (decf (aref d i) (* factor (aref work (+ z0 i)))))))))
 
+(declaim (ftype (function (double-vector double-vector double-vector double-vector double-vector &key (:cyclic t))
+                    (values double-vector &optional))
+          tridiagonal-multiply))
 (defun tridiagonal-multiply (a b c x out &key cyclic)
   "OUT = M X for the tridiagonal M with sub-diagonal A, diagonal B and
 super-diagonal C, in the layout of SOLVE-TRIDIAGONAL! (with CYCLIC, A[0] and
@@ -248,6 +268,9 @@ C[n-1] are corner elements). Returns OUT.
 ;;; Small dense systems
 ;;; --------------------------------------------------------------------
 
+(declaim (ftype (function ((array * (* *)) sequence)
+                    (values double-vector &optional))
+          solve-linear-system))
 (defun solve-linear-system (a b)
   "The solution x of A x = B for a small dense system, by Gaussian
 elimination with partial pivoting. A is an n x n array and B a sequence of
@@ -363,6 +386,9 @@ CONVERGENCE-FAILURE after MAX-SWEEPS.
               (dotimes (k n) (setf (at vectors k col) (at v k i))))
         (values values vectors)))))
 
+(declaim (ftype (function (double-vector index &key (:floor real))
+                    (values double-vector &optional))
+          repair-positive-semidefinite))
 (defun repair-positive-semidefinite (matrix n &key (floor 0d0))
   "The symmetric N x N MATRIX (column-major DOUBLE-VECTOR) with its
 eigenvalues below FLOOR raised to FLOOR: V max(Lambda, FLOOR) V', the
@@ -378,6 +404,9 @@ slightly indefinite. Returns a new vector."
               (incf (aref out (+ i (* j n)))
                     (* l (aref vectors (+ i (* k n))) (aref vectors (+ j (* k n))))))))))))
 
+(declaim (ftype (function (double-vector index)
+                    (values (or null double-vector) (or null index) &optional))
+          cholesky-factor))
 (defun cholesky-factor (matrix n)
   "The lower-triangular L with L L' = MATRIX, a symmetric N x N column-major
 DOUBLE-VECTOR, as a new column-major DOUBLE-VECTOR (zeros above the

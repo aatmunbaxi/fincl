@@ -12,6 +12,9 @@
 (defun bs-d1 (f k std-dev)
   (+ (/ (log (/ f k)) std-dev) (* 0.5d0 std-dev)))
 
+(declaim (ftype (function (real real real real double-float)
+                    (values double-float &optional))
+          black-formula))
 (defun black-formula (phi forward strike discount variance)
   "Black price of a call (PHI = 1) or put (PHI = -1) from the forward, the
 discount factor and the total variance to expiry. No year fraction appears.
@@ -23,6 +26,9 @@ discount factor and the total variance to expiry. No year fraction appears.
     (* phi discount (- (* forward (norm-cdf (* phi d1)))
                        (* strike (norm-cdf (* phi d2)))))))
 
+(declaim (ftype (function (real real real real real)
+                    (values double-float &optional))
+          bachelier-formula))
 (defun bachelier-formula (phi forward strike discount normal-variance)
   "Bachelier (normal) price of a call (PHI = 1) or put (PHI = -1) from the
 forward, the discount factor and the total normal variance sigma_N^2 T. The
@@ -35,6 +41,9 @@ relative precision far out of the money.
      (normalised-bachelier (float phi 1d0) (float (- forward strike) 1d0)
                            (sqrt (float normal-variance 1d0)))))
 
+(declaim (ftype (function (real market real (or date real))
+                    (values double-float &optional))
+          black-scholes))
 (defun black-scholes (phi market strike x)
   "Black-Scholes-Merton price to X, a date or a horizon in market time."
   (black-formula phi (forward market x) strike (discount-factor market x)

@@ -73,6 +73,9 @@ rate for a futures price.")
   (:documentation "A deposit at INDEX's conventions from spot for its tenor;
 the quote is the simple rate."))
 
+(declaim (ftype (function (t t &key (:valuation-date t))
+                    (values deposit-helper &optional))
+          deposit-helper))
 (defun deposit-helper (quote index &key valuation-date)
   "A deposit quoting QUOTE for INDEX's tenor from spot.
 
@@ -99,6 +102,9 @@ the quote is the simple rate."))
   (:documentation "A forward rate agreement on INDEX starting a number of
 months after spot; the quote is the index's forward rate."))
 
+(declaim (ftype (function (t t t &key (:valuation-date t))
+                    (values fra-helper &optional))
+          fra-helper))
 (defun fra-helper (quote months-to-start index &key valuation-date)
   "An FRA starting MONTHS-TO-START months after spot on INDEX (a 3x9 on a 6M
 index has MONTHS-TO-START 3), quoting QUOTE. Its pillar is the index
@@ -129,6 +135,9 @@ maturity from the start, QuantLib's default.
   (:documentation "An interest-rate future: the quote is the price, 100 times
 (1 - forward rate - CONVEXITY), with the convexity adjustment given."))
 
+(declaim (ftype (function (t t t &key (:convexity real) (:valuation-date t))
+                    (values futures-helper &optional))
+          futures-helper))
 (defun futures-helper (price start index &key (convexity 0d0) valuation-date)
   "A future on INDEX's rate from the date START (an IMM date, say) to the
 index maturity from it, quoting PRICE.
@@ -183,6 +192,9 @@ leg's value equals the floating leg's."))
   (:documentation "An overnight indexed swap: fixed against daily compounded
 overnight coupons, both legs on the same schedule (MakeOIS's)."))
 
+(declaim (ftype (function (t t t &key (:valuation-date t) (:settlement-days t) (:payment-lag t) (:payment-convention t) (:payment-frequency t) (:convention t) (:end-of-month t))
+                    (values ois-helper &optional))
+          ois-helper))
 (defun ois-helper (quote tenor index &key valuation-date (settlement-days 2) (payment-lag 0)
                                          (payment-convention :following) (payment-frequency :annual)
                                          (convention :modified-following) (end-of-month nil eom-p))
@@ -243,6 +255,9 @@ end of its last fixing's deposit.
   (:documentation "A vanilla swap: a fixed leg against an Ibor leg on the
 index's tenor, par coupons (MakeVanillaSwap's)."))
 
+(declaim (ftype (function (t t t &key (:valuation-date t) (:fixed-frequency t) (:fixed-convention t) (:fixed-day-counter t) (:calendar t))
+                    (values swap-helper &optional))
+          swap-helper))
 (defun swap-helper (quote tenor index &key valuation-date (fixed-frequency :annual)
                                           (fixed-convention :modified-following)
                                           (fixed-day-counter (make-instance 'thirty-360 :variant :bond-basis))
@@ -329,6 +344,9 @@ through the nodes. Built by BOOTSTRAP-CURVE."))
      (make-instance 'interpolated-forward-curve :dates dates :forwards data :day-counter day-counter
                                                 :interpolation interpolation))))
 
+(declaim (ftype (function (list &key (:interpolation t) (:discount-curve t) (:day-counter t) (:accuracy real) (:max-passes (integer 1)))
+                    (values piecewise-yield-curve &optional))
+          bootstrap-curve))
 (defun bootstrap-curve (helpers &key (interpolation :log-linear) discount-curve
                                      (day-counter +actual-365-fixed+) (accuracy 1d-12)
                                      (max-passes 100))

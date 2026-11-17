@@ -23,6 +23,7 @@
 ;;; Dates the rules need
 ;;; --------------------------------------------------------------------
 
+(declaim (ftype (function (integer) (values date &optional)) easter))
 (defun easter (year)
   "Easter Sunday of YEAR in the Gregorian calendar, by the anonymous
 Gregorian computus (Meeus/Jones/Butcher).
@@ -51,6 +52,9 @@ Gregorian computus (Meeus/Jones/Butcher).
                                                   :friday :saturday :sunday)
                                "a weekday keyword such as :MONDAY")))
 
+(declaim (ftype (function (integer symbol integer integer)
+                    (values (or date null) &optional))
+          nth-weekday))
 (defun nth-weekday (n weekday month year)
   "The N-th WEEKDAY of MONTH in YEAR; negative N counts from the month's
 end (-1 is the last). NIL if there is no such day.
@@ -230,6 +234,7 @@ calendar's lock on first use; outside that range built afresh."
                     (setf (svref years index) entry))))))
       (build-calendar-year calendar year)))
 
+(declaim (ftype (function (calendar) (values t &optional)) clear-calendar-cache))
 (defun clear-calendar-cache (calendar)
   "Forget CALENDAR's cached years (after its rules are redefined)."
   (bt:with-lock-held ((calendar-lock calendar))

@@ -19,6 +19,9 @@
   (:documentation "A market quote for a European vanilla option: its price or
 its Black implied vol, and a weight for fitting."))
 
+(declaim (ftype (function (t &key (:price t) (:vol t) (:weight t))
+                    (values option-quote &optional))
+          make-option-quote))
 (defun make-option-quote (instrument &key price vol (weight 1))
   "A quote for INSTRUMENT, a European vanilla option, by PRICE or by Black
 implied VOL (exactly one), with WEIGHT in fits.
@@ -41,6 +44,7 @@ implied VOL (exactly one), with WEIGHT in fits.
   ((quotes :initarg :quotes :reader quote-set-quotes :type list))
   (:documentation "Quotes fitted together."))
 
+(declaim (ftype (function (t) (values quote-set &optional)) quote-set))
 (defun quote-set (quotes)
   "A QUOTE-SET of QUOTES, a non-empty list of OPTION-QUOTEs."
   (check-input quotes (and list (not null)) "a non-empty list of option quotes")
@@ -61,12 +65,14 @@ implied VOL (exactly one), with WEIGHT in fits.
     (values (forward m (expiry x)) (strike p) (discount-factor m (expiry x))
             (time-to-expiry x m) (phi p) (expiry x))))
 
+(declaim (ftype (function (option-quote t) (values double-float &optional)) quote-implied-vol))
 (defun quote-implied-vol (q market)
   "Q's Black implied vol on MARKET: its vol, or the vol of its price."
   (or (%quote-vol q)
       (multiple-value-bind (f k d tau phi) (quote-terms q market)
         (implied-black-vol phi (%quote-price q) f k d tau))))
 
+(declaim (ftype (function (option-quote t) (values double-float &optional)) quote-price))
 (defun quote-price (q market)
   "Q's price on MARKET: its price, or Black's price at its vol."
   (or (%quote-price q)
@@ -92,6 +98,9 @@ moneyness, total variance, weight, implied vol."
     (mapcar (lambda (g) (sort (copy-list (cdr g)) #'< :key #'second))
             (sort groups #'< :key #'car))))
 
+(declaim (ftype (function (t t &key (:interpolation t))
+                    (values grid-vol-surface &optional))
+          quotes-vol-surface))
 (defun quotes-vol-surface (quotes market &key (interpolation :natural-cubic))
   "A GRID-VOL-SURFACE through QUOTES (a QUOTE-SET or list of quotes) on
 MARKET: at each expiry, total variance interpolated in log-forward
@@ -186,6 +195,7 @@ constraints; the best feasible face solution is the optimum."
                 (- (+ a (* b (+ (* rho (- k m)) (sqrt (+ (expt (- k m) 2) (* sigma sigma)))))) w)))
            ks ws weights))))
 
+(declaim (ftype (function (t t &key (:initial t)) (values svi-slice real &optional)) fit-svi))
 (defun fit-svi (quotes market &key initial)
   "A raw SVI-SLICE fitted to QUOTES (all at one expiry) on MARKET, in total
 variance with the quotes' weights: Zeletskii and De Marco's quasi-explicit
@@ -232,6 +242,9 @@ Returns (values slice rmse), RMSE that of the implied vols.
 ;;; SSVI
 ;;; --------------------------------------------------------------------
 
+(declaim (ftype (function (t t &key (:rho real) (:gamma real))
+                    (values ssvi-surface real &optional))
+          fit-ssvi))
 (defun fit-ssvi (quotes market &key (rho -0.3d0) (gamma 0.4d0))
   "An SSVI-SURFACE fitted to QUOTES (several expiries) on MARKET by
 Levenberg-Marquardt on implied-vol residuals: rho, gamma in (0, 1/2], eta =
@@ -284,6 +297,9 @@ Returns (values surface rmse)."
 ;;; SABR
 ;;; --------------------------------------------------------------------
 
+(declaim (ftype (function (t t &key (:beta (or null real)) (:approximation t))
+                    (values sabr-smile real &optional))
+          fit-sabr))
 (defun fit-sabr (quotes market &key beta (approximation :obloj))
   "A SABR-SMILE fitted to QUOTES (one expiry) on MARKET by
 Levenberg-Marquardt on implied-vol residuals: alpha, rho, nu, and beta
@@ -337,6 +353,9 @@ PROCESS, or PROCESS itself (automatic selection) when ENGINE is NIL."
   (flet ((end (x) (if (consp x) (first x) x)))
     `(,(and lo (float (end lo) 1d0)) . ,(and hi (float (end hi) 1d0)))))
 
+(declaim (ftype (function (t t t &key (:engine t) (:objective t) (:method t) (:fixed list) (:tolerance real) (:max-iterations (integer 0)))
+                    (values t cons &optional))
+          calibrate))
 (defun calibrate (process market quotes &key engine (objective :implied-vol-rmse)
                                              (method :levenberg-marquardt) fixed
                                              (tolerance 1d-12) (max-iterations 200))
@@ -453,6 +472,7 @@ order) and :PARAMETERS (name value ...).
 ;;; Quotes read off a market's surface (task 32)
 ;;; --------------------------------------------------------------------
 
+(declaim (ftype (function (t t t &key (:weight real)) (values quote-set &optional)) surface-quotes))
 (defun surface-quotes (market underlying options &key (weight 1))
   "A QUOTE-SET quoting each of OPTIONS (European vanillas) at its Black vol
 on MARKET's vol structure for UNDERLYING, at its strike and expiry, with

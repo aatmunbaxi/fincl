@@ -97,9 +97,97 @@ declared bounds, and accept the bounds' endpoints where they are inclusive."
     (check-that "heston accepts rho = -1 and v0 = 0"
                 (not (rejected-p (lambda () (fincl::make-heston :rho -1d0 :v0 0d0)))))))
 
+;;; --------------------------------------------------------------------
+;;; Declared function types
+;;; --------------------------------------------------------------------
+
+(defparameter *undeclared-function-exceptions*
+  '(("constructors written by DEFINE-PROCESS"
+     "MAKE-BATES" "MAKE-CEV" "MAKE-CGMY" "MAKE-GARCH" "MAKE-GBM" "MAKE-HESTON"
+     "MAKE-HULL-WHITE" "MAKE-KOU-JUMP" "MAKE-LOCAL-VOL" "MAKE-MERTON-JUMP" "MAKE-NIG"
+     "MAKE-VARIANCE-GAMMA")
+    ("data function written by DEFINE-CONSTRUCTION-LANGUAGE" "MAKE-OPTION-FROM-CLAUSES")
+    ("helper defined by tests/cos.lisp, which shares the FINCL symbol" "COS-ENGINE"))
+  "(reason name...): exported ordinary functions with no declared function type.
+Functions written by DEFINE-PROCESS, DEFINE-PAYOFF, DEFINE-PATH-PAYOFF and the
+other generating macros are not declared by hand; DEFSTRUCT declares its own.")
+
+(defun exported-plain-functions ()
+  "Every exported symbol of FINCL that names an ordinary function: not a
+generic function, a macro or a special operator."
+  (let ((symbols '()))
+    (do-external-symbols (s '#:fincl)
+      (when (and (fboundp s) (not (macro-function s)) (not (special-operator-p s))
+                 (not (typep (fdefinition s) 'generic-function)))
+        (push s symbols)))
+    (sort symbols #'string< :key #'symbol-name)))
+
+(defun declared-function-type (symbol)
+  "The (FUNCTION ARGS VALUES) type declaimed for SYMBOL, or NIL if there is none
+beyond the bare FUNCTION of a forward declaration."
+  (let* ((declarations (third (multiple-value-list
+                               (introspect-environment:function-information symbol))))
+         (type (cdr (assoc 'ftype declarations))))
+    (and (consp type) (eq (first type) 'function) (cdr type) type)))
+
+(defun values-type-closed-p (type)
+  "True if TYPE, the declared type of a function, ends its values with &OPTIONAL
+or &REST, so the number of values is stated; a function that never returns,
+declared NIL, is closed."
+  (let ((values-type (third type)))
+    (or (null values-type)
+        (and (consp values-type) (eq (first values-type) 'values)
+             (or (member '&optional values-type) (member '&rest values-type))
+             t))))
+
+(defun wrong-type-call-warns-p (form)
+  "True if compiling FORM, a call with an argument of the wrong type, signals a
+warning."
+  (let ((warned nil))
+    (handler-bind ((warning (lambda (condition)
+                              (setf warned t)
+                              (muffle-warning condition))))
+      (let ((*error-output* (make-broadcast-stream)))
+        (compile nil `(lambda () ,form))))
+    warned))
+
+(defun function-type-checks ()
+  "Every exported ordinary function has a declared type that states its values,
+except the generated ones listed in *UNDECLARED-FUNCTION-EXCEPTIONS*, and a call
+with an argument of the wrong type is reported at compile time."
+  (when-sbcl-checks ("function types" "declared types are read through introspect-environment")
+    (let* ((exempt (iter (for (nil . names) in *undeclared-function-exceptions*)
+                         (appending (mapcar (lambda (name) (find-symbol name '#:fincl)) names))))
+           (functions (exported-plain-functions))
+           (checked (set-difference functions exempt))
+           (undeclared (remove-if #'declared-function-type checked))
+           (unclosed (remove-if-not (lambda (s)
+                                  (let ((type (declared-function-type s)))
+                                    (and type (not (values-type-closed-p type)))))
+                                functions)))
+      (check-that (format nil "every exported ordinary function has a declared type~@[ (missing: ~{~(~A~)~^ ~})~]"
+                          undeclared)
+                  (null undeclared))
+      (check-that (format nil "declared types state their values~@[ (open: ~{~(~A~)~^ ~})~]" unclosed)
+                  (null unclosed))
+      (check-that "every exception names an exported ordinary function"
+                  (every (lambda (symbol) (and symbol (member symbol functions))) exempt))
+      (check-that "no exception is also declared"
+                  (notany #'declared-function-type exempt))
+      (dolist (form '((fincl:norm-cdf "x")
+                      (fincl:date+ 1 2)
+                      (fincl:implied-black-vol "x" 1 1 1 1 1)
+                      (fincl:swap-leg-npv nil "x" nil)
+                      (fincl:portfolio-positions "x")
+                      (fincl:historical-var nil "x")
+                      (fincl:simulation-held nil "x" :a)))
+        (check-that (format nil "~S is reported when compiled" form)
+                    (wrong-type-call-warns-p form))))))
+
 (defun type-checks ()
-  "Run the domain-type checks."
+  "Run the domain-type and function-type checks."
   (domain-type-checks)
   (domain-slot-checks)
   (parameter-bounds-type-checks)
-  (parameter-rejection-checks))
+  (parameter-rejection-checks)
+  (function-type-checks))

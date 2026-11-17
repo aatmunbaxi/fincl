@@ -34,6 +34,7 @@ thing in every language, so define a fact once and share it.
   (or (gethash name *facts*)
       (error 'undeclared-fact :fact name)))
 
+(declaim (ftype (function (t) (values t &optional)) real-to-double))
 (defun real-to-double (x)
   "Coerce a real to double-float; leave anything else for the type check."
   (if (realp x) (float x 1d0) x))

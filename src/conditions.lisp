@@ -52,6 +52,7 @@ report; it defaults to the type.
                             (list (eval (read *query-io*))))
              (setf ,place value)))))
 
+(declaim (ftype (function (t t t &optional t) (values nil &optional)) signal-invalid-argument))
 (defun signal-invalid-argument (place datum expected-type &optional expected)
   "Signal INVALID-ARGUMENT: PLACE (a symbol or form naming the argument) is
 DATUM, which is not of EXPECTED-TYPE; EXPECTED describes valid values.

@@ -178,6 +178,7 @@ it may set.
             (apply function `(,@(subseq args 0 (min n (length args))) ,(nthcdr n args))))
           (apply function args)))))
 
+(declaim (ftype (function (list) (values  &optional)) apply-clauses))
 (defun apply-clauses (forms)
   "Run clause FORMS (data) in order, in the current scope."
   (mapc #'apply-clause forms)

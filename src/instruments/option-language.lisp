@@ -214,6 +214,9 @@ from the facts in scope.")
     (make-from-facts 'option :payoff payoff :exercise exercise
                              :path (assemble-path-feature (require-fact :path-kind)))))
 
+(declaim (ftype (function (t real t &key (:exercise t) (:from t) (:calendar t) (:roll-convention t) (:end-of-month t) (:underlying t))
+                    (values option &optional))
+          make-vanilla-option))
 (defun make-vanilla-option (kind strike expiry &key (exercise :european) from calendar
                                                     (roll-convention :following) end-of-month
                                                     underlying)

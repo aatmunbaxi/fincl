@@ -59,9 +59,11 @@
   (* 2 +sixteenth-root-dbl-epsilon+) "tau")
 
 (declaim (inline lbr-norm-pdf square))
+(declaim (ftype (function (double-float) (values double-float &optional)) lbr-norm-pdf))
 (defun lbr-norm-pdf (x)
   (declare (double-float x))
   (* +one-over-sqrt-two-pi+ (exp (* -0.5d0 x x))))
+(declaim (ftype (function (double-float) (values double-float &optional)) square))
 (defun square (x) (declare (double-float x)) (* x x))
 
 ;;; --------------------------------------------------------------------
@@ -551,6 +553,9 @@ for BETA at or above the maximum, without other checks."
            (setf ds (* newton (householder-factor newton halley hh3)))))
         s))))
 
+(declaim (ftype (function (real double-float double-float double-float real)
+                    (values double-float &optional))
+          lbr-implied-volatility))
 (defun lbr-implied-volatility (price forward strike tau q)
   "The Black volatility of the undiscounted PRICE of a call (Q = 1) or put
 (Q = -1). Returns MOST-NEGATIVE-DOUBLE-FLOAT below the intrinsic value and

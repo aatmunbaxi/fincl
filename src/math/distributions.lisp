@@ -11,6 +11,9 @@
 
 (in-package #:fincl)
 
+(declaim (ftype (function (double-float double-float)
+                    (values fixnum &optional))
+          poisson-from-normal))
 (defun poisson-from-normal (z mean)
   "The Poisson(MEAN) quantile at Phi(Z): the least n with P(N <= n) >=
 Phi(Z), found by summing the probabilities from 0 (or from the mode, for a
@@ -51,6 +54,9 @@ large MEAN).
                         (incf cdf pmf)
                         (finally (return n)))))))))
 
+(declaim (ftype (function (double-float double-float)
+                    (values double-float &optional))
+          gamma-from-normal))
 (defun gamma-from-normal (z shape)
   "The Gamma(SHAPE, 1) quantile at Phi(Z), by safeguarded Newton steps on
 the regularized incomplete gamma P (or Q, for Z > 0) in log x. Relative
@@ -101,6 +107,9 @@ accuracy about 1e-12.
                 (setf x next)))))
     x))
 
+(declaim (ftype (function (double-float double-float double-float double-float)
+                    (values double-float &optional))
+          inverse-gaussian-from-normals))
 (defun inverse-gaussian-from-normals (z1 z2 mean shape)
   "An inverse Gaussian variate with MEAN and SHAPE from two normals, by
 Michael, Schucany and Haas (1976): a root of the chi-square(1) Z1^2, chosen

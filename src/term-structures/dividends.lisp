@@ -28,6 +28,7 @@ MAKE-DIVIDEND-SCHEDULE."))
     (check-input date date (format nil "a date or a \"YYYY-MM-DD\" string for ~A" what))
     date))
 
+(declaim (ftype (function (t) (values dividend-schedule &optional)) make-dividend-schedule))
 (defun make-dividend-schedule (entries)
   "A DIVIDEND-SCHEDULE from ENTRIES, a list of
 

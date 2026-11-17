@@ -43,6 +43,7 @@ FRACTION-DIGITS amounts are shown with.
   "A keyword registered with DEFINE-CURRENCY."
   '(satisfies currencyp))
 
+(declaim (ftype (function (t) (values string &optional)) currency-name))
 (defun currency-name (currency)
   (currency-info-name (gethash currency *currencies*)))
 
@@ -72,6 +73,7 @@ FRACTION-DIGITS amounts are shown with.
   (amount 0d0 :type double-float :read-only t)
   (currency nil :type keyword :read-only t))
 
+(declaim (ftype (function (t t) (values money &optional)) make-money))
 (defun make-money (amount currency)
   "AMOUNT (a real, coerced to double-float) in CURRENCY.
 
@@ -93,6 +95,7 @@ FRACTION-DIGITS amounts are shown with.
       (error 'currency-mismatch :currencies currencies :operation operation))
     (first currencies)))
 
+(declaim (ftype (function (t &rest t) (values money &optional)) money+))
 (defun money+ (amount &rest more)
   "The sum of amounts of money in one currency; signals CURRENCY-MISMATCH
 otherwise.
@@ -103,6 +106,7 @@ otherwise.
     (%make-money (reduce #'+ all :key #'money-amount :initial-value 0d0)
                  (check-same-currency "money+" all))))
 
+(declaim (ftype (function (t &rest t) (values money &optional)) money-))
 (defun money- (amount &rest more)
   "AMOUNT less the MORE amounts, or AMOUNT negated when MORE is empty; one
 currency only (else CURRENCY-MISMATCH)."
@@ -114,6 +118,7 @@ currency only (else CURRENCY-MISMATCH)."
                        (- (money-amount amount)))
                    currency))))
 
+(declaim (ftype (function (t t) (values money &optional)) money*))
 (defun money* (amount factor)
   "AMOUNT scaled by the real FACTOR."
   (check-input amount money "an amount of MONEY")

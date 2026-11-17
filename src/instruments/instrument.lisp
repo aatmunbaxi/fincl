@@ -58,6 +58,9 @@ list of dates."))
     (tenor (error 'invalid-exercise :datum expiry :reason :tenor-without-start))
     (t (error 'invalid-exercise :datum expiry :reason :not-a-date))))
 
+(declaim (ftype (function (t &key (:from t) (:calendar t) (:convention t) (:end-of-month t))
+                    (values date &optional))
+          resolve-expiry))
 (defun resolve-expiry (expiry &key from calendar (convention :following)
                                    end-of-month)
   "Return EXPIRY as a date. A date is returned as is. A tenor is added to the
@@ -157,6 +160,7 @@ DOUBLE-FLOAT (*)). The last element is TAU exactly.
     (setf (aref times n-steps) (float tau 1d0))
     times))
 
+(declaim (ftype (function (t t) (values double-float &optional)) time-to-expiry))
 (defun time-to-expiry (exercise market)
   "Year fraction from MARKET's valuation date to EXERCISE's expiry under the
 market's day counter."

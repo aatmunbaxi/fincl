@@ -474,6 +474,7 @@ condition is given."
 ;;; Engine variants and recovery
 ;;; --------------------------------------------------------------------
 
+(declaim (ftype (function (t &rest t) (values t &optional)) derive-engine))
 (defun derive-engine (engine &rest initargs)
   "A new engine of ENGINE's class with INITARGS replacing the matching
 settings and every other setting copied. ENGINE is unchanged: engines are
@@ -488,6 +489,7 @@ immutable, like markets.
                    (when (and initarg (slot-boundp engine name))
                      (appending `(,initarg ,(slot-value engine name))))))))
 
+(declaim (ftype (function (t &optional t) (values t &optional)) use-engine))
 (defun use-engine (engine &optional condition)
   "Invoke the USE-ENGINE restart for CONDITION, if there is one, so the
 instrument is priced with ENGINE; otherwise return NIL. PRICE offers it for
@@ -495,6 +497,7 @@ UNSUPPORTED-COMBINATION."
   (let ((restart (find-restart 'use-engine condition)))
     (when restart (invoke-restart restart engine))))
 
+(declaim (ftype (function (t &optional t) (values t &optional)) increase-steps))
 (defun increase-steps (n-steps &optional condition)
   "Invoke the INCREASE-STEPS restart for CONDITION, if there is one, so the
 instrument is re-priced with N-STEPS steps; otherwise return NIL. The
@@ -502,6 +505,7 @@ binomial engine offers it for INVALID-TREE."
   (let ((restart (find-restart 'increase-steps condition)))
     (when restart (invoke-restart restart n-steps))))
 
+(declaim (ftype (function (&optional t) (values t &optional)) use-process-period))
 (defun use-process-period (&optional condition)
   "Invoke the USE-PROCESS-PERIOD restart for CONDITION, if there is one, so
 the instrument is re-priced with one step per model period; otherwise return

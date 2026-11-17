@@ -63,6 +63,7 @@ DATES."))
 phi (S_T - extremum), the minimum for a call and the maximum for a put; a
 :FIXED strike pays the payoff of the maximum (call) or minimum (put)."))
 
+(declaim (ftype (function (t) (values keyword &optional)) barrier-type))
 (defun barrier-type (barrier)
   "The barrier's direction and knock as one keyword, e.g. :DOWN-AND-OUT."
   (a:format-symbol :keyword "~A-AND-~A" (barrier-direction barrier) (barrier-knock barrier)))

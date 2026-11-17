@@ -219,6 +219,9 @@ RISK-NEUTRAL-PROCESS. Engines and calibration refuse it."))
           (slot-value p 'measure-parameters)
           (normalize-measure-parameters q (physical-parameters p)))))
 
+(declaim (ftype (function (t &key (:prices-of-risk list) (:drift-changes list) (:parameters list))
+                    (values physical-process &optional))
+          change-measure))
 (defun change-measure (process &key prices-of-risk drift-changes parameters)
   "A PHYSICAL-PROCESS stepping PROCESS's dynamics under the physical measure.
 PROCESS is a risk-neutral process with a stepper. Premia name the state they

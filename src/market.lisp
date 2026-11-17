@@ -44,6 +44,7 @@ positive one. PRICE offers USE-VALUE, to return a value as the price."))
 (defgeneric market-day-counter (market)
   (:documentation "The day counter that turns dates into market time."))
 
+(declaim (ftype (function (t t) (values double-float &optional)) market-time))
 (defun market-time (market date)
   "Year fraction from MARKET's valuation date to DATE under its day counter.
 
@@ -272,6 +273,9 @@ is a list or a function of no arguments returning one, called only then."
       value
       (make-instance class initarg value)))
 
+(declaim (ftype (function (&key (:valuation-date t) (:day-counter t) (:underlyings list) (:curves list) (:discounting list) (:fixings list))
+                    (values composite-market &optional))
+          make-market))
 (defun make-market (&key valuation-date (day-counter +actual-365-fixed+)
                          underlyings curves discounting fixings)
   "A COMPOSITE-MARKET observed on VALUATION-DATE. The arguments are lists:
@@ -365,6 +369,9 @@ holds (~{~S~^, ~})" (mapcar #'car curve-alist)))))
             (setf (gethash id table) dates)))
     table))
 
+(declaim (ftype (function (&key (:valuation-date t) (:day-counter t) (:spot real) (:rate real) (:dividend real) (:dividend-schedule t) (:vol t))
+                    (values composite-market &optional))
+          make-bs-market))
 (defun make-bs-market (&key valuation-date (day-counter +actual-365-fixed+)
                             spot rate (dividend 0d0) dividend-schedule vol)
   "A flat Black-Scholes market: a COMPOSITE-MARKET with one underlying and one
@@ -456,6 +463,7 @@ not modified. Move market data with BUMP.
 ;;; Bumps
 ;;; --------------------------------------------------------------------
 
+(declaim (ftype (function (t t t) (values market &optional)) bump))
 (defun bump (market factor shift)
   "A new market with the risk FACTOR moved by SHIFT; MARKET is unchanged.
 FACTOR is (:spot u), (:vol u), (:dividend u) (the continuous yield) or
@@ -532,6 +540,7 @@ with kind one of *TARGET-KINDS* and key a keyword."
                                     (format nil "a target (kind key), kind one of ~{~S~^, ~}, or an underlying keyword"
                                             *target-kinds*)))))
 
+(declaim (ftype (function (t t) (values t &optional)) market-component))
 (defun market-component (market target)
   "The component of the composite MARKET that TARGET names, in BUMP's factor
 syntax: (:spot u) the spot of underlying U (a bare keyword U means the same),
@@ -600,6 +609,9 @@ forward grows at the rate of the underlying currency's curve less the
 dividend yield; DISCOUNT-FACTOR and ZERO-RATE come from the discount curve.
 Made by MARKET-VIEW; PRICE makes one per instrument."))
 
+(declaim (ftype (function (t &key (:underlying t) (:discount-curve t))
+                    (values market-view &optional))
+          market-view))
 (defun market-view (market &key underlying discount-curve)
   "A MARKET-VIEW of MARKET for UNDERLYING (NIL: the market's only underlying),
 discounting on the curve DISCOUNT-CURVE (NIL: the curve of the underlying's

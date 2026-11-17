@@ -10,6 +10,9 @@
     (0.9739065285171717d0 . 0.0666713443086881d0))
   "Positive nodes and weights of the 10-point Gauss-Legendre rule on [-1, 1].")
 
+(declaim (ftype (function ((or function symbol) real real &key (:panels (integer 1)))
+                    (values double-float &optional))
+          integrate-gauss-legendre))
 (defun integrate-gauss-legendre (f a b &key (panels 16))
   "The integral of F over [A, B] by the 10-point Gauss-Legendre rule on each
 of PANELS equal panels: exact for polynomials of degree 19 per panel, and to

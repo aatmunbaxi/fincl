@@ -30,6 +30,7 @@ it too to keep their facts: a plain DEFCLASS subclass keeps no annotations.
     (or (null (c2mop:slot-definition-initfunction slot))
         (and (consp form) (eq (first form) 'alexandria:required-argument)))))
 
+(declaim (ftype (function (t &rest t) (values t &optional)) make-from-facts))
 (defun make-from-facts (class &rest explicit-initargs)
   "Make an instance of CLASS (a COMPONENT-CLASS or its name), filling every
 slot that names a fact from the current fact table. EXPLICIT-INITARGS win

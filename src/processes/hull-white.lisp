@@ -28,6 +28,7 @@ not drive an equity spot. In SIMULATE it drives a yield curve, ((:curve id)
   (market nil :read-only t)
   (curve nil :read-only t))
 
+(declaim (ftype (function (t t) (values rate-curve &optional)) make-rate-curve))
 (defun make-rate-curve (market curve)
   "CURVE (an id in MARKET, or a curve) in MARKET's time."
   (%make-rate-curve market (curve-in-market (if (keywordp curve) (find-yield-curve market curve) curve)
@@ -75,6 +76,9 @@ short rate r.
   "The bond A e^(-B RATE) for the A and B of HULL-WHITE-BOND-TERMS."
   (* a-factor (exp (- (* b rate)))))
 
+(declaim (ftype (function (t t real real real)
+                    (values double-float &optional))
+          hull-white-discount-bond))
 (defun hull-white-discount-bond (process curve t0 t1 rate)
   "The zero-coupon bond P(T0, T1) when the short rate at T0 is RATE, CURVE a
 RATE-CURVE (times in its market's time).
@@ -83,10 +87,14 @@ RATE-CURVE (times in its market's time).
   (multiple-value-bind (a-factor b) (hull-white-bond-terms process curve t0 t1)
     (hull-white-bond-from-terms a-factor b rate)))
 
+(declaim (ftype (function (t t real) (values double-float &optional)) hull-white-discount))
 (defun hull-white-discount (process curve time)
   "The model's discount factor to TIME: P(0, TIME) at the initial short rate."
   (hull-white-discount-bond process curve 0d0 time (rate-curve-short-rate curve)))
 
+(declaim (ftype (function (t t real real real real real)
+                    (values double-float &optional))
+          hull-white-bond-option))
 (defun hull-white-bond-option (process curve phi strike maturity bond-start bond-maturity)
   "A call (PHI 1) or put (PHI -1) expiring at MATURITY on the bond paying 1
 at BOND-MATURITY, per unit of the bond starting at BOND-START, struck at

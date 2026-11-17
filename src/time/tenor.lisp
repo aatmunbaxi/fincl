@@ -18,6 +18,7 @@ tenors are EQUALP when they have the same N and UNIT.
   (n 0 :type integer :read-only t)
   (unit :days :type tenor-unit :read-only t))
 
+(declaim (ftype (function (t t) (values tenor &optional)) make-tenor))
 (defun make-tenor (n unit)
   "Return a tenor of N UNITs. UNIT is :DAYS, :WEEKS, :MONTHS or :YEARS.
 
@@ -36,6 +37,7 @@ tenors are EQUALP when they have the same N and UNIT.
 (defmethod print-object ((p tenor) stream)
   (format stream "#T\"~D~C\"" (tenor-n p) (unit-letter (tenor-unit p))))
 
+(declaim (ftype (function (t) (values tenor &optional)) parse-tenor))
 (defun parse-tenor (string)
   "Parse an optionally signed integer followed by D, W, M or Y (either
 case). Signals INVALID-TENOR otherwise.
@@ -64,6 +66,7 @@ case). Signals INVALID-TENOR otherwise.
                              last
                              (min d last)))))))
 
+(declaim (ftype (function (date tenor &key (:end-of-month t)) (values date &optional)) add-tenor))
 (defun add-tenor (date tenor &key end-of-month)
   "The date TENOR after DATE, with no business-day adjustment. Months and
 years clamp the day to the target month's length. With END-OF-MONTH true

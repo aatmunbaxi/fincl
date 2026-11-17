@@ -25,7 +25,7 @@
 (defvar *publishable* :any
   "The facts the running clause declared in its :PUBLISHES, or :ANY.")
 
-(declaim (ftype function derive-fact fact-suppliers))
+(declaim (ftype function derive-fact fact-suppliers)) ; rules.lisp and clauses.lisp, loaded after this file
 
 (defstruct (fact-entry (:constructor make-fact-entry (value priority provenance)))
   value
@@ -87,6 +87,7 @@ the new scope; reads fall back to the enclosing scopes.
                               :provenance provenance))
     value))
 
+(declaim (ftype (function (t t) (values t &optional)) publish))
 (defun publish (fact value)
   "Set FACT to VALUE in the current scope, from the running clause. FACT must
 be defined (DEFINE-FACT) and declared in the clause's :PUBLISHES.
@@ -105,6 +106,7 @@ be defined (DEFINE-FACT) and declared in the clause's :PUBLISHES.
           (when entry (return entry))
           (while scope))))
 
+(declaim (ftype (function (t) (values t &rest t)) fact))
 (defun fact (fact)
   "The value of FACT seen from the current scope, deriving it by rule if no
 clause gave it: (values value t). If neither works, (values nil nil
@@ -118,11 +120,13 @@ fact used.
                (values (fact-entry-value entry) t))
         (derive-fact fact))))
 
+(declaim (ftype (function (t) (values boolean &optional)) fact-present-p))
 (defun fact-present-p (fact)
   "True if a clause or default gave FACT, seen from the current scope. Does
 not derive and does not mark the fact used."
   (and (find-fact-entry fact) t))
 
+(declaim (ftype (function (t) (values t &optional t)) fact-provenance))
 (defun fact-provenance (fact)
   "Return (values provenance priority) for FACT as seen from the current
 scope, or NIL."
@@ -132,6 +136,7 @@ scope, or NIL."
 (defvar *cycles* nil
   "Facts found in a derivation cycle during the current REQUIRE-FACT.")
 
+(declaim (ftype (function (t &key (:class t) (:slot t)) (values t &optional)) require-fact))
 (defun require-fact (fact &key class slot)
   "The value of FACT, as FACT; signals MISSING-FACT (or FACT-RULE-CYCLE) if
 no clause gave it and no rule could derive it. CLASS and SLOT name the

@@ -40,6 +40,7 @@ point found has f = ~,6G" method iterations best-f))
       :report "Return the best point found."
       (values best-x best-f iterations))))
 
+(declaim (ftype (function (&optional t) (values t &optional)) use-best))
 (defun use-best (&optional condition)
   "Invoke the USE-BEST restart for CONDITION, if there is one, returning the
 best point a minimizer found; otherwise return NIL. MINIMIZE offers it when
@@ -110,6 +111,9 @@ it does not converge."
 ;;; Entry point
 ;;; --------------------------------------------------------------------
 
+(declaim (ftype (function (symbol (or function symbol) sequence &key (:bounds list) (:tolerance real) (:max-iterations (integer 0)) (:jacobian (or null function symbol)) (:seed integer) (:population (or null (integer 1))))
+                    (values double-vector real (integer 0) &optional))
+          minimize))
 (defun minimize (method f x0 &key bounds (tolerance 1d-10) (max-iterations 1000) jacobian
                                    (seed 1) population)
   "Minimize F from X0 (a sequence) by METHOD; returns (values x fx

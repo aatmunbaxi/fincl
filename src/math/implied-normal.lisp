@@ -13,6 +13,7 @@
 
 (in-package #:fincl)
 
+(declaim (ftype (function (double-float) (values double-float &optional)) phi-tilde))
 (defun phi-tilde (x)
   "Phi(X) + phi(X)/X for X < 0, without cancellation: Abramowitz and Stegun
 26.2.12 summed from its second term below -10, and phi(X)/X (1 + X Y(X))
@@ -37,6 +38,7 @@ with Y = Phi/phi = sqrt(pi/2) erfcx(-X/sqrt 2) above.
   "Phi~(-9/4), about -0.001882039271: the boundary between the paper's two
 initial-guess branches.")
 
+(declaim (ftype (function (double-float) (values double-float &optional)) inverse-phi-tilde))
 (defun inverse-phi-tilde (target)
   "The X < 0 with (phi-tilde x) = TARGET < 0, by the paper's formulas
 (2.1)-(2.7).
@@ -73,6 +75,9 @@ initial-guess branches.")
                        (* q x-bar <>)
                        (+ 6 <>)))))))
 
+(declaim (ftype (function (double-float double-float double-float)
+                    (values double-float &optional))
+          normalised-bachelier))
 (defun normalised-bachelier (theta difference stddev)
   "The undiscounted Bachelier price of a call (THETA = 1) or put (THETA = -1)
 with DIFFERENCE = F - K and STDDEV = sigma sqrt(T): the intrinsic value plus

@@ -47,6 +47,9 @@
      #.(scale-float 1d0 -53)))
 
 (declaim (inline counter-uniforms))
+(declaim (ftype (function ((unsigned-byte 64) (unsigned-byte 64) (unsigned-byte 64))
+                    (values double-float double-float &optional))
+          counter-uniforms))
 (defun counter-uniforms (key path block)
   "Uniforms 2 BLOCK and 2 BLOCK + 1 of PATH under KEY (all non-negative
 integers below 2^64), as (values u v) in (0, 1). The counter is (BLOCK low,
@@ -187,6 +190,9 @@ numbers of the lowest zero bit of INDEX."
       (setf (aref point d) (logxor (aref point d) (aref directions d k))))))
 
 (declaim (inline word64-to-open-unit))
+(declaim (ftype (function ((unsigned-byte 64))
+                    (values double-float &optional))
+          word64-to-open-unit))
 (defun word64-to-open-unit (x)
   "The top 53 bits of X as a double in (0, 1): (m + 1/2) 2^-53."
   (declare (type word64 x))

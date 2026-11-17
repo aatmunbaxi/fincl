@@ -53,6 +53,9 @@ DAY still yields a number, which MAKE-DATE rejects by round-tripping."
           (body))
         (body))))
 
+(declaim (ftype (function (integer)
+                    (values integer (integer 1 12) (integer 1 31) &optional))
+          civil-from-days))
 (defun civil-from-days (serial)
   "Return (values year month day) for SERIAL."
   (declare (integer serial))
@@ -75,6 +78,7 @@ DAY still yields a number, which MAKE-DATE rejects by round-tripping."
           (body))
         (body))))
 
+(declaim (ftype (function (integer) (values boolean &optional)) leap-year-p))
 (defun leap-year-p (year)
   "True if YEAR is a Gregorian leap year.
 
@@ -82,6 +86,9 @@ DAY still yields a number, which MAKE-DATE rejects by round-tripping."
   (and (zerop (mod year 4))
        (or (plusp (mod year 100)) (zerop (mod year 400)))))
 
+(declaim (ftype (function (integer (integer 1 12))
+                    (values (integer 28 31) &optional))
+          days-in-month))
 (defun days-in-month (year month)
   "Number of days in MONTH of YEAR.
 
@@ -94,6 +101,7 @@ DAY still yields a number, which MAKE-DATE rejects by round-tripping."
 ;;; Construction
 ;;; --------------------------------------------------------------------
 
+(declaim (ftype (function (t t t) (values date &optional)) make-date))
 (defun make-date (year month day)
   "Return the date YEAR-MONTH-DAY. Signals INVALID-DATE if it does not exist.
 
@@ -109,6 +117,7 @@ DAY still yields a number, which MAKE-DATE rejects by round-tripping."
                                     year month day)))
       (%date serial))))
 
+(declaim (ftype (function (t) (values date &optional)) parse-date))
 (defun parse-date (string)
   "Parse a strict YYYY-MM-DD string. Signals INVALID-DATE otherwise.
 
@@ -134,10 +143,14 @@ DAY still yields a number, which MAKE-DATE rejects by round-tripping."
 ;;; Accessors and arithmetic
 ;;; --------------------------------------------------------------------
 
+(declaim (ftype (function (date) (values integer &optional)) date-year))
 (defun date-year (date) (nth-value 0 (civil-from-days (date-serial date))))
+(declaim (ftype (function (date) (values (integer 1 12) &optional)) date-month))
 (defun date-month (date) (nth-value 1 (civil-from-days (date-serial date))))
+(declaim (ftype (function (date) (values (integer 1 31) &optional)) date-day))
 (defun date-day (date) (nth-value 2 (civil-from-days (date-serial date))))
 
+(declaim (ftype (function (date) (values (integer 1 7) &optional)) day-of-week))
 (defun day-of-week (date)
   "ISO day of the week: 1 = Monday ... 7 = Sunday.
 
@@ -147,18 +160,23 @@ DAY still yields a number, which MAKE-DATE rejects by round-tripping."
 
 (declaim (inline date+ date- date< date<= date=))
 
+(declaim (ftype (function (date integer) (values date &optional)) date+))
 (defun date+ (date days)
   "The date DAYS calendar days after DATE (before, if DAYS is negative).
 
   (date+ #D\"2027-06-15\" 10) => #D\"2027-06-25\""
   (%date (+ (date-serial date) days)))
 
+(declaim (ftype (function (date date) (values integer &optional)) date-))
 (defun date- (a b)
   "Calendar days from B to A, as an integer.
 
   (date- #D\"2027-06-25\" #D\"2027-06-15\") => 10"
   (- (date-serial a) (date-serial b)))
 
+(declaim (ftype (function (date date) (values boolean &optional)) date<))
 (defun date< (a b) (< (date-serial a) (date-serial b)))
+(declaim (ftype (function (date date) (values boolean &optional)) date<=))
 (defun date<= (a b) (<= (date-serial a) (date-serial b)))
+(declaim (ftype (function (date date) (values boolean &optional)) date=))
 (defun date= (a b) (= (date-serial a) (date-serial b)))

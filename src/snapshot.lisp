@@ -157,6 +157,7 @@ form MAKE-MARKET's list DSL takes)."
 ;;; Writing and reading
 ;;; --------------------------------------------------------------------
 
+(declaim (ftype (function (t &optional t) (values t &optional)) write-snapshot))
 (defun write-snapshot (object &optional (stream *standard-output*))
   "Print OBJECT's SNAPSHOT-FORM to STREAM under standard I/O syntax, with
 FINCL:SYNTAX dates, symbols qualified as needed. READ-SNAPSHOT reads it
@@ -206,6 +207,7 @@ INVALID-ARGUMENT."
           ((and (symbolp form) (not (keywordp form)) (not (member form '(t nil)))) (refuse form))
           (t form))))
 
+(declaim (ftype (function (&optional t) (values t &optional)) read-snapshot))
 (defun read-snapshot (&optional (stream *standard-input*))
   "The object WRITE-SNAPSHOT wrote to STREAM: read under standard syntax with
 FINCL:SYNTAX and *READ-EVAL* NIL, then evaluated by SNAPSHOT-EVAL, which

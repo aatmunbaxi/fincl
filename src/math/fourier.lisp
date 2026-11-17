@@ -2,6 +2,9 @@
 
 (in-package #:fincl)
 
+(declaim (ftype (function ((simple-array (complex double-float) (*)) &key (:inverse t))
+                    (values (simple-array (complex double-float) (*)) &optional))
+          fft!))
 (defun fft! (v &key inverse)
   "Replace V, a (SIMPLE-ARRAY (COMPLEX DOUBLE-FLOAT) (*)) whose length is a
 power of 2, by its discrete Fourier transform sum_j v_j exp(-2 pi i j k / n),

@@ -490,6 +490,7 @@ default is SIMULATABLE-P; a process the Monte Carlo engine cannot price
 options under but that can be stepped (a short-rate model) returns T.")
   (:method ((p stochastic-process)) (simulatable-p p)))
 
+(declaim (ftype (function (t t) (values (or index null) &optional)) state-index))
 (defun state-index (process designator)
   "The state-vector index of the component DESIGNATOR names: a keyword from
 PROCESS-STATE-NAMES, or a list whose first element is one (task 23 adds the

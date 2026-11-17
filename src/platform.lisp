@@ -62,6 +62,7 @@ and `*portability-warnings*' is false. Returns FEATURE."
           `(,@(remove name *optional-backends* :key #'car) (,name . ,description))))
   name)
 
+(declaim (ftype (function (&optional t) (values  &optional)) portability-report))
 (defun portability-report (&optional (stream *standard-output*))
   "Print the Lisp implementation, the source of the worker count, each active
 fallback with its kind and reason, and the optional backends loaded. It only

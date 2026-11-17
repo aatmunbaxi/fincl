@@ -36,6 +36,9 @@ and year tenors)."
   (let ((twentieth (make-date (date-year date) (date-month date) 20)))
     (if (date< twentieth date) (add-tenor twentieth (make-tenor 1 :months)) twentieth)))
 
+(declaim (ftype (function (date date tenor &key (:calendar calendar) (:convention symbol) (:termination-convention symbol) (:rule t) (:end-of-month t) (:first-date (or null date)) (:next-to-last-date (or null date)))
+                    (values schedule &optional))
+          make-schedule))
 (defun make-schedule (effective termination tenor
                       &key (calendar (make-instance 'null-calendar))
                            (convention :modified-following)

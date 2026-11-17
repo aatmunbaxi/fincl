@@ -74,6 +74,9 @@ weight is non-zero."
 ;;; Bumping
 ;;; --------------------------------------------------------------------
 
+(declaim (ftype (function (t t t &key (:which list) (:bumps list))
+                    (values list &optional))
+          bump-greeks))
 (defun bump-greeks (instrument engine market &key (which *greek-keys*) bumps)
   "Greeks by central differences of prices on bumped copies of MARKET, a
 COMPOSITE-MARKET: the spot, vol and dividend of INSTRUMENT's underlying and
@@ -140,7 +143,7 @@ because the fitted exercise boundary moves discontinuously with the bumps.
   '((:pathwise :delta :vega) (:likelihood-ratio :delta))
   "The Greeks each Monte Carlo estimator (mc-greeks.lisp) gives.")
 
-(declaim (ftype function estimator-greeks))
+(declaim (ftype function estimator-greeks)) ; mc-greeks.lisp, loaded after this file
 
 (defmethod greeks (instrument (e monte-carlo-engine) market
                    &key which bumps (batches 10) (method :bump))

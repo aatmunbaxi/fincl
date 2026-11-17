@@ -526,6 +526,9 @@ paying after it (QuantLib's CallableBond call prices)."
 ;;; Calibration
 ;;; --------------------------------------------------------------------
 
+(declaim (ftype (function (t t t &key (:method t) (:fix-a t) (:curve t) (:vol-type t) (:displacement real) (:tolerance real))
+                    (values hull-white double-vector integer &optional))
+          calibrate-hull-white))
 (defun calibrate-hull-white (process market swaptions
                              &key (method :levenberg-marquardt) fix-a curve (vol-type :black)
                                   (displacement 0d0) (tolerance 1d-12))

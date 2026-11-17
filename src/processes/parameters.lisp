@@ -166,6 +166,7 @@ is allowed only for a slot with a market default."))
 itself, or the risk-neutral process of a physical one.")
   (:method (process) process))
 
+(declaim (ftype (function (t) (values list &optional)) process-parameters))
 (defun process-parameters (process-or-class)
   "Names of the model parameters of a process, or a process class name, in
 declaration order. Settings declared with :PARAMETER NIL (a GARCH period)
@@ -207,6 +208,7 @@ FINCL::RHO all find the same slot."
                :class (class-designator object-or-class) :name name
                :known (mapcar #'c2mop:slot-definition-name slots)))))
 
+(declaim (ftype (function (t t &optional t real) (values t &optional)) process-parameter))
 (defun process-parameter (process name &optional market (horizon 1d0))
   "The value of parameter or setting NAME of PROCESS. NAME is matched by
 symbol name, so a keyword works from any package. A NIL value means the
@@ -224,6 +226,7 @@ MARKET at HORIZON (market time); without it, NIL is returned.
         (float (funcall default process market horizon) 1d0)
         value)))
 
+(declaim (ftype (function (t t) (values t t &optional)) parameter-bounds))
 (defun parameter-bounds (process-or-class name)
   "Return (values lo hi), the bounds of parameter NAME as interval
 designators: a real is inclusive, (x) exclusive, NIL unbounded. NAME is
@@ -232,6 +235,7 @@ matched by symbol name.
   (parameter-bounds 'heston :rho) => -1, 1"
   (values-list (slot-bounds* (find-managed-slot process-or-class name))))
 
+(declaim (ftype (function (t t &optional real) (values double-vector &optional)) parameter-vector))
 (defun parameter-vector (process market &optional (horizon 1d0))
   "The model parameters of PROCESS as a (SIMPLE-ARRAY DOUBLE-FLOAT (*)), in
 the order of PROCESS-PARAMETERS. A NIL parameter is replaced by its market
@@ -250,6 +254,7 @@ default, evaluated on MARKET at HORIZON (market time).
                        1d0)))
     v))
 
+(declaim (ftype (function (t t) (values t &optional)) with-parameter-vector))
 (defun with-parameter-vector (process vector)
   "A new process of PROCESS's class with its model parameters taken from
 VECTOR (in the order of PROCESS-PARAMETERS) and every other slot copied.

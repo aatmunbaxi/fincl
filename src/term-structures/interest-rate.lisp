@@ -45,6 +45,9 @@ compounded; :COMPOUNDED-THEN-SIMPLE the reverse."
   (compounding :continuous :type compounding :read-only t)
   (frequency :annual :type frequency :read-only t))
 
+(declaim (ftype (function (t &key (:day-counter t) (:compounding t) (:frequency t))
+                    (values interest-rate &optional))
+          make-interest-rate))
 (defun make-interest-rate (rate &key (day-counter +actual-365-fixed+) (compounding :continuous)
                                      (frequency :annual))
   "A quoted rate. Compounded rules need a frequency of at least one period
@@ -80,6 +83,7 @@ fraction from TIME-OR-START to END."
         (year-fraction day-counter time-or-start end :ref-start ref-start :ref-end ref-end))
       (float time-or-start 1d0)))
 
+(declaim (ftype (function (t t &optional t t t) (values double-float &optional)) compound-factor))
 (defun compound-factor (rate time-or-start &optional end ref-start ref-end)
   "The growth of one unit at RATE (an INTEREST-RATE) over TIME-OR-START years,
 or over the dates TIME-OR-START to END under the rate's day counter (with
@@ -104,11 +108,17 @@ optional reference period dates).
         (:compounded-then-simple
          (if (> time (/ 1d0 (frequency-periods (interest-rate-frequency rate)))) (simple) (compounded)))))))
 
+(declaim (ftype (function (interest-rate t &optional t t t)
+                    (values double-float &optional))
+          discount-factor-of))
 (defun discount-factor-of (rate time-or-start &optional end ref-start ref-end)
   "1 / COMPOUND-FACTOR: the value now of one unit paid after the time or
 between the dates."
   (/ 1d0 (compound-factor rate time-or-start end ref-start ref-end)))
 
+(declaim (ftype (function (t t t t t &optional t t t)
+                    (values interest-rate &optional))
+          implied-rate))
 (defun implied-rate (compound day-counter compounding frequency time-or-start
                      &optional end ref-start ref-end)
   "The INTEREST-RATE under DAY-COUNTER, COMPOUNDING and FREQUENCY whose
@@ -139,6 +149,9 @@ COMPOUND. A factor of exactly 1 is the zero rate.
                  (if (> time (/ 1d0 (frequency-periods frequency))) (simple) (compounded))))))
        :day-counter day-counter :compounding compounding :frequency frequency))))
 
+(declaim (ftype (function (t t t t t &key (:day-counter t) (:ref-start t) (:ref-end t))
+                    (values interest-rate &optional))
+          equivalent-rate))
 (defun equivalent-rate (rate compounding frequency start end
                         &key (day-counter (interest-rate-day-counter rate)) ref-start ref-end)
   "RATE re-quoted with COMPOUNDING and FREQUENCY: over START years when END is

@@ -35,10 +35,14 @@ for a value outside its knots."))
   (:documentation "A one-dimensional interpolant, called as a function of x.
 Made by MAKE-INTERPOLATOR."))
 
+(declaim (ftype (function (function real) (values double-float &optional)) interpolator-derivative))
 (defun interpolator-derivative (interpolator x)
   "dy/dx of INTERPOLATOR at X (extrapolated as its values are)."
   (funcall (%interpolator-derivative interpolator) (float x 1d0)))
 
+(declaim (ftype (function (function real)
+                    (values double-float &optional))
+          interpolator-second-derivative))
 (defun interpolator-second-derivative (interpolator x)
   "d2y/dx2 of INTERPOLATOR at X (extrapolated as its values are)."
   (funcall (%interpolator-second-derivative interpolator) (float x 1d0)))
@@ -50,6 +54,7 @@ Made by MAKE-INTERPOLATOR."))
               (aref xs 0) (aref xs (1- (length xs))) (length xs)))))
 
 (declaim (inline knot-segment))
+(declaim (ftype (function (double-vector double-float) (values index &optional)) knot-segment))
 (defun knot-segment (xs x)
   "The i with XS[i] <= X <= XS[i+1], for X within the knots, by bisection."
   (declare (type double-vector xs) (double-float x) (optimize (speed 3) (safety 0)))
@@ -61,6 +66,7 @@ Made by MAKE-INTERPOLATOR."))
             (if (< x (aref xs mid)) (setf hi mid) (setf lo mid))))
     lo))
 
+(declaim (ftype (function (sequence) (values double-vector &optional)) as-double-vector))
 (defun as-double-vector (sequence)
   (map 'double-vector (lambda (v) (float v 1d0)) sequence))
 
@@ -68,6 +74,9 @@ Made by MAKE-INTERPOLATOR."))
 ;;; Construction
 ;;; --------------------------------------------------------------------
 
+(declaim (ftype (function (t sequence sequence &key (:extrapolation t) (:end-second-derivatives t))
+                    (values function &optional))
+          make-interpolator))
 (defun make-interpolator (method xs ys &key (extrapolation :flat) (end-second-derivatives '(0 . 0)))
   "An interpolator through the knots (XS[i], YS[i]), called as (funcall
 interpolator x). XS must be strictly increasing, with at least two knots.
@@ -344,6 +353,9 @@ c3 t^3; :LINEAR extrapolation is the tangent line at the end knot."
   (:documentation "A two-dimensional interpolant, called as (funcall interp x y).
 Made by MAKE-INTERPOLATOR-2D."))
 
+(declaim (ftype (function (t sequence sequence (or array list) &key (:extrapolation t))
+                    (values function &optional))
+          make-interpolator-2d))
 (defun make-interpolator-2d (method xs ys zs &key (extrapolation :flat))
   "An interpolator through Z[i, j] at (XS[i], YS[j]), called as (funcall
 interpolator x y). ZS is a 2-D array (or list of rows) of NX x NY values.
@@ -570,6 +582,9 @@ negative."
    (+ (* quadraticity (convex-section-f-next quadratic))
       (* (- 1 quadraticity) (convex-section-f-next convex)))))
 
+(declaim (ftype (function (sequence sequence &key (:quadraticity real) (:monotonicity real) (:force-positive t))
+                    (values function function &optional))
+          make-monotone-convex))
 (defun make-monotone-convex (xs ys &key (quadraticity 0.3d0) (monotonicity 0.7d0) (force-positive t))
   "(values forward integral): closures of x giving the monotone-convex
 instantaneous forward through the period averages YS (YS[0] ignored) at

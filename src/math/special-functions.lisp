@@ -9,6 +9,7 @@
 
 (declaim (inline norm-pdf))
 
+(declaim (ftype (function (double-float) (values double-float &optional)) norm-pdf))
 (defun norm-pdf (x)
   "Standard normal density.
 
@@ -62,6 +63,7 @@ least positive double works."
                               1.8463183175100546818d-5 1.4215117583164458887d-7
                               2.04426310338993978564d-15)))))))))
 
+(declaim (ftype (function (double-float) (values double-float &optional)) norm-quantile))
 (defun norm-quantile (u)
   "Inverse standard normal CDF for U in (0, 1): Wichura's AS241, then one
 Halley step on norm-cdf. Computed on the smaller tail, min(U, 1 - U), and
@@ -83,6 +85,7 @@ whenever 1 - U is exact (U >= 1/2).
 ;;; exp(x) - 1 and log(1 + x) without cancellation near 0
 ;;; --------------------------------------------------------------------
 
+(declaim (ftype (function (double-float) (values double-float &optional)) expm1))
 (defun expm1 (x)
   "e^X - 1, accurate to a few ulps also for |X| near 0, where (- (exp x) 1)
 loses every digit. Kahan's method: with u = e^x rounded, (u - 1) x / log u
@@ -98,6 +101,9 @@ cancels the rounding error of u.
             x
             (/ (* (- u 1d0) x) (log u))))))
 
+(declaim (ftype (function (double-float)
+                    (values (or double-float (complex double-float)) &optional))
+          log1p))
 (defun log1p (x)
   "log(1 + X) for X > -1, accurate to a few ulps also for |X| near 0, where
 (log (+ 1 x)) loses every digit. Kahan's method: with u = 1 + x rounded,
@@ -126,6 +132,9 @@ log(u) x / (u - 1) cancels the rounding error of u.
 
 (declaim (inline complex-sqrt complex-log complex-log1p))
 
+(declaim (ftype (function ((complex double-float))
+                    (values (complex double-float) &optional))
+          complex-sqrt))
 (defun complex-sqrt (z)
   "Principal square root of the (complex double-float) Z, with non-negative
 real part; the sign of a zero imaginary part is kept, so the branch cut is as
@@ -144,6 +153,9 @@ SQRT's.
                    (complex s (/ y (* 2d0 s)))
                    (complex (/ (abs y) (* 2d0 s)) (float-sign y s))))))))
 
+(declaim (ftype (function ((complex double-float))
+                    (values (complex double-float) &optional))
+          complex-log))
 (defun complex-log (z)
   "Principal logarithm of the (complex double-float) Z, imaginary part in
 (-pi, pi]. Near |Z| = 1 the real part is log1p((a - 1)(a + 1) + b^2)/2 with
@@ -165,6 +177,9 @@ cancellation in log |Z|.
                        (libm-log r))
                    (atan y x))))))
 
+(declaim (ftype (function ((complex double-float))
+                    (values (complex double-float) &optional))
+          complex-log1p))
 (defun complex-log1p (z)
   "log(1 + Z) for the (complex double-float) Z, accurate also for |Z| near 0
 (Kahan's method, as LOG1P)."
@@ -185,6 +200,9 @@ cancellation in log |Z|.
 ;;; what makes deep out-of-the-money Black prices accurate (see
 ;;; lets-be-rational.lisp).
 
+(declaim (ftype (function (double-float (integer 0 2))
+                    (values double-float &optional))
+          cody-calerf))
 (defun cody-calerf (x jint)
   "erf(X) for JINT 0, erfc(X) for JINT 1, exp(X^2) erfc(X) for JINT 2."
   (declare (double-float x) (type (integer 0 2) jint)
@@ -263,6 +281,7 @@ cancellation in log |Z|.
                                 (- (* 2d0 (exp (* ysq ysq)) (exp del)) result)))))))
       result)))
 
+(declaim (ftype (function (real) (values double-float &optional)) erfcx))
 (defun erfcx (x)
   "The scaled complementary error function exp(X^2) erfc(X), by Cody's
 rational approximations, without overflow or cancellation for large X.
@@ -270,6 +289,7 @@ rational approximations, without overflow or cancellation for large X.
   (erfcx 10d0) => 0.05614099274382259d0"
   (cody-calerf (float x 1d0) 2))
 
+(declaim (ftype (function (double-float) (values double-float &optional)) norm-cdf))
 (defun norm-cdf (x)
   "Standard normal CDF: Cody's erfc, and below -10 the asymptotic series of
 Abramowitz and Stegun 26.2.12, as in Jäckel's LetsBeRational, so the left
@@ -392,6 +412,7 @@ at small MU."
           (let ((kmu (/ (* (sqrt (/ pi (* 2d0 x))) (exp (- x))) s)))
             (values kmu (/ (* kmu (- (+ mu x 0.5d0) (* a1 h))) x)))))))
 
+(declaim (ftype (function (t t) (values double-float &optional)) bessel-k))
 (defun bessel-k (nu x)
   "The modified Bessel function of the second kind K_NU(X), for real NU and
 X > 0 (K_-nu = K_nu). Relative accuracy about 1e-15.
@@ -427,6 +448,7 @@ X > 0 (K_-nu = K_nu). Relative accuracy about 1e-15.
 ;;; complement is summed the same way from Q = 1 - P, so upper tails keep
 ;;; their relative precision.
 
+(declaim (ftype (function (real) (values double-float &optional)) log-gamma))
 (defun log-gamma (x)
   "log Gamma(X) for X > 0, as a double-float."
   (float (sf:log-gamma (float x 1d0)) 1d0))
@@ -488,6 +510,9 @@ method. NIL if it has not converged after 20,000 terms."
                   (flush-subnormal (* a (poisson-density a x) h)))))))
     nil))
 
+(declaim (ftype (function (real real)
+                    (values double-float double-float &optional))
+          regularized-gamma))
 (defun regularized-gamma (a x)
   "(values P(A, X) Q(A, X)), the regularized incomplete gamma functions, as
 double-floats: the series for P below X = A + 1 and the continued fraction
@@ -561,6 +586,9 @@ sqrt(2 pi X), accurate to a few ulps also when X and M are 1e10."
   "Fraction of the running sum that the recurrences' accumulated error may reach
 before the incomplete gamma is evaluated afresh.")
 
+(declaim (ftype (function (t t t)
+                    (values double-float double-float &optional))
+          noncentral-chi-square-cdf))
 (defun noncentral-chi-square-cdf (x df lambda)
   "(values F 1-F): the noncentral chi-square distribution function with DF
 degrees of freedom (DF > 0) and noncentrality LAMBDA >= 0 at X, and its
@@ -722,6 +750,7 @@ trivariate normal and t probabilities\", Statistics and Computing 14 (2004)."
                                 bvn))))))
     (max 0d0 (min 1d0 bvn))))
 
+(declaim (ftype (function (real real real) (values double-float &optional)) bivariate-norm-cdf))
 (defun bivariate-norm-cdf (a b rho)
   "P(X <= A, Y <= B) for standard normals X, Y with correlation RHO.
 

@@ -106,6 +106,7 @@ valuation date."
                                     (optionlet -1 (nth i (floor-rates cap))))))))
                   0d0)))))
 
+(declaim (ftype (function (t t t) (values list &optional)) cap-floor-optionlet-prices))
 (defun cap-floor-optionlet-prices (cap engine market)
   "The value of each optionlet of CAP under ENGINE (a Black or Bachelier
 rates engine) on MARKET, as a list.

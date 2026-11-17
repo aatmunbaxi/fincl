@@ -35,6 +35,9 @@
                              (format nil "~D increasing positive exponent~:P, one per value ~
 after the first" (1- n)))))
 
+(declaim (ftype (function ((integer 1) &key (:ratio real) (:exponents sequence))
+                    (values vector &optional))
+          richardson-weights))
 (defun richardson-weights (n &key (ratio 2) (exponents (default-exponents n)))
   "Weights w_0 ... w_{N-1} such that sum w_i A(h / RATIO^i) cancels the
 terms h^p, p in EXPONENTS, of A's error expansion; index 0 is the coarsest
@@ -59,6 +62,9 @@ rational and the exponents are integers, and floats otherwise.
                                   (lambda (c f) (/ (- (* factor f) c) (- factor 1)))
                                   coarse fine))))))))
 
+(declaim (ftype (function (sequence sequence)
+                    (values number unsigned-byte &optional))
+          exact-weighted-sum))
 (defun exact-weighted-sum (weights values)
   "Sum of WEIGHTS times VALUES, last element first, returned as
 (values sum denominator): divide SUM by DENOMINATOR (and by anything else,
@@ -82,6 +88,9 @@ DENOMINATOR of 1.
   (multiple-value-bind (sum denominator) (exact-weighted-sum weights values)
     (/ sum denominator)))
 
+(declaim (ftype (function (sequence &key (:ratio real) (:exponents sequence))
+                    (values number (or number null) &optional))
+          richardson-extrapolate))
 (defun richardson-extrapolate (values &key (ratio 2)
                                            (exponents (default-exponents (length values))))
   "Extrapolate VALUES to step zero. VALUES are one quantity computed at the

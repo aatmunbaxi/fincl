@@ -14,6 +14,7 @@
 
 (in-package #:fincl)
 
+(declaim (ftype (function (sequence t) (values simple-vector &optional)) finite-difference-weights))
 (defun finite-difference-weights (offsets order)
   "Weights w_i such that sum w_i f(x + OFFSETS_i h) / h^ORDER approximates
 the ORDER-th derivative of f at x, by Fornberg's algorithm (Math. Comp. 51,
@@ -62,6 +63,9 @@ rational weights.
       (dotimes (i n weights)
         (setf (svref weights i) (aref c i order))))))
 
+(declaim (ftype (function (sequence sequence real (integer 0))
+                    (values number &optional))
+          apply-stencil))
 (defun apply-stencil (weights values h order)
   "The derivative estimate sum WEIGHTS_i VALUES_i / H^ORDER. Rational weights
 are applied exactly, with a single rounding at the division (see
@@ -86,6 +90,9 @@ second-order accurate; forward and backward ones are first-order accurate.
     (:forward (iter (for k from 0 to order) (collect k)))
     (:backward (iter (for k from (- order) to 0) (collect k)))))
 
+(declaim (ftype (function ((or function symbol) real real &key (:scheme symbol) (:order (integer 1)))
+                    (values real &optional))
+          difference-quotient))
 (defun difference-quotient (f x h &key (scheme :central) (order 1))
   "Finite-difference estimate of the ORDER-th derivative of F at X with step
 H. SCHEME is :CENTRAL, :FORWARD or :BACKWARD; see SCHEME-OFFSETS.
@@ -96,6 +103,7 @@ H. SCHEME is :CENTRAL, :FORWARD or :BACKWARD; see SCHEME-OFFSETS.
                    (mapcar (lambda (k) (funcall f (+ x (* k h)))) offsets)
                    h order)))
 
+(declaim (ftype (function (real symbol (integer 1)) (values double-float &optional)) default-step))
 (defun default-step (x scheme order)
   "A step balancing truncation against rounding error: eps^(1/(ORDER+1))
 for one-sided schemes and eps^(1/(ORDER+2)) for central ones, times
@@ -106,6 +114,9 @@ max(1, |X|). For a central first derivative at x = 1 it is about 6e-6.
            (/ 1d0 (+ order (if (eq scheme :central) 2 1))))
      (max 1d0 (abs x))))
 
+(declaim (ftype (function ((or function symbol) real &key (:order (integer 1)) (:h0 (or null real)) (:ratio real) (:levels (integer 1)))
+                    (values real (or real null) &optional))
+          derivative))
 (defun derivative (f x &key (order 1) h0 (ratio 2) (levels 6))
   "The ORDER-th derivative of F at X by Ridders' extrapolation (1982):
 central difference quotients at steps H0, H0/RATIO, ..., H0/RATIO^(LEVELS-1)
@@ -171,6 +182,9 @@ room if the interval is narrower."
                                        (format nil "an interval around ~A wide enough for a ~(~A~) difference"
                                                x scheme)))))))
 
+(declaim (ftype (function ((or function symbol) double-vector double-vector &key (:scheme symbol) (:steps (or null sequence)) (:f0 (or null double-vector)) (:bounds list))
+                    (values double-vector &optional))
+          jacobian!))
 (defun jacobian! (f x out &key (scheme :forward) steps f0 bounds)
   "The Jacobian of the vector function F (a DOUBLE-VECTOR of m residuals of a
 DOUBLE-VECTOR) at X (length n), by finite differences, written column-major

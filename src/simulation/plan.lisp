@@ -42,6 +42,7 @@ factor of the factor correlation, and how markets are built from states."
   (derive nil :type list :read-only t)                          ; ((target . function) ...)
   (fix #() :type simple-vector :read-only t))                   ; rate indexes fixed along the paths
 
+(declaim (ftype (function (t) (values list &optional)) simulation-underlyings))
 (defun simulation-underlyings (simulation)
   "The legs SIMULATION steps, in order: the underlying of a spot leg (NIL for
 a market that is not composite), the target (kind key) of any other.

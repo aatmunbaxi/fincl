@@ -20,6 +20,7 @@
   (:method ((c calendar) date)
     (>= (day-of-week date) 6)))
 
+(declaim (ftype (function (calendar date) (values boolean &optional)) holiday-p))
 (defun holiday-p (calendar date)
   "True if DATE is not a business day in CALENDAR, weekends included."
   (not (business-day-p calendar date)))
@@ -72,6 +73,7 @@ business day only if it is one in every calendar; under
 ;;; Derived operations
 ;;; --------------------------------------------------------------------
 
+(declaim (ftype (function (calendar date &optional symbol) (values date &optional)) adjust))
 (defun adjust (calendar date &optional (convention :following))
   "Move DATE onto a business day of CALENDAR. CONVENTION is :UNADJUSTED,
 :FOLLOWING, :MODIFIED-FOLLOWING, :PRECEDING or :MODIFIED-PRECEDING. The
@@ -101,6 +103,9 @@ default tests each day; holiday calendars use per-year prefix counts.")
     (iter (for d in-dates from below to)
           (counting (business-day-p calendar d)))))
 
+(declaim (ftype (function (calendar date date &key (:include-first t) (:include-last t))
+                    (values integer &optional))
+          business-days-between))
 (defun business-days-between (calendar from to &key (include-first t) include-last)
   "Business days of CALENDAR between FROM and TO, by default counting
 [FROM, TO). Negative when TO precedes FROM, as in QuantLib.
@@ -114,15 +119,20 @@ default tests each day; holiday calendars use per-year prefix counts.")
                    (if (and include-last (business-day-p calendar hi)) 1 0))))
     (if (date< to from) (- count) count)))
 
+(declaim (ftype (function (calendar date) (values date &optional)) calendar-end-of-month))
 (defun calendar-end-of-month (calendar date)
   "The last business day of DATE's month in CALENDAR."
   (multiple-value-bind (y m) (civil-from-days (date-serial date))
     (adjust calendar (make-date y m (days-in-month y m)) :preceding)))
 
+(declaim (ftype (function (calendar date) (values boolean &optional)) calendar-end-of-month-p))
 (defun calendar-end-of-month-p (calendar date)
   "True if DATE is on or after the last business day of its month."
   (not (date< date (calendar-end-of-month calendar date))))
 
+(declaim (ftype (function (calendar date tenor &key (:convention symbol) (:end-of-month t))
+                    (values date &optional))
+          advance))
 (defun advance (calendar date tenor &key (convention :following) end-of-month)
   "DATE moved by TENOR in CALENDAR, as QuantLib's Calendar::advance: days
 count business days; weeks add calendar days, then adjust by CONVENTION;

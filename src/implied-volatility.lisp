@@ -31,6 +31,9 @@ volatility."))
                      (list (eval (read *query-io*))))
       vol)))
 
+(declaim (ftype (function (real real real real real real)
+                    (values double-float &optional))
+          implied-black-vol))
 (defun implied-black-vol (phi price forward strike discount expiry-time)
   "The Black volatility at which a call (PHI = 1) or put (PHI = -1) with
 FORWARD, STRIKE, DISCOUNT factor and EXPIRY-TIME (market time) is worth
@@ -52,6 +55,9 @@ at or above the limit D F (call) or D K (put), signals PRICE-OUT-OF-BOUNDS.
         (signal-price-out-of-bounds price (* discount intrinsic) (* discount limit) :black)
         (lbr-implied-volatility undiscounted forward strike tau phi))))
 
+(declaim (ftype (function (real real real real real real)
+                    (values double-float &optional))
+          implied-normal-vol))
 (defun implied-normal-vol (phi price forward strike discount expiry-time)
   "The Bachelier (normal) volatility at which a call (PHI = 1) or put (PHI =
 -1) is worth PRICE, by Jäckel's closed form (Implied Normal Volatility,

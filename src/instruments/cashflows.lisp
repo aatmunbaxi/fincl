@@ -47,6 +47,7 @@ period for day counters that need one."))
 (defmethod initialize-instance :after ((c coupon) &key)
   (setf (slot-value c 'period) (coupon-year-fraction c (accrual-end c))))
 
+(declaim (ftype (function (t &optional t) (values double-float &optional)) accrual-period))
 (defun accrual-period (coupon &optional (end nil end-p))
   "The year fraction of COUPON's accrual, up to END (default its accrual end)."
   (if end-p
@@ -256,6 +257,9 @@ lockout and observation shift are not modelled."))
 (defun payment-date-for (calendar end lag convention)
   (advance calendar end (make-tenor lag :days) :convention convention))
 
+(declaim (ftype (function (t t t t &key (:currency t) (:payment-convention t) (:payment-lag t) (:payment-calendar t) (:compounding t) (:frequency t))
+                    (values list &optional))
+          fixed-leg))
 (defun fixed-leg (schedule notional rate day-counter
                   &key currency (payment-convention :following) (payment-lag 0) payment-calendar
                        (compounding :simple) (frequency :annual))
@@ -299,6 +303,9 @@ regular period, as QuantLib's FixedRateLeg.
                                       :ref-start ref-start :ref-end ref-end
                                       :day-counter (interest-rate-day-counter rate) :rate rate)))))))
 
+(declaim (ftype (function (t t t &key (:currency t) (:spread real) (:gearing real) (:day-counter t) (:payment-convention t) (:payment-lag t) (:payment-calendar t) (:fixing-days t))
+                    (values list &optional))
+          floating-leg))
 (defun floating-leg (schedule notional index
                      &key currency (spread 0) (gearing 1) day-counter
                           (payment-convention :following) (payment-lag 0) payment-calendar
@@ -361,6 +368,7 @@ DAY-COUNTER defaults to the index's. Payment dates as in FIXED-LEG.
   "Cash flows paying on or after MARKET's valuation date."
   (remove-if (lambda (cf) (date< (payment-date cf) (valuation-date market))) leg))
 
+(declaim (ftype (function (list t &key (:discount-curve t)) (values money &optional)) leg-npv))
 (defun leg-npv (leg market &key discount-curve)
   "The value on MARKET's valuation date of the cash flows of LEG paying on or
 after it, as MONEY. DISCOUNT-CURVE is a curve or a curve id; by default the
@@ -374,6 +382,7 @@ curve the market discounts the leg's currency on.
                               (curve-discount curve (market-time market (payment-date cf))))))
                 (leg-currency leg))))
 
+(declaim (ftype (function (list t &key (:discount-curve t)) (values money &optional)) leg-bps))
 (defun leg-bps (leg market &key discount-curve)
   "The value of one basis point on the notional of LEG's live coupons, as
 MONEY: 1e-4 times the sum of nominal times accrual period times discount
@@ -387,6 +396,7 @@ factor (QuantLib's CashFlows::bps)."
                                    (curve-discount curve (market-time market (payment-date cf))))))))
                 (leg-currency leg))))
 
+(declaim (ftype (function (list t &optional t) (values money &optional)) accrued-amount))
 (defun accrued-amount (leg date &optional market)
   "Interest accrued by DATE on the coupons of LEG paying on its next payment
 date after DATE, as MONEY (QuantLib's CashFlows::accruedAmount). Floating

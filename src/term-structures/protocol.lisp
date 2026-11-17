@@ -154,6 +154,7 @@ STRUCTURE-BLACK-VARIANCE).")
   "(:relative x) multiplies by 1 + x; (:absolute x) adds x."
   '(cons (member :relative :absolute) (cons real null)))
 
+(declaim (ftype (function (real t) (values real &optional)) apply-shift))
 (defun apply-shift (value shift)
   "VALUE moved by SHIFT, a (:relative x) or (:absolute x) list.
 

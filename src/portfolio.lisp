@@ -25,6 +25,9 @@ its value.
 
   (make-holding :underlying :spx)"))
 
+(declaim (ftype (function (&key (:underlying t) (:currency t))
+                    (values holding &optional))
+          make-holding))
 (defun make-holding (&key underlying currency)
   "A HOLDING of UNDERLYING (a keyword; NIL means the market's only
 underlying), paying in CURRENCY (NIL: the underlying's).
@@ -63,6 +66,7 @@ value; SIMULATE's books accrue it.
 
   (make-position (make-cash-account :currency :usd) :quantity 1000)"))
 
+(declaim (ftype (function (&key (:currency t)) (values cash-account &optional)) make-cash-account))
 (defun make-cash-account (&key currency)
   "A CASH-ACCOUNT in CURRENCY (a keyword; NIL means the market's).
 
@@ -101,6 +105,9 @@ value; SIMULATE's books accrue it.
   (:documentation "QUANTITY units of INSTRUMENT: long when positive, short
 when negative, closed at zero. Made by MAKE-POSITION; immutable."))
 
+(declaim (ftype (function (t &key (:quantity t) (:engine t) (:tags t))
+                    (values portfolio-position &optional))
+          make-position))
 (defun make-position (instrument &key (quantity 1) engine tags)
   "A position of QUANTITY (a real; negative is short) in INSTRUMENT, priced
 with ENGINE (a designator; NIL: the portfolio's default) and carrying TAGS,
@@ -116,6 +123,9 @@ a plist.
   (make-instance 'portfolio-position :instrument instrument :quantity (float quantity 1d0)
                                      :engine engine :tags tags))
 
+(declaim (ftype (function (portfolio-position &key (:quantity real) (:engine t) (:tags list))
+                    (values portfolio-position &optional))
+          derive-position))
 (defun derive-position (position &key (quantity (position-quantity position))
                                       (engine (position-engine position))
                                       (tags (position-tags position)))
@@ -139,6 +149,7 @@ a plist.
   (:documentation "A named tree of positions and sub-portfolios. Made by
 MAKE-PORTFOLIO; immutable."))
 
+(declaim (ftype (function (t &rest t) (values portfolio &optional)) make-portfolio))
 (defun make-portfolio (name &rest members)
   "A PORTFOLIO called NAME (a string or keyword) of MEMBERS, each a position
 or a portfolio.
@@ -161,6 +172,9 @@ identity; holdings by underlying and currency.")
   (:method ((a cash-account) (b cash-account))
     (eq (instrument-currency a) (instrument-currency b))))
 
+(declaim (ftype (function (t t &key (:by (or null real)) (:to (or null real)))
+                    (values portfolio &optional))
+          adjust-position))
 (defun adjust-position (portfolio instrument &key by to)
   "A copy of PORTFOLIO whose top-level position in INSTRUMENT (see
 SAME-INSTRUMENT-P) has its quantity moved BY a real, or set TO one; with no
@@ -183,6 +197,7 @@ TO. PORTFOLIO is unchanged.
                            old members)
                `(,@members ,(make-position instrument :quantity (or to by)))))))
 
+(declaim (ftype (function (portfolio) (values list &optional)) portfolio-positions))
 (defun portfolio-positions (portfolio)
   "Every position in PORTFOLIO's tree, depth first, in order."
   (iter (for m in (portfolio-members portfolio))
@@ -194,16 +209,19 @@ TO. PORTFOLIO is unchanged.
   "The portfolio of PORTFOLIO's positions satisfying PREDICATE, flat."
   (apply #'make-portfolio name (remove-if-not predicate (portfolio-positions portfolio))))
 
+(declaim (ftype (function (portfolio) (values portfolio &optional)) portfolio-long))
 (defun portfolio-long (portfolio)
   "The positions of PORTFOLIO with a positive quantity, as a flat portfolio."
   (filter-portfolio portfolio (lambda (p) (plusp (position-quantity p)))
                     (format nil "~A (long)" (portfolio-name portfolio))))
 
+(declaim (ftype (function (portfolio) (values portfolio &optional)) portfolio-short))
 (defun portfolio-short (portfolio)
   "The positions of PORTFOLIO with a negative quantity, as a flat portfolio."
   (filter-portfolio portfolio (lambda (p) (minusp (position-quantity p)))
                     (format nil "~A (short)" (portfolio-name portfolio))))
 
+(declaim (ftype (function (portfolio t) (values list &optional)) portfolio-by-tag))
 (defun portfolio-by-tag (portfolio key)
   "((value . portfolio) ...): PORTFOLIO's positions grouped by the value of
 their tag KEY (NIL for positions without it), in order of first appearance.
@@ -311,6 +329,9 @@ model); SELECT-ENGINE and PRICE-PORTFOLIO move on when it does.
     (declare (ignore market candidates process))
     `(,(ensure-engine :black-scholes))))
 
+(declaim (ftype (function (t t &rest t &key (:candidates t) (:process t))
+                    (values t &optional))
+          select-engine))
 (defun select-engine (instrument market &rest options &key candidates process)
   "The first of APPLICABLE-ENGINES for INSTRUMENT, or NIL."
   (declare (ignore candidates process))
@@ -331,6 +352,9 @@ the CONDITION recovered from or, if unpriced, the last one."
   (engine nil :read-only t)
   (condition nil :read-only t))
 
+(declaim (ftype (function (position-result)
+                    (values (or number null) &optional))
+          position-result-value))
 (defun position-result-value (r)
   "Quantity x unit price, or NIL if the position was not priced."
   (a:when-let ((p (position-result-unit-price r)))
@@ -342,6 +366,9 @@ PORTFOLIO-POSITIONS."
   (portfolio nil :read-only t)
   (results nil :read-only t))
 
+(declaim (ftype (function (portfolio-result)
+                    (values double-float (or double-float null) list &optional))
+          portfolio-value))
 (defun portfolio-value (result)
   "(values value standard-error unpriced) of a PORTFOLIO-RESULT: the sum of
 the priced positions' values, the standard error of that sum (NIL if no
@@ -396,6 +423,9 @@ returns, in order. Other errors are recorded, not signalled."
         (attempt engine))
       (make-position-result position nil nil nil first-condition))))
 
+(declaim (ftype (function (portfolio t &key (:engine t) (:policy t) (:parallel t))
+                    (values portfolio-result &optional))
+          price-portfolio))
 (defun price-portfolio (portfolio market &key (engine :auto) (policy #'default-fallback-policy)
                                               (parallel t))
   "PORTFOLIO priced on MARKET: a PORTFOLIO-RESULT (see PORTFOLIO-VALUE) with

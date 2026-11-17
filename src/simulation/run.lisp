@@ -110,6 +110,9 @@ column-major output vector, and each chunk's DONE value in chunk order."
           (error (cdr failed)))
         (values result (mapcar #'cdr chunks))))))
 
+(declaim (ftype (function (t t t t &key (:n-paths t) (:seed t) (:rng t) (:sampler t) (:antithetic t) (:n-steps t) (:max-dt t) (:every-step t) (:outputs t) (:correlation t) (:derive t))
+                    (values double-vector &optional))
+          map-simulated-paths))
 (defun map-simulated-paths (visitor process market dates
                             &key (n-paths 10000) (seed 42) (rng :counter) (sampler :box-muller)
                                  antithetic n-steps max-dt every-step (outputs 1) correlation derive)
