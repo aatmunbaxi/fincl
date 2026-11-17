@@ -180,6 +180,7 @@
                (:file "measure")
                (:file "platform")
                (:file "types")
+               (:file "allocation")
                (:file "readme")
                ;; The runners call the checks above; keep them last.
                (:file "tests"))

@@ -94,7 +94,7 @@ ATM-forward Black vol to T.")
              (z (aref normals 0)))
         (declare (double-float s h z))
         (setf (aref state 0)
-              (* s (exp (+ (aref mu j) (* -0.5d0 h) (* (sqrt h) z))))
+              (* s (exp (+ (aref mu j) (* -0.5d0 h) (* (sqrt (the (double-float 0d0) h)) z))))
               (aref state 1)
               (+ omega (* beta h) (* alpha h (expt (- z gamma) 2)))))
       ;; Steppers return nothing: a double-float result would be boxed.

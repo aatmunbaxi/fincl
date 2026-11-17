@@ -56,7 +56,10 @@ large MEAN).
 
 (declaim (ftype (function (double-float double-float)
                     (values double-float &optional))
-          gamma-from-normal))
+          gamma-from-normal)
+         (ftype (function (double-float double-float double-float double-float)
+                    (values double-float &optional))
+          gamma-from-normal-given-logs))
 (defun gamma-from-normal (z shape)
   "The Gamma(SHAPE, 1) quantile at Phi(Z), by safeguarded Newton steps on
 the regularized incomplete gamma P (or Q, for Z > 0) in log x. Relative
@@ -64,16 +67,24 @@ accuracy about 1e-12.
 
   (gamma-from-normal 0d0 1d0) => 0.6931471805599453d0 (the median, log 2)"
   (declare (double-float z shape))
+  (gamma-from-normal-given-logs z shape (log-gamma shape) (log shape)))
+
+(defun gamma-from-normal-given-logs (z shape log-gamma-shape log-shape)
+  "GAMMA-FROM-NORMAL with LOG-GAMMA-SHAPE = (log-gamma SHAPE) and LOG-SHAPE =
+(log SHAPE) supplied, for a caller that draws many variates of one shape.
+
+  (gamma-from-normal-given-logs 0d0 1d0 0d0 0d0) => 0.6931471805599453d0"
+  (declare (double-float z shape log-gamma-shape log-shape))
   (let* ((upper (plusp z))
          (target (norm-cdf (if upper (- z) z)))   ; P = target, or Q = target
-         (log-gamma-a (log-gamma shape))
+         (log-gamma-a log-gamma-shape)
          ;; P(a, x) = x^a / Gamma(a + 1) (1 + O(x)) near 0.
-         (log-small-x (/ (+ (log target) log-gamma-a (log shape)) shape)))
+         (log-small-x (/ (+ (log target) log-gamma-a log-shape) shape)))
     (declare (double-float target log-gamma-a log-small-x))
     ;; Far in the lower tail (small shapes) the small-x form is exact to
     ;; rounding, and may underflow to 0, which is then the quantile.
     (when (and (not upper) (< log-small-x -30d0))
-      (return-from gamma-from-normal (exp log-small-x)))
+      (return-from gamma-from-normal-given-logs (exp log-small-x)))
     (gamma-quantile-newton upper target shape log-gamma-a log-small-x z)))
 
 (defun gamma-quantile-newton (upper target shape log-gamma-a log-small-x z)
@@ -121,7 +132,7 @@ with probability MEAN / (MEAN + root) using the uniform Phi(Z2).
          (my (* mean y))
          ;; The smaller root, written without cancellation:
          ;; mean + (mean y - sqrt(4 mean shape y + (mean y)^2)) mean / (2 shape).
-         (x (/ mean (+ 1d0 (/ (+ my (sqrt (+ (* 4d0 shape my) (* my my)))) (* 2d0 shape))))))
+         (x (/ mean (+ 1d0 (/ (+ my (sqrt (the (double-float 0d0) (+ (* 4d0 shape my) (* my my))))) (* 2d0 shape))))))
     (declare (double-float y my x))
     (if (<= (norm-cdf z2) (/ mean (+ mean x)))
         x

@@ -191,14 +191,16 @@ the log spot given the variance path."
                       (b2 (if deterministic
                               0d0
                               (+ (- two/psi 1d0)
-                                 (* (sqrt two/psi) (sqrt (max 0d0 (- two/psi 1d0)))))))
+                                 (* (sqrt (the (double-float 0d0) two/psi))
+                                    (sqrt (max 0d0 (- two/psi 1d0)))))))
                       (a (/ m (+ 1d0 b2)))
-                      (b (sqrt b2)))
+                      (b (sqrt (the (double-float 0d0) b2))))
                  (declare (double-float two/psi b2 a b))
                  (setf v-next (if deterministic m (* a (expt (+ b zv) 2))))
                  (setf log-m (if (< big-a (/ 0.5d0 a))
                                  (- (/ (* big-a b2 a) (- 1d0 (* 2d0 big-a a)))
-                                    (* 0.5d0 (log (- 1d0 (* 2d0 big-a a)))))
+                                    (* 0.5d0 (log (the (double-float 0d0)
+                                                       (- 1d0 (* 2d0 big-a a))))))
                                  ;; No finite moment: skip the correction.
                                  (* big-a m)))))
               (t
@@ -209,15 +211,16 @@ the log spot given the variance path."
                  (declare (double-float prob beta u))
                  (setf v-next (if (<= u prob)
                                   0d0
-                                  (/ (log (/ (- 1d0 prob) (norm-cdf (- zv)))) beta)))
+                                  (/ (log (the (double-float 0d0) (/ (- 1d0 prob) (norm-cdf (- zv))))) beta)))
                  (setf log-m (if (< big-a beta)
-                                 (log (+ prob (/ (* beta (- 1d0 prob)) (- beta big-a))))
+                                 (log (the (double-float 0d0)
+                                           (+ prob (/ (* beta (- 1d0 prob)) (- beta big-a)))))
                                  (* big-a m))))))
         (setf (aref state 0)
               (* s (exp (+ (aref mu j)
                            (- log-m) (* -0.5d0 k3 v)   ; K0* + K1 V
                            (* k2 v-next)
-                           (* (sqrt (* k3 (+ v v-next))) (aref normals 1)))))
+                           (* (sqrt (the (double-float 0d0) (* k3 (+ v v-next)))) (aref normals 1)))))
               (aref state 1) v-next))
       ;; Steppers return nothing: a double-float result would be boxed.
       nil)))

@@ -135,7 +135,7 @@ passed."
         'cos-checks 'cos-term-structure-checks 'binomial-checks 'analytic-checks 'parameter-checks
         'error-checks 'condition-hierarchy-checks 'restart-checks 'lsm-basis-checks
         'lbr-reference-checks 'implied-vol-checks 'engine-implied-vol-checks
-        'optimizer-checks 'bivariate-normal-checks 'platform-checks 'type-checks)
+        'optimizer-checks 'bivariate-normal-checks 'platform-checks 'type-checks 'allocation-checks)
   "Checks that take seconds, not minutes.")
 
 (defparameter *slow-checks*

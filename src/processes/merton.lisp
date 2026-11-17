@@ -55,4 +55,4 @@ log jumps at Poisson times."))
              (* (aref diffusion j) (aref normals 0))
              (if (zerop n)
                  0d0
-                 (+ (* n mu) (* sigma (sqrt (float n 1d0)) (aref normals 2))))))))))
+                 (+ (* n mu) (* sigma (sqrt (the (double-float 0d0) (float n 1d0))) (aref normals 2))))))))))
