@@ -1,3 +1,9 @@
 .dir-locals.el
 .direnv/
 tools/
+CLAUDE.md
+AGENTS.md
+tasks/
+benchmarks/dummy/
+materials/
+example/

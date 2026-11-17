@@ -126,7 +126,15 @@
                (:file "portfolio")
                (:file "risk")
                (:file "snapshot")
-               (:file "simulation")
+               (:module "simulation"
+                :serial t
+                :components ((:file "plan")
+                             (:file "statistics")
+                             (:file "markets")
+                             (:file "run")
+                             (:file "results")
+                             (:file "books")
+                             (:file "simulate")))
                (:file "calibration"))
   :in-order-to ((test-op (test-op "fincl/tests"))))
 

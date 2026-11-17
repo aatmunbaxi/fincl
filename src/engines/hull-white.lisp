@@ -334,11 +334,6 @@ State prices are kept at the steps in KEEP; their sums at every step."
           (incf value (* (aref p3 j) (aref values (+ k 2))))
           (setf (aref new j) (* value (aref discounts j))))))))
 
-(defun lattice-roll-back (lattice values from to)
-  "VALUES at step FROM rolled back to step TO, with nothing added between."
-  (iter (for i from (1- from) downto to)
-        (setf values (lattice-step-back lattice i values)))
-  values)
 
 (defun lattice-present-value (lattice index values)
   (let ((prices (lattice-state-prices-through lattice index)))

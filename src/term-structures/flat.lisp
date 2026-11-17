@@ -42,6 +42,7 @@
   (exp (- (* (flat-rate c) horizon))))
 (defmethod curve-zero-rate ((c flat-yield-curve) horizon &optional (compounding :continuous)
                                                            (frequency :annual) day-counter)
+  (declare (ignorable frequency))
   (if (and (eq compounding :continuous) (null day-counter) (realp horizon))
       (flat-rate c)
       (call-next-method)))
