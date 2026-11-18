@@ -65,7 +65,7 @@ the worst |expected - actual| per name. In BODY, (record name expected actual)."
        ,@body
        (list ,@(mapcan (lambda (n) `(',n (worst ,n))) names)))))
 
-(defun bond-checks ()
+(defun bond-checks (&optional (builder (function fixture-bond)))
   (format t "~&Bonds: QuantLib's FixedRateBond and BondFunctions, 10 bonds~%")
   (let* ((m (rates-market))
          (fixture (getf (first (read-fixture "bonds-swaps.sexp")) :bonds))
@@ -74,7 +74,7 @@ the worst |expected - actual| per name. In BODY, (record name expected actual)."
            (collect-worst (accrued npv clean dirty bps yield yield-price durations convexity
                                    z-spread z-price cashflows)
              (dolist (spec fixture)
-               (let* ((bond (fixture-bond spec))
+               (let* ((bond (funcall builder spec))
                       (settlement (fixture-date (getf spec :settlement)))
                       (dc (bond-day-counter (getf spec :yield-day-counter) (bond-schedule bond)))
                       (freq (getf spec :yield-frequency))
@@ -134,13 +134,13 @@ the worst |expected - actual| per name. In BODY, (record name expected actual)."
          (make-ois-swap type nominal (make-schedule start end #T"1Y" :calendar +united-states-sofr+)
                         fixed-rate +actual-360+ (sofr) :spread spread :payment-lag payment-lag))))))
 
-(defun swap-checks ()
+(defun swap-checks (&optional (builder (function fixture-swap)))
   (format t "~&Swaps: QuantLib's VanillaSwap and OvernightIndexedSwap, 7 swaps~%")
   (let* ((m (rates-market))
          (worst
            (collect-worst (npv fair-rate fair-spread leg-npv leg-bps)
              (dolist (spec (getf (first (read-fixture "bonds-swaps.sexp")) :swaps))
-               (let ((swap (fixture-swap spec))
+               (let ((swap (funcall builder spec))
                      (scale (getf spec :nominal)))
                  (record 'npv (/ (getf spec :npv) scale) (/ (price swap :discounting m) scale))
                  (record 'fair-rate (getf spec :fair-rate) (fair-rate swap m))
@@ -154,18 +154,20 @@ the worst |expected - actual| per name. In BODY, (record name expected actual)."
                               name (member name '(npv leg-npv leg-bps)) value)
                       (<= value 1d-10)))))
 
-(defun fra-checks ()
+(defun fixture-fra (spec)
+  (destructuring-bind (&key value-date maturity type strike notional &allow-other-keys) spec
+    (make-forward-rate-agreement (euribor #T"6M") (fixture-date value-date) type strike notional
+                                 :maturity-date (and maturity (fixture-date maturity)))))
+
+(defun fra-checks (&optional (builder (function fixture-fra)))
   (format t "~&FRAs: QuantLib's ForwardRateAgreement, 4 FRAs~%")
   (let* ((m (rates-market))
          (worst
            (collect-worst (forward-rate npv)
              (dolist (spec (getf (first (read-fixture "bonds-swaps.sexp")) :fras))
-               (destructuring-bind (&key value-date maturity type strike notional forward-rate npv
-                                    &allow-other-keys)
+               (destructuring-bind (&key notional forward-rate npv &allow-other-keys)
                    spec
-                 (let ((fra (make-forward-rate-agreement
-                             (euribor #T"6M") (fixture-date value-date) type strike notional
-                             :maturity-date (and maturity (fixture-date maturity)))))
+                 (let ((fra (funcall builder spec)))
                    (record 'forward-rate forward-rate (fra-forward-rate fra m))
                    (record 'npv (/ npv notional) (/ (price fra :discounting m) notional))))))))
     (iter (for (name value) on worst by #'cddr)
@@ -198,15 +200,18 @@ the worst |expected - actual| per name. In BODY, (record name expected actual)."
 
 (defun fixture-cap (spec)
   (destructuring-bind (&key type cap-rate floor-rate &allow-other-keys) spec
-    (make-cap-floor type (fixture-cap-leg spec) :cap-rate cap-rate :floor-rate floor-rate)))
+    (make-cap-floor-from-clauses
+     `((:on-leg ,(fixture-cap-leg spec))
+       ,@(when (member type '(:cap :collar)) `((:cap ,cap-rate)))
+       ,@(when (member type '(:floor :collar)) `((:floor ,floor-rate)))))))
 
-(defun cap-checks ()
+(defun cap-checks (&optional (builder (function fixture-cap)))
   (format t "~&Caps and floors: QuantLib's Black and Bachelier cap/floor engines, 5 x 4 vols~%")
   (let* ((m (rates-market))
          (worst
            (collect-worst (total optionlets)
              (dolist (spec (getf (caps-fixture) :caps))
-               (let ((cap (fixture-cap spec)) (scale (getf spec :nominal)))
+               (let ((cap (funcall builder spec)) (scale (getf spec :nominal)))
                  (iter (for (vol total optionlets) in (getf spec :prices))
                        (for engine = (fixture-rates-engine vol))
                        (record 'total (/ total scale) (/ (price cap engine m) scale))
@@ -226,8 +231,8 @@ the worst |expected - actual| per name. In BODY, (record name expected actual)."
       (let ((engine (fixture-rates-engine vol)))
         (check (format nil "cap - floor = payer swap, ~(~A~), per unit nominal" vol)
                (/ (price swap :discounting m) 1d6)
-               (/ (- (price (make-cap-floor :cap leg :cap-rate k) engine m)
-                     (price (make-cap-floor :floor leg :floor-rate k) engine m))
+               (/ (- (price (make-cap-floor (cap k) (on-leg leg)) engine m)
+                     (price (make-cap-floor (floor k) (on-leg leg)) engine m))
                   1d6)
                1d-10))))
   ;; Implied vols recover the vol that priced each caplet.
@@ -266,7 +271,11 @@ the worst |expected - actual| per name. In BODY, (record name expected actual)."
                          (make-schedule start end #T"6M" :calendar +target+) (euribor #T"6M")
                          :spread spread :floating-day-counter +actual-360+))))
 
-(defun swaption-checks ()
+(defun fixture-swaption (spec settlement)
+  (make-swaption (on-swap (fixture-swaption-swap spec)) (expires (fixture-date (getf spec :exercise)))
+                 (settlement settlement)))
+
+(defun swaption-checks (&optional (builder (function fixture-swaption)))
   (format t "~&European swaptions: QuantLib's Black and Bachelier swaption engines, 4 x 2 x 3~%")
   (let ((m (rates-market))
         (engines `((:black . ,(make-engine :black-rates :volatility 0.20d0))
@@ -274,19 +283,16 @@ the worst |expected - actual| per name. In BODY, (record name expected actual)."
                    (:normal . ,(make-engine :bachelier-rates :volatility 0.0080d0))))
         (worst 0d0))
     (dolist (spec (getf (caps-fixture) :swaptions))
-      (let ((swap (fixture-swaption-swap spec)))
-        (iter (for (settlement vol expected) in (getf spec :prices))
-              (for swaption = (make-swaption swap (fixture-date (getf spec :exercise))
-                                             :settlement settlement))
-              (setf worst (max worst (/ (abs (- expected (price swaption (cdr (assoc vol engines)) m)))
-                                        (getf spec :nominal)))))))
+      (iter (for (settlement vol expected) in (getf spec :prices))
+            (for swaption = (funcall builder spec settlement))
+            (setf worst (max worst (/ (abs (- expected (price swaption (cdr (assoc vol engines)) m)))
+                                      (getf spec :nominal))))))
     (check-that (format nil "physical and cash-settled prices within 1e-10 of QuantLib per unit nominal ~
 (worst ~,1E)" worst)
                 (<= worst 1d-10))
     (check-error "a Black engine refuses a Bermudan swaption"
-                 (price (make-swaption (fixture-swaption-swap (first (getf (caps-fixture) :swaptions)))
-                                       (make-instance 'bermudan-exercise
-                                                      :dates (list #D"2027-09-24" #D"2028-09-25")))
+                 (price (make-swaption (on-swap (fixture-swaption-swap (first (getf (caps-fixture) :swaptions))))
+                                       (bermudan :dates (list #D"2027-09-24" #D"2028-09-25")))
                         (make-engine :black-rates :volatility 0.2d0) m)
                  unsupported-combination)))
 
@@ -363,8 +369,8 @@ prices on one curve."
     (dolist (spec (hull-white-fixture))
       (let ((hw (make-hull-white :a (getf spec :a) :sigma (getf spec :sigma))))
         (iter (for (reset type expected-analytic expected-tree) in (getf spec :europeans))
-              (for swaption = (make-swaption (hull-white-swap type 0.027d0 (fixture-date reset))
-                                             (fixture-date reset)))
+              (for swaption = (make-swaption (on-swap (hull-white-swap type 0.027d0 (fixture-date reset)))
+                                             (expires (fixture-date reset))))
               (for analytic = (price swaption (make-engine :jamshidian :process hw) m))
               (setf jamshidian (max jamshidian (relative-error expected-analytic analytic))
                     tree (max tree (relative-error expected-tree
@@ -380,15 +386,15 @@ prices on one curve."
                (reset (first *hull-white-resets*))
                (years (fincl::market-time flat #D"2029-09-28")))
           (dolist (type '(:payer :receiver))
-            (let ((swaption (make-swaption (hull-white-swap type 0.027d0 reset #D"2029-09-28") reset)))
+            (let ((swaption (make-swaption (on-swap (hull-white-swap type 0.027d0 reset #D"2029-09-28")) (expires reset))))
               (setf fine (max fine (relative-error
                                     (price swaption (make-engine :jamshidian :process hw) flat)
                                     (price swaption (make-engine :hull-white-tree :process hw
                                                                                   :time-steps (round (* 200 years)))
                                            flat)))))))
         (iter (for (type rate steps expected) in (getf spec :bermudans))
-              (for swaption = (make-swaption (hull-white-swap type rate (first *hull-white-resets*))
-                                             (make-instance 'bermudan-exercise :dates *hull-white-resets*)))
+              (for swaption = (make-swaption (on-swap (hull-white-swap type rate (first *hull-white-resets*)))
+                                             (bermudan :dates *hull-white-resets*)))
               (setf bermudan (max bermudan (relative-error
                                             expected
                                             (price swaption (make-engine :hull-white-tree :process hw
@@ -435,11 +441,11 @@ prices on one curve."
          (engine (make-engine :hull-white-tree :process hw :time-steps 400)))
     (dolist (type '(:payer :receiver))
       (dolist (rate '(0.022d0 0.027d0 0.032d0))
-        (let ((bermudan (price (make-swaption (hull-white-swap type rate (first *hull-white-resets*))
-                                              (make-instance 'bermudan-exercise :dates *hull-white-resets*))
+        (let ((bermudan (price (make-swaption (on-swap (hull-white-swap type rate (first *hull-white-resets*)))
+                                              (bermudan :dates *hull-white-resets*))
                                engine m))
               (europeans (mapcar (lambda (reset)
-                                   (price (make-swaption (hull-white-swap type rate reset) reset) engine m))
+                                   (price (make-swaption (on-swap (hull-white-swap type rate reset)) (expires reset)) engine m))
                                  *hull-white-resets*)))
           (check-that (format nil "~(~A~) at ~,2F%: Bermudan ~,2F >= every co-terminal European (max ~,2F)"
                               type (* 100 rate) bermudan (reduce #'max europeans))
@@ -447,7 +453,7 @@ prices on one curve."
   ;; Calibration recovers the parameters that generated the vols.
   (let* ((m (hull-white-market))
          (truth (make-hull-white :a 0.08d0 :sigma 0.009d0))
-         (swaptions (mapcar (lambda (reset) (make-swaption (hull-white-swap :payer 0.027d0 reset) reset))
+         (swaptions (mapcar (lambda (reset) (make-swaption (on-swap (hull-white-swap :payer 0.027d0 reset)) (expires reset)))
                             *hull-white-resets*))
          (quotes (mapcar (lambda (s)
                            (let ((target (price s (make-engine :jamshidian :process truth) m)))

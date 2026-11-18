@@ -75,6 +75,7 @@
                              (:file "rates-vol")
                              (:file "vol-surfaces")))
                (:file "market")
+               (:file "market-language")
                (:module "instruments"
                 :serial t
                 :components ((:file "instrument")
@@ -83,8 +84,10 @@
                              (:file "path-features")
                              (:file "indexes")
                              (:file "cashflows")
+                             (:file "swap-conventions")
                              (:file "rate-helpers")
-                             (:file "rates")))
+                             (:file "rates")
+                             (:file "rates-language")))
                (:module "processes"
                 :serial t
                 :components ((:file "parameters")
@@ -146,6 +149,7 @@
   :components ((:file "package")
                (:file "markets")
                (:file "construction")
+               (:file "construction-equality")
                (:file "math")
                (:file "numerics")
                (:file "time")
@@ -153,6 +157,7 @@
                (:file "rates")
                (:file "syntax")
                (:file "market")
+               (:file "market-language")
                (:file "instruments")
                (:file "analytic")
                (:file "cos")
@@ -168,6 +173,7 @@
                (:file "option-language")
                (:file "golden")
                (:file "rates-instruments")
+               (:file "rates-language")
                (:file "paths")
                (:file "surfaces")
                (:file "fd")

@@ -8,6 +8,16 @@
 
 (in-package #:fincl)
 
+(defun set-convention (language name clauses)
+  "Define the convention NAME of LANGUAGE as CLAUSES, as data: a list of
+(head . arguments). DEFINE-CONVENTION is this with the clauses written as in
+the language's macro."
+  (setf (gethash (clause-key name)
+                 (construction-language-conventions (ensure-language language)))
+        clauses)
+  (refresh-language-documentation language)
+  name)
+
 (defmacro define-convention (language name &body clauses)
   "Define the convention NAME (a keyword) of LANGUAGE as CLAUSES, written as
 in the language's macro. Clause heads are checked now; arguments are
@@ -17,9 +27,10 @@ evaluated when the convention is defined.
     (calendar +us-settlement+)
     (leg :pay (frequency :annual))
     (leg :receive (floating :sofr)))"
-  `(setf (gethash ,(clause-key name)
-                  (construction-language-conventions (ensure-language ',language)))
-         (list ,@(mapcar (lambda (form) (expand-clause-form language form)) clauses))))
+  `(progn
+     (set-convention ',language ,name
+                     (list ,@(mapcar (lambda (form) (expand-clause-form language form)) clauses)))
+     ',name))
 
 (defun apply-convention (name)
   "Run the clauses of convention NAME of the current language at convention

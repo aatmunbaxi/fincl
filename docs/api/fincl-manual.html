@@ -18,48 +18,7 @@
    </script>
    <script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/MathJax.js?config=TeX-MML-AM_CHTML">
    </script>
-   <style>
-  #toc .toc-hidden { display: none; }
-  #toc .toc-h3 { padding-left: calc(10px + 1.2em + 12px); }
-  #toc .toc-h4 { padding-left: calc(10px + 1.2em + 24px); }
-  #toc .toc-section-toggle { background: none; border: none; padding: 0;
-                             width: 1.2em; font: inherit; color: inherit;
-                             cursor: pointer; }
-</style>
-<script>
-  document.addEventListener('DOMContentLoaded', function () {
-    var groups = [], group = null;
-    document.querySelectorAll('#page-toc li').forEach(function (li) {
-      if (li.classList.contains('toc-h2')) {
-        group = { button: document.createElement('button'), items: [] };
-        group.button.type = 'button';
-        group.button.className = 'toc-section-toggle';
-        li.insertBefore(group.button, li.firstChild);
-        groups.push(group);
-      } else if (li.classList.contains('toc-h1')) {
-        group = null;
-      } else if (group) {
-        group.items.push(li);
-      }
-    });
-    function setOpen(g, open) {
-      g.button.textContent = open ? '\u25BE' : '\u25B8';
-      g.button.setAttribute('aria-expanded', String(open));
-      g.items.forEach(function (li) { li.classList.toggle('toc-hidden', !open); });
-    }
-    groups.forEach(function (g) {
-      if (g.items.length === 0) { g.button.style.visibility = 'hidden'; return; }
-      var here = g.items.some(function (li) {
-        var a = li.querySelector('a');
-        return a && a.getAttribute('href') === decodeURI(location.hash);
-      });
-      setOpen(g, here);
-      g.button.addEventListener('click', function () {
-        setOpen(g, g.button.getAttribute('aria-expanded') !== 'true');
-      });
-    });
-  });
-</script>
+   
 </head>
 <body>
 <div id="content-container">
@@ -192,15 +151,16 @@ is pricing a European option with the Black-Scholes formula.</p>
 <p>A market holds the spots, curves, dividends and volatilities that engines
 read. It has a valuation date, there is no hidden &quot;today&quot;, and it is
 immutable: a scenario is a new market (see <code>bump</code>). <code>make-market</code> builds one
-with several underlyings and curves from lists; <code>make-bs-market</code> builds the
+from clauses, with several underlyings and curves; <code>make-bs-market</code> builds the
 common case of one underlying, one currency and one curve, with flat inputs.
 Discrete cash and proportional dividends are given as a <code>dividend-schedule</code>,
 a list of <code>(ex-date amount [:kind :cash|:proportional] [:pay-date date])</code>.</p>
-<pre><code><span class="code"><span class="paren1">(<span class="code">make-market <span class="keyword">:valuation-date</span> #D<span class="string">"2026-10-01"</span>
-             <span class="keyword">:underlyings</span> '<span class="paren2">(<span class="code"><span class="paren3">(<span class="code"><span class="keyword">:spx</span> <span class="keyword">:spot</span> 5000 <span class="keyword">:currency</span> <span class="keyword">:usd</span>
-                             <span class="keyword">:dividend</span> 0.015d0 <span class="keyword">:vol</span> 0.18d0</span>)</span></span>)</span>
-             <span class="keyword">:curves</span> '<span class="paren2">(<span class="code"><span class="paren3">(<span class="code"><span class="keyword">:usd-ois</span> <span class="keyword">:rate</span> 0.04d0</span>)</span></span>)</span>
-             <span class="keyword">:discounting</span> '<span class="paren2">(<span class="code"><span class="paren3">(<span class="code"><span class="keyword">:usd</span> . <span class="keyword">:usd-ois</span></span>)</span></span>)</span></span>)</span></span></code></pre>
+<pre><code><span class="code"><span class="paren1">(<span class="code">make-market <span class="paren2">(<span class="code">valued-on #D<span class="string">"2026-10-01"</span></span>)</span>
+             <span class="paren2">(<span class="code">underlying <span class="keyword">:spx</span> <span class="paren3">(<span class="code">spot 5000</span>)</span> <span class="paren3">(<span class="code">currency <span class="keyword">:usd</span></span>)</span>
+                         <span class="paren3">(<span class="code">dividend 0.015d0</span>)</span> <span class="paren3">(<span class="code">vol 0.18d0</span>)</span></span>)</span>
+             <span class="paren2">(<span class="code">curve <span class="keyword">:usd-ois</span> <span class="paren3">(<span class="code">rate 0.04d0</span>)</span></span>)</span>
+             <span class="paren2">(<span class="code">discounting <span class="keyword">:usd</span> <span class="keyword">:usd-ois</span></span>)</span></span>)</span></span></code></pre>
+<p><code>(documentation 'make-market 'function)</code> lists every clause.</p>
 <p><a id="x-28FINCL-3ADATE-20CLASS-29"></a>
 <a id="FINCL:DATE%20CLASS"></a></p>
 <ul>
@@ -242,38 +202,77 @@ tenors are <a href="http://www.lispworks.com/documentation/HyperSpec/Body/f_equa
 
 <p>State of the world at a valuation date.</p></li>
 </ul>
-<p><a id="x-28FINCL-3AMAKE-MARKET-20FUNCTION-29"></a>
-<a id="FINCL:MAKE-MARKET%20FUNCTION"></a></p>
+<p><a id="x-28FINCL-3AMAKE-MARKET-20MGL-PAX-3AMACRO-29"></a>
+<a id="FINCL:MAKE-MARKET%20MGL-PAX:MACRO"></a></p>
 <ul>
-<li><p><span class=reference-bullet><span class=reference><span class="locative-type">[function]</span> <span class="reference-object"><a href="#FINCL:MAKE-MARKET%20FUNCTION" >FINCL:MAKE-MARKET</a></span></span> <span class="locative-args">&amp;KEY VALUATION-DATE (DAY-COUNTER <code>FINCL:+ACTUAL-365-FIXED+</code>) UNDERLYINGS CURVES DISCOUNTING FIXINGS</span></span></p>
+<li><p><span class=reference-bullet><span class=reference><span class="locative-type">[macro]</span> <span class="reference-object"><a href="#FINCL:MAKE-MARKET%20MGL-PAX:MACRO" >FINCL:MAKE-MARKET</a></span></span> <span class="locative-args">&amp;REST CLAUSES</span></span></p>
 
-<p>A COMPOSITE-MARKET observed on VALUATION-DATE. The arguments are lists:</p>
+<p>Build a composite market from clauses: the date it is valued on,
+underlyings with their spot, currency, dividends and vol, yield curves, the curve
+each currency discounts on, and past index fixings.</p>
 
-<p>UNDERLYINGS  ((name :spot s [:currency c][:dividend q] [:dividend-schedule d][:vol v]) ...)
-               S a positive real; C a keyword (default <code>:DEFAULT</code>); Q a real
-               continuous dividend yield or a DIVIDEND-CURVE (default 0); D
-               discrete dividends alongside Q, a DIVIDEND-SCHEDULE or the
-               entries MAKE-DIVIDEND-SCHEDULE takes, ((ex-date amount [:kind
-               k][:pay-date p]) ...); V a real Black vol or a
-               BLACK-VOL-STRUCTURE (default none, for markets that need no
-               vol).
-  CURVES       ((id :rate r) ...) or ((id :curve c) ...): R a real zero rate,
-               C a YIELD-CURVE.
-  DISCOUNTING  ((currency . curve-id) ...): the curve each currency discounts
-               on. If omitted and there is one curve, every currency
-               discounts on it.
-  FIXINGS      ((index-id (date rate) ...) ...): past fixings of interest-rate
-               indexes, DATE a date or a &quot;YYYY-MM-DD&quot; string.</p>
+<p>(make-market (valued-on #D&quot;2026-09-24&quot;)
+               (underlying :spx (spot 5000) (currency :usd) (dividend 0.015d0) (vol 0.18d0))
+               (curve :usd-ois (rate 0.04d0))
+               (discounting :usd :usd-ois))</p>
 
-<p>Reals are coerced to double-float.</p>
+<p>A call whose first argument is a keyword is the keyword shape of
+MAKE-MARKET-FROM-SPECS: (make-market :valuation-date d :underlyings '((:spx :spot 5000)) ...).
+With one curve and no discounting clause, every currency discounts on it.</p>
 
-<p>(make-market :valuation-date #D&quot;2026-09-24&quot;
-               :underlyings '((:spx :spot 5000 :currency :usd :dividend 0.015d0 :vol 0.18d0)
-                              (:aapl :spot 230 :currency :usd :vol 0.25d0
-                               :dividend-schedule ((&quot;2027-02-10&quot; 0.26d0)
-                                                   (&quot;2027-05-12&quot; 0.26d0))))
-               :curves '((:usd-ois :rate 0.04d0))
-               :discounting '((:usd . :usd-ois)))</p></li>
+<p>Clauses:
+  (convention name) Apply the named convention bundle.
+  (valued-on date) The date the market is observed on, required.
+  (day-counter day-counter) The day counter the market measures time with, default ACT/365F.
+  (underlying name &amp;clauses clauses) An underlying named NAME, a keyword, built from the sub-clauses spot, currency, dividend, dividends and vol.
+  (spot price) The spot price of an underlying, a positive real, required.
+  (currency name) The currency NAME, a keyword, an underlying trades in; default <code>:DEFAULT</code>.
+  (dividend yield-or-curve) The continuous dividend yield of an underlying: a real or a dividend curve; default 0.
+  (dividends entries-or-schedule) The discrete dividends of an underlying: a dividend schedule, or entries ((ex-date amount [:kind :cash|:proportional][:pay-date d]) ...).
+  (vol vol-or-structure) The volatility of an underlying: a real Black vol or a Black vol structure; default none.
+  (curve id &amp;clauses clauses) A yield curve named ID, a keyword, given by the sub-clause rate or structure.
+  (rate zero-rate) A curve with the flat zero rate ZERO-RATE.
+  (structure yield-curve) A curve given as a yield curve object.
+  (discounting currency curve-id) The curve CURVE-ID that CURRENCY discounts on.
+  (fixings index entries) Past fixings of the index INDEX, a keyword, as a quoted list ((date rate) ...), DATE a date or a &quot;YYYY-MM-DD&quot; string.</p>
+
+<p>Clause arguments are evaluated.</p></li>
+</ul>
+<p><a id="x-28FINCL-3AMAKE-MARKET-FROM-CLAUSES-20FUNCTION-29"></a>
+<a id="FINCL:MAKE-MARKET-FROM-CLAUSES%20FUNCTION"></a></p>
+<ul>
+<li><p><span class=reference-bullet><span class=reference><span class="locative-type">[function]</span> <span class="reference-object"><a href="#FINCL:MAKE-MARKET-FROM-CLAUSES%20FUNCTION" >FINCL:MAKE-MARKET-FROM-CLAUSES</a></span></span> <span class="locative-args">CLAUSES</span></span></p>
+
+<p>Build a composite market from clauses: the date it is valued on,
+underlyings with their spot, currency, dividends and vol, yield curves, the curve
+each currency discounts on, and past index fixings.</p>
+
+<p>(make-market (valued-on #D&quot;2026-09-24&quot;)
+               (underlying :spx (spot 5000) (currency :usd) (dividend 0.015d0) (vol 0.18d0))
+               (curve :usd-ois (rate 0.04d0))
+               (discounting :usd :usd-ois))</p>
+
+<p>A call whose first argument is a keyword is the keyword shape of
+MAKE-MARKET-FROM-SPECS: (make-market :valuation-date d :underlyings '((:spx :spot 5000)) ...).
+With one curve and no discounting clause, every currency discounts on it.</p>
+
+<p>Clauses:
+  (convention name) Apply the named convention bundle.
+  (valued-on date) The date the market is observed on, required.
+  (day-counter day-counter) The day counter the market measures time with, default ACT/365F.
+  (underlying name &amp;clauses clauses) An underlying named NAME, a keyword, built from the sub-clauses spot, currency, dividend, dividends and vol.
+  (spot price) The spot price of an underlying, a positive real, required.
+  (currency name) The currency NAME, a keyword, an underlying trades in; default <code>:DEFAULT</code>.
+  (dividend yield-or-curve) The continuous dividend yield of an underlying: a real or a dividend curve; default 0.
+  (dividends entries-or-schedule) The discrete dividends of an underlying: a dividend schedule, or entries ((ex-date amount [:kind :cash|:proportional][:pay-date d]) ...).
+  (vol vol-or-structure) The volatility of an underlying: a real Black vol or a Black vol structure; default none.
+  (curve id &amp;clauses clauses) A yield curve named ID, a keyword, given by the sub-clause rate or structure.
+  (rate zero-rate) A curve with the flat zero rate ZERO-RATE.
+  (structure yield-curve) A curve given as a yield curve object.
+  (discounting currency curve-id) The curve CURVE-ID that CURRENCY discounts on.
+  (fixings index entries) Past fixings of the index INDEX, a keyword, as a quoted list ((date rate) ...), DATE a date or a &quot;YYYY-MM-DD&quot; string.</p>
+
+<p>CLAUSES is a list of (head . arguments), as data.</p></li>
 </ul>
 <p><a id="x-28FINCL-3AMAKE-BS-MARKET-20FUNCTION-29"></a>
 <a id="FINCL:MAKE-BS-MARKET%20FUNCTION"></a></p>
@@ -284,7 +283,7 @@ tenors are <a href="http://www.lispworks.com/documentation/HyperSpec/Body/f_equa
 currency, both <code>:DEFAULT</code>, discounting on the curve <code>:DEFAULT</code>. Numeric inputs
 are coerced to double-float; pass double-float or rational literals, since
 0.05 reads as a single-float and (float 0.05 1d0) is 0.05000000074505806d0.
-DIVIDEND-SCHEDULE adds discrete dividends, as in MAKE-MARKET.</p>
+DIVIDEND-SCHEDULE adds discrete dividends, as in MAKE-MARKET-FROM-SPECS.</p>
 
 <p>(make-bs-market :valuation-date #D&quot;2026-09-24&quot;
                   :spot 100 :rate 0.05d0 :vol 0.2d0
@@ -496,7 +495,25 @@ payoff scheme, an expiry, and optionally exercise rights. With no payoff clause 
 payoff is vanilla; with no exercise clause the option is European.</p>
 
 <p>A vanilla European call K=110 with 1Y expiry
-(make-option (call 110) (expiry #<code>T</code>&quot;1Y&quot; :from +today+)) Clause arguments are evaluated.</p></li>
+(make-option (call 110) (expires #<code>T</code>&quot;1Y&quot; :from +today+))</p>
+
+<p>Clauses:
+  (convention name) Apply the named convention bundle.
+  (call strike) A call struck at STRIKE: vanilla unless a payoff clause names another struck payoff.
+  (put strike) A put struck at STRIKE: vanilla unless a payoff clause names another struck payoff.
+  (payoff class &amp;rest initargs) The payoff class <a href="http://www.lispworks.com/documentation/HyperSpec/Body/t_class.htm" title="CLASS (MGL-PAX:CLHS CLASS)"><code>CLASS</code></a> (a symbol), with INITARGS.
+  (underlying name) The market underlying NAME, a keyword: (underlying :spx).
+  (currency name) The currency NAME the option pays in, which selects the discount curve.
+  (european) Exercise on the expiry only (the default).
+  (american) Exercise on any date up to the expiry.
+  (bermudan &amp;key dates every from calendar (roll-convention :following) end-of-month) Exercise on given DATES (the last is the expiry), or on dates <a href="http://www.lispworks.com/documentation/HyperSpec/Body/f_everyc.htm" title="EVERY (MGL-PAX:CLHS FUNCTION)"><code>EVERY</code></a> tenor back from the expiry, strictly after FROM, moved onto business days of CALENDAR with ROLL-CONVENTION.
+  (expires when &amp;key from calendar (roll-convention :following) end-of-month) The expiry: a date, or a tenor from FROM, moved onto a business day of CALENDAR with ROLL-CONVENTION (see RESOLVE-EXPIRY).
+  (average kind &amp;key dates every from (strike-type :fixed)) An Asian option averaging the observable (KIND <code>:ARITHMETIC</code> or <code>:GEOMETRIC</code>) on DATES, or on dates <code>EVERY</code> tenor back from the expiry, strictly after FROM.
+  (barrier type level &amp;key (rebate 0) (monitoring :continuous) every from) A barrier option: <a href="http://www.lispworks.com/documentation/HyperSpec/Body/d_type.htm" title="TYPE (MGL-PAX:CLHS DECLARATION)"><code>TYPE</code></a> <code>:DOWN-AND-OUT</code>, <code>:DOWN-AND-IN</code>, <code>:UP-AND-OUT</code> or <code>:UP-AND-IN</code> at LEVEL, with REBATE.
+  (lookback strike-type &amp;key monitoring every from) A lookback: STRIKE-TYPE <code>:FLOATING</code> or <code>:FIXED</code>, observed on every simulation step, or on MONITORING dates, or on dates <code>EVERY</code> tenor back from the expiry.
+  (class :initarg value ...) for a payoff class defined with DEFINE-PAYOFF</p>
+
+<p>Clause arguments are evaluated.</p></li>
 </ul>
 <p><a id="x-28FINCL-3AMAKE-OPTION-FROM-CLAUSES-20FUNCTION-29"></a>
 <a id="FINCL:MAKE-OPTION-FROM-CLAUSES%20FUNCTION"></a></p>
@@ -508,7 +525,25 @@ payoff scheme, an expiry, and optionally exercise rights. With no payoff clause 
 payoff is vanilla; with no exercise clause the option is European.</p>
 
 <p>A vanilla European call K=110 with 1Y expiry
-(make-option (call 110) (expiry #<code>T</code>&quot;1Y&quot; :from +today+)) CLAUSES is a list of (head . arguments), as data.</p></li>
+(make-option (call 110) (expires #<code>T</code>&quot;1Y&quot; :from +today+))</p>
+
+<p>Clauses:
+  (convention name) Apply the named convention bundle.
+  (call strike) A call struck at STRIKE: vanilla unless a payoff clause names another struck payoff.
+  (put strike) A put struck at STRIKE: vanilla unless a payoff clause names another struck payoff.
+  (payoff class &amp;rest initargs) The payoff class <a href="http://www.lispworks.com/documentation/HyperSpec/Body/t_class.htm" title="CLASS (MGL-PAX:CLHS CLASS)"><code>CLASS</code></a> (a symbol), with INITARGS.
+  (underlying name) The market underlying NAME, a keyword: (underlying :spx).
+  (currency name) The currency NAME the option pays in, which selects the discount curve.
+  (european) Exercise on the expiry only (the default).
+  (american) Exercise on any date up to the expiry.
+  (bermudan &amp;key dates every from calendar (roll-convention :following) end-of-month) Exercise on given DATES (the last is the expiry), or on dates <a href="http://www.lispworks.com/documentation/HyperSpec/Body/f_everyc.htm" title="EVERY (MGL-PAX:CLHS FUNCTION)"><code>EVERY</code></a> tenor back from the expiry, strictly after FROM, moved onto business days of CALENDAR with ROLL-CONVENTION.
+  (expires when &amp;key from calendar (roll-convention :following) end-of-month) The expiry: a date, or a tenor from FROM, moved onto a business day of CALENDAR with ROLL-CONVENTION (see RESOLVE-EXPIRY).
+  (average kind &amp;key dates every from (strike-type :fixed)) An Asian option averaging the observable (KIND <code>:ARITHMETIC</code> or <code>:GEOMETRIC</code>) on DATES, or on dates <code>EVERY</code> tenor back from the expiry, strictly after FROM.
+  (barrier type level &amp;key (rebate 0) (monitoring :continuous) every from) A barrier option: <a href="http://www.lispworks.com/documentation/HyperSpec/Body/d_type.htm" title="TYPE (MGL-PAX:CLHS DECLARATION)"><code>TYPE</code></a> <code>:DOWN-AND-OUT</code>, <code>:DOWN-AND-IN</code>, <code>:UP-AND-OUT</code> or <code>:UP-AND-IN</code> at LEVEL, with REBATE.
+  (lookback strike-type &amp;key monitoring every from) A lookback: STRIKE-TYPE <code>:FLOATING</code> or <code>:FIXED</code>, observed on every simulation step, or on MONITORING dates, or on dates <code>EVERY</code> tenor back from the expiry.
+  (class :initarg value ...) for a payoff class defined with DEFINE-PAYOFF</p>
+
+<p>CLAUSES is a list of (head . arguments), as data.</p></li>
 </ul>
 <p><a id="x-28FINCL-2FDOCGEN-3A-40ENGINES-20MGL-PAX-3ASECTION-29"></a>
 <a id="FINCL%2FDOCGEN:@ENGINES%20MGL-PAX:SECTION"></a></p>
@@ -2207,10 +2242,10 @@ revaluation on scenarios, which are other markets (<code>bump</code>, aging), so
 instrument and engine that prices on a market takes part with no further
 method. Results do not depend on the number of workers.</p>
 <pre><code><span class="code"><span class="paren1">(<span class="code"><i><span class="symbol">defparameter</span></i> <span class="special">*market*</span>
-  <span class="paren2">(<span class="code">make-market <span class="keyword">:valuation-date</span> #D<span class="string">"2026-10-01"</span>
-               <span class="keyword">:underlyings</span> '<span class="paren3">(<span class="code"><span class="paren4">(<span class="code"><span class="keyword">:spx</span> <span class="keyword">:spot</span> 5000 <span class="keyword">:currency</span> <span class="keyword">:usd</span>
-                               <span class="keyword">:dividend</span> 0.015d0 <span class="keyword">:vol</span> 0.18d0</span>)</span></span>)</span>
-               <span class="keyword">:curves</span> '<span class="paren3">(<span class="code"><span class="paren4">(<span class="code"><span class="keyword">:usd-ois</span> <span class="keyword">:rate</span> 0.04d0</span>)</span></span>)</span></span>)</span></span>)</span>
+  <span class="paren2">(<span class="code">make-market <span class="paren3">(<span class="code">valued-on #D<span class="string">"2026-10-01"</span></span>)</span>
+               <span class="paren3">(<span class="code">underlying <span class="keyword">:spx</span> <span class="paren4">(<span class="code">spot 5000</span>)</span> <span class="paren4">(<span class="code">currency <span class="keyword">:usd</span></span>)</span>
+                           <span class="paren4">(<span class="code">dividend 0.015d0</span>)</span> <span class="paren4">(<span class="code">vol 0.18d0</span>)</span></span>)</span>
+               <span class="paren3">(<span class="code">curve <span class="keyword">:usd-ois</span> <span class="paren4">(<span class="code">rate 0.04d0</span>)</span></span>)</span></span>)</span></span>)</span>
 <span class="paren1">(<span class="code"><i><span class="symbol">defparameter</span></i> <span class="special">*book*</span>
   <span class="paren2">(<span class="code">make-portfolio <span class="string">"book"</span>
     <span class="paren3">(<span class="code">make-position <span class="paren4">(<span class="code">make-option <span class="paren5">(<span class="code">call 5000</span>)</span> <span class="paren5">(<span class="code">expires #T<span class="string">"1Y"</span> <span class="keyword">:from</span> #D<span class="string">"2026-10-01"</span></span>)</span></span>)</span>
@@ -3068,7 +3103,9 @@ PROCESS-STATE-SIZE and PROCESS-FACTORS (both default to 1). Each of SLOTS is</p>
   its risk-neutral one (CHANGE-MEASURE's <code>:PARAMETERS</code>); the default <code>NIL</code> keeps
   it fixed under a change of measure.</p></li>
 <li><p><code>READER</code> defaults to SLOT-NAME, and the initarg is the keyword SLOT-NAME.</p></li>
-<li><p><a href="http://www.lispworks.com/documentation/HyperSpec/Body/d_type.htm" title="TYPE (MGL-PAX:CLHS DECLARATION)"><code>TYPE</code></a> defaults to <a href="http://www.lispworks.com/documentation/HyperSpec/Body/t_short_.htm" title="DOUBLE-FLOAT (MGL-PAX:CLHS TYPE)"><code>DOUBLE-FLOAT</code></a>, or (<code>OR</code>(<a href="http://www.lispworks.com/documentation/HyperSpec/Body/m_or.htm" title="OR (MGL-PAX:CLHS MGL-PAX:MACRO)"><code>0</code></a> <a href="http://www.lispworks.com/documentation/HyperSpec/Body/t_or.htm" title="OR (MGL-PAX:CLHS TYPE)"><code>1</code></a>) <code>NULL</code>(<a href="http://www.lispworks.com/documentation/HyperSpec/Body/t_null.htm" title="NULL (MGL-PAX:CLHS CLASS)"><code>0</code></a> <a href="http://www.lispworks.com/documentation/HyperSpec/Body/f_null.htm" title="NULL (MGL-PAX:CLHS FUNCTION)"><code>1</code></a>) <code>DOUBLE-FLOAT</code>) when DEFAULT is <code>NIL</code>.</p></li>
+<li><p><a href="http://www.lispworks.com/documentation/HyperSpec/Body/d_type.htm" title="TYPE (MGL-PAX:CLHS DECLARATION)"><code>TYPE</code></a> defaults to <a href="http://www.lispworks.com/documentation/HyperSpec/Body/t_short_.htm" title="DOUBLE-FLOAT (MGL-PAX:CLHS TYPE)"><code>DOUBLE-FLOAT</code></a>, or (<code>OR</code>(<a href="http://www.lispworks.com/documentation/HyperSpec/Body/m_or.htm" title="OR (MGL-PAX:CLHS MGL-PAX:MACRO)"><code>0</code></a> <a href="http://www.lispworks.com/documentation/HyperSpec/Body/t_or.htm" title="OR (MGL-PAX:CLHS TYPE)"><code>1</code></a>) <code>NULL</code>(<a href="http://www.lispworks.com/documentation/HyperSpec/Body/t_null.htm" title="NULL (MGL-PAX:CLHS CLASS)"><code>0</code></a> <a href="http://www.lispworks.com/documentation/HyperSpec/Body/f_null.htm" title="NULL (MGL-PAX:CLHS FUNCTION)"><code>1</code></a>) <code>DOUBLE-FLOAT</code>) when DEFAULT is <code>NIL</code>.
+  A given <code>TYPE</code> (a domain type such as VOLATILITY, or (<code>OR</code> <code>NULL</code> VOLATILITY)) must
+  contain every value BOUNDS allows, which is checked when the form is expanded.</p></li>
 </ul>
 
 <p>MAKE-NAME takes the initargs of NAME and its DEFINE-PROCESS superclasses as
@@ -3405,8 +3442,9 @@ thing in every language, so define a fact once and share it.</p>
 arguments, already evaluated; if it ends in &amp;CLAUSES VAR (after required
 parameters only), the remaining forms are sub-clauses, bound to VAR as data,
 for the body to run with APPLY-CLAUSES, usually inside WITH-SCOPE. BODY may
-start with a docstring and a (<code>:PUBLISHES</code> fact...) form declaring every fact
-it may set.</p>
+start with a docstring, a (<code>:PUBLISHES</code> fact...) form declaring every fact it
+may set, and a (<code>:CLAUSES-OF</code> language) form saying the sub-clauses are those of
+another language, which the body builds with that language's data function.</p>
 
 <p>(define-clause option expires (when &amp;key from calendar)
     (:publishes :expiry)
@@ -3521,10 +3559,10 @@ element 1 the running total."</span></span>)</span></span>)</span>
 <p>Now, pricing two contracts on the die:</p>
 <pre><code><span class="code"><span class="paren1">(<span class="code"><i><span class="symbol">defparameter</span></i> <span class="special">*today*</span> #D<span class="string">"2026-10-26"</span></span>)</span>
 <span class="paren1">(<span class="code"><i><span class="symbol">defparameter</span></i> <span class="special">*market*</span>
-  <span class="paren2">(<span class="code">make-market <span class="keyword">:valuation-date</span> <span class="special">*today*</span>
-               <span class="keyword">:underlyings</span> '<span class="paren3">(<span class="code"><span class="paren4">(<span class="code"><span class="keyword">:die</span> <span class="keyword">:spot</span> 1 <span class="keyword">:currency</span> <span class="keyword">:chip</span> <span class="keyword">:vol</span> 0.2d0</span>)</span></span>)</span>
-               <span class="keyword">:curves</span> '<span class="paren3">(<span class="code"><span class="paren4">(<span class="code"><span class="keyword">:chip-curve</span> <span class="keyword">:rate</span> 0d0</span>)</span></span>)</span>
-               <span class="keyword">:discounting</span> '<span class="paren3">(<span class="code"><span class="paren4">(<span class="code"><span class="keyword">:chip</span> . <span class="keyword">:chip-curve</span></span>)</span></span>)</span></span>)</span></span>)</span>
+  <span class="paren2">(<span class="code">make-market <span class="paren3">(<span class="code">valued-on <span class="special">*today*</span></span>)</span>
+               <span class="paren3">(<span class="code">underlying <span class="keyword">:die</span> <span class="paren4">(<span class="code">spot 1</span>)</span> <span class="paren4">(<span class="code">currency <span class="keyword">:chip</span></span>)</span> <span class="paren4">(<span class="code">vol 0.2d0</span>)</span></span>)</span>
+               <span class="paren3">(<span class="code">curve <span class="keyword">:chip-curve</span> <span class="paren4">(<span class="code">rate 0d0</span>)</span></span>)</span>
+               <span class="paren3">(<span class="code">discounting <span class="keyword">:chip</span> <span class="keyword">:chip-curve</span></span>)</span></span>)</span></span>)</span>
 <span class="paren1">(<span class="code"><i><span class="symbol">defparameter</span></i> <span class="special">*engine*</span>
   <span class="paren2">(<span class="code">make-engine <span class="keyword">:mc</span> <span class="keyword">:process</span> <span class="paren3">(<span class="code">make-fair-die</span>)</span> <span class="keyword">:n-paths</span> 200000 <span class="keyword">:n-steps</span> 3</span>)</span></span>)</span>
 

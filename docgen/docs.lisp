@@ -58,24 +58,27 @@ is pricing a European option with the Black-Scholes formula.
 A market holds the spots, curves, dividends and volatilities that engines
 read. It has a valuation date, there is no hidden \"today\", and it is
 immutable: a scenario is a new market (see `bump`). `make-market` builds one
-with several underlyings and curves from lists; `make-bs-market` builds the
+from clauses, with several underlyings and curves; `make-bs-market` builds the
 common case of one underlying, one currency and one curve, with flat inputs.
 Discrete cash and proportional dividends are given as a `dividend-schedule`,
 a list of `(ex-date amount [:kind :cash|:proportional] [:pay-date date])`.
 
 ```cl
-(make-market :valuation-date #D\"2026-10-01\"
-             :underlyings '((:spx :spot 5000 :currency :usd
-                             :dividend 0.015d0 :vol 0.18d0))
-             :curves '((:usd-ois :rate 0.04d0))
-             :discounting '((:usd . :usd-ois)))
-```"
+(make-market (valued-on #D\"2026-10-01\")
+             (underlying :spx (spot 5000) (currency :usd)
+                         (dividend 0.015d0) (vol 0.18d0))
+             (curve :usd-ois (rate 0.04d0))
+             (discounting :usd :usd-ois))
+```
+
+`(documentation 'make-market 'function)` lists every clause."
   (fincl:date class)
   (fincl:tenor class)
   (fincl:date+ function)
   (fincl:date< function)
   (fincl:market class)
-  (fincl:make-market function)
+  (fincl:make-market macro)
+  (fincl:make-market-from-clauses function)
   (fincl:make-bs-market function)
   (fincl:valuation-date generic-function)
   (fincl:dividend-schedule class)
@@ -1031,10 +1034,10 @@ method. Results do not depend on the number of workers.
 
 ```cl
 (defparameter *market*
-  (make-market :valuation-date #D\"2026-10-01\"
-               :underlyings '((:spx :spot 5000 :currency :usd
-                               :dividend 0.015d0 :vol 0.18d0))
-               :curves '((:usd-ois :rate 0.04d0))))
+  (make-market (valued-on #D\"2026-10-01\")
+               (underlying :spx (spot 5000) (currency :usd)
+                           (dividend 0.015d0) (vol 0.18d0))
+               (curve :usd-ois (rate 0.04d0))))
 (defparameter *book*
   (make-portfolio \"book\"
     (make-position (make-option (call 5000) (expires #T\"1Y\" :from #D\"2026-10-01\"))
@@ -1535,10 +1538,10 @@ Now, pricing two contracts on the die:
 ```cl
 (defparameter *today* #D\"2026-10-26\")
 (defparameter *market*
-  (make-market :valuation-date *today*
-               :underlyings '((:die :spot 1 :currency :chip :vol 0.2d0))
-               :curves '((:chip-curve :rate 0d0))
-               :discounting '((:chip . :chip-curve))))
+  (make-market (valued-on *today*)
+               (underlying :die (spot 1) (currency :chip) (vol 0.2d0))
+               (curve :chip-curve (rate 0d0))
+               (discounting :chip :chip-curve)))
 (defparameter *engine*
   (make-engine :mc :process (make-fair-die) :n-paths 200000 :n-steps 3))
 

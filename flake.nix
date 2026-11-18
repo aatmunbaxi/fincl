@@ -40,6 +40,53 @@
           # traces need EGL from Mesa's software renderer. viz/render.py hands
           # this to kaleido alone, leaving GL for everything else untouched.
           eglVendor = "${pkgs.mesa}/share/glvnd/egl_vendor.d/50_mesa.json";
+
+          # One-command runners. Each must be started from the fincl
+          # repository root (the directory holding fincl.asd), because the
+          # shell's CL_SOURCE_REGISTRY points at $PWD.
+          requireRepoRoot = name: ''
+            if [ ! -f fincl.asd ]; then
+              echo "${name}: run from the fincl repository root (where fincl.asd is)" >&2
+              exit 1
+            fi
+          '';
+
+          # Regenerates the HTML manual in docs/api/ (docgen/docs.lisp).
+          #
+          #   nix develop .#docs -c fincl-docs
+          fincl-docs = pkgs.writeShellScriptBin "fincl-docs" ''
+            set -euo pipefail
+            ${requireRepoRoot "fincl-docs"}
+            # docgen/fincl-docgen.asd defines fincl/docgen, which ASDF does
+            # not find by a registry scan, so it is loaded by path first.
+            exec sbcl --non-interactive \
+              --eval '(asdf:load-asd (truename "docgen/fincl-docgen.asd"))' \
+              --eval '(ql:quickload :fincl/docgen)' \
+              --eval '(mgl-pax:update-asdf-system-html-docs fincl/docgen::@fincl-manual :fincl :target-dir #p"docs/api/")'
+          '';
+
+          # Runs every benchmark group against QuantLib (benchmarks/).
+          #
+          #   nix develop .#benchmarks -c fincl-bench
+          fincl-bench = pkgs.writeShellScriptBin "fincl-bench" ''
+            set -euo pipefail
+            ${requireRepoRoot "fincl-bench"}
+            exec sbcl --non-interactive \
+              --eval '(ql:quickload :fincl/benchmarks)' \
+              --eval '(fincl/benchmarks:run-benchmarks)'
+          '';
+
+          # Runs the full test suite (about 17 minutes). Exits nonzero when
+          # a check fails, because asdf:test-system signals an error.
+          #
+          #   nix develop .#tests -c fincl-tests
+          fincl-tests = pkgs.writeShellScriptBin "fincl-tests" ''
+            set -euo pipefail
+            ${requireRepoRoot "fincl-tests"}
+            exec sbcl --non-interactive \
+              --eval '(ql:quickload :fincl)' \
+              --eval '(asdf:test-system :fincl)'
+          '';
         in
         {
           default = pkgs.mkShell {
@@ -113,8 +160,26 @@
           benchmarks = pkgs.mkShell {
             name = "fincl-benchmarks";
             inputsFrom = [ self.devShells.${pkgs.system}.default ];
-            packages = [ pkgs.quantlib pkgs.boost pkgs.gcc ];
+            packages = [ pkgs.quantlib pkgs.boost pkgs.gcc fincl-bench ];
             LD_LIBRARY_PATH = nativeLibPath;
+          };
+
+          # Regenerates the HTML manual:
+          #
+          #   nix develop .#docs -c fincl-docs
+          docs = pkgs.mkShell {
+            name = "fincl-docs";
+            inputsFrom = [ self.devShells.${pkgs.system}.default ];
+            packages = [ fincl-docs ];
+          };
+
+          # Runs the full test suite:
+          #
+          #   nix develop .#tests -c fincl-tests
+          tests = pkgs.mkShell {
+            name = "fincl-tests";
+            inputsFrom = [ self.devShells.${pkgs.system}.default ];
+            packages = [ fincl-tests ];
           };
 
           # QuantLib (C++; nixpkgs has no Python bindings), only for

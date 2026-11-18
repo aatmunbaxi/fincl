@@ -177,7 +177,7 @@ index maturity from it, quoting PRICE.
 leg's value equals the floating leg's."))
 
 (defun swap-helper-market (helper curve discount-curve)
-  (make-market :valuation-date (helper-valuation-date helper)
+  (make-market-from-specs :valuation-date (helper-valuation-date helper)
                :curves `((:projection :curve ,curve) (:discount :curve ,(or discount-curve curve)))))
 
 (defmethod helper-implied-quote ((h swap-rate-helper) curve &optional discount-curve)
@@ -195,9 +195,13 @@ overnight coupons, both legs on the same schedule (MakeOIS's)."))
 (declaim (ftype (function (t t t &key (:valuation-date t) (:settlement-days t) (:payment-lag t) (:payment-convention t) (:payment-frequency t) (:convention t) (:end-of-month t))
                     (values ois-helper &optional))
           ois-helper))
-(defun ois-helper (quote tenor index &key valuation-date (settlement-days 2) (payment-lag 0)
-                                         (payment-convention :following) (payment-frequency :annual)
-                                         (convention :modified-following) (end-of-month nil eom-p))
+(defun ois-helper (quote tenor index &key valuation-date
+                                         (settlement-days (swap-convention-term :ois-defaults :settlement-days))
+                                         (payment-lag (swap-convention-term :ois-defaults :payment-lag))
+                                         (payment-convention (swap-convention-term :ois-defaults :payment-convention))
+                                         (payment-frequency (swap-convention-term :ois-defaults :payment-frequency))
+                                         (convention (swap-convention-term :ois-defaults :roll-convention))
+                                         (end-of-month nil eom-p))
   "An OIS of TENOR from SETTLEMENT-DAYS business days after the valuation
 date on the overnight INDEX, quoting the fixed rate QUOTE (fixed day counter
 the index's). Both legs pay every PAYMENT-FREQUENCY (a single period for
@@ -258,9 +262,10 @@ index's tenor, par coupons (MakeVanillaSwap's)."))
 (declaim (ftype (function (t t t &key (:valuation-date t) (:fixed-frequency t) (:fixed-convention t) (:fixed-day-counter t) (:calendar t))
                     (values swap-helper &optional))
           swap-helper))
-(defun swap-helper (quote tenor index &key valuation-date (fixed-frequency :annual)
-                                          (fixed-convention :modified-following)
-                                          (fixed-day-counter (make-instance 'thirty-360 :variant :bond-basis))
+(defun swap-helper (quote tenor index &key valuation-date
+                                          (fixed-frequency (swap-convention-term :ibor-swap-defaults :fixed-frequency))
+                                          (fixed-convention (swap-convention-term :ibor-swap-defaults :fixed-convention))
+                                          (fixed-day-counter (swap-convention-term :ibor-swap-defaults :fixed-day-counter))
                                           calendar)
   "A vanilla swap of TENOR from spot on the Ibor INDEX, quoting the fixed
 rate QUOTE paid every FIXED-FREQUENCY under FIXED-DAY-COUNTER, dates

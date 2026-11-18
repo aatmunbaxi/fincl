@@ -74,7 +74,7 @@ payoff scheme, an expiry, and optionally exercise rights. With no payoff clause 
 payoff is vanilla; with no exercise clause the option is European.
 
 A vanilla European call K=110 with 1Y expiry
-(make-option (call 110) (expiry #T\"1Y\" :from +today+))")
+(make-option (call 110) (expires #T\"1Y\" :from +today+))")
   (:macro make-option)
   (:function make-option-from-clauses)
   (:defaults :exercise-style :european :payoff-class 'vanilla-payoff :path-kind :independent)

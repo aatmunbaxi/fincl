@@ -143,11 +143,13 @@ any of them."
   ((name :initarg :name :reader construction-name)
    (language :initarg :language :reader construction-language-of)
    (known :initarg :known :initform nil :reader known-clauses)
-   (suggestion :initarg :suggestion :initform nil :reader clause-suggestion))
+   (also :initarg :also :initform nil :reader clause-also))
   (:report (lambda (c s)
-             (format s "~(~A~) is not a clause of the ~(~A~) language.~@[ Did you mean ~(~A~)?~]"
-                     (construction-name c) (construction-language-of c) (clause-suggestion c))
-             (format s " Clauses: ~{~(~A~)~^, ~}." (known-clauses c)))))
+             (format s "~(~A~) is not a clause of the ~(~A~) language."
+                     (construction-name c) (construction-language-of c))
+             (format s " Clauses: ~{~(~A~)~^, ~}." (known-clauses c))
+             (when (clause-also c)
+               (format s " Also: ~A." (clause-also c))))))
 
 (define-condition ambiguous-clause (construction-error)
   ((name :initarg :name :reader construction-name)

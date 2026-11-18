@@ -169,10 +169,29 @@
                   (and (typep c 'fact-type-error) (search "(call \"100\")" (princ-to-string c)))))
     (check-that "an expiry must be a date or a tenor"
                 (search "not a date" (error-message (lambda () (make-option (call 100) (expires 1))))))
-    (check-that "an unknown clause is a macroexpansion error suggesting the nearest"
+    (check-that "an unknown clause is a macroexpansion error"
                 (let ((c (condition-of (lambda ()
                                          (macroexpand-1 '(make-option (cal 100) (expires d)))))))
-                  (and (typep c 'unknown-clause) (search "call?" (princ-to-string c)))))
+                  (and (typep c 'unknown-clause) (not (search "Did you mean" (princ-to-string c))))))
+    (let ((doc (documentation 'make-option 'function))
+          (clauses (language-clauses 'option)))
+      (check-that "the docstring of make-option names every clause of language-clauses"
+                  (and (plusp (length clauses))
+                       (every (lambda (clause)
+                                (search (format nil "(~(~A~)" (getf clause :name)) doc))
+                              clauses)))
+      (check-that "a clause defined in a test (rebate) is in the docstring and in language-clauses"
+                  (and (search "(rebate amount) Pay AMOUNT if the option expires worthless." doc)
+                       (find "REBATE" clauses :key (lambda (c) (getf c :name)) :test #'string=)))
+      (check-that "the data function carries the same clause list"
+                  (search "(rebate amount)" (documentation 'make-option-from-clauses 'function)))
+      (check-that "the resolver's payoff classes are described"
+                  (search "DEFINE-PAYOFF" doc)))
+    (check-that "an unknown clause's report says so, then lists every clause, with no suggestion"
+                (let ((text (error-message (lambda () (make-option-from-clauses '((:cal 100)))))))
+                  (and (search "cal is not a clause of the option language." text)
+                       (search "Clauses: american," text)
+                       (not (search "Did you mean" text)))))
     (check-error "an unknown clause through the data function"
                  (make-option-from-clauses '((:call 100) (:expiers #D"2027-09-24")))
                  unknown-clause)

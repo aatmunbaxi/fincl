@@ -34,7 +34,7 @@
    #:minimize #:use-best
    ;; construction kernel
    #:define-construction-language #:define-clause #:define-convention #:define-fact
-   #:define-fact-rule #:define-slot-option
+   #:define-fact-rule #:define-slot-option #:language-clauses
    #:publish #:fact #:require-fact #:fact-present-p #:fact-provenance #:with-scope
    #:with-fact-table #:apply-clauses #:make-from-facts #:real-to-double
    #:annotated-class #:component-class
@@ -138,7 +138,8 @@
    #:dated-curve #:interpolated-discount-curve #:interpolated-zero-curve
    #:interpolated-forward-curve #:curve-forward-rate #:curve-reference-date #:curve-day-counter
    #:curve-time #:curve-dates
-   #:composite-market #:make-market #:market-underlyings #:market-view #:view-underlying
+   #:composite-market #:make-market #:make-market-from-clauses #:make-swap #:make-swap-from-clauses
+   #:make-bond #:make-bond-from-clauses #:make-cap-floor-from-clauses #:make-swaption-from-clauses #:make-fra #:make-fra-from-clauses #:market-underlyings #:market-view #:view-underlying
    #:view-discount-curve #:bump #:ambiguous-underlying #:missing-market-data
    #:unsupported-quanto
    #:instrument-underlying #:instrument-currency

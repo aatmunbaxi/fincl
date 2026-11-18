@@ -52,6 +52,11 @@ with every clause head checked now."
                        a clause definition built on demand (for vocabularies
                        that grow with classes); the facts it publishes and a
                        description are used in reports.
+  (:other-shape f)     F, a function of the macro's arguments defined before the
+                       language, returns the expansion of a call that is not
+                       written as clauses, or NIL for one that is. Lets a
+                       macro keep accepting the call shape of the function it
+                       replaced.
   (:documentation string)
 
 Every language also gets the clause (convention name).
@@ -68,7 +73,8 @@ Every language also gets the clause (convention name).
                                      name)))
           (defaults (option :defaults))
           (assemble (first (option :assemble)))
-          (resolver (option :resolver)))
+          (resolver (option :resolver))
+          (other-shape (first (option :other-shape))))
       `(progn
          (eval-when (:compile-toplevel :load-toplevel :execute)
            (let ((language (ensure-language ',name)))
@@ -86,5 +92,7 @@ Every language also gets the clause (convention name).
            (build-from-clauses ',name clauses))
          (defmacro ,macro (&rest clauses)
            ,(format nil "~A Clause arguments are evaluated." documentation)
-           (expand-language-form ',name ',function clauses))
+           (or ,@(when other-shape `((,other-shape clauses)))
+               (expand-language-form ',name ',function clauses)))
+         (refresh-language-documentation ',name)
          ',name))))

@@ -110,7 +110,7 @@ Levenberg-Marquardt polish")
 Black vols of their Jamshidian prices under *HULL-WHITE-TRUTH*."
   (let ((truth (apply #'make-hull-white *hull-white-truth*)))
     (mapcar (lambda (reset)
-              (let* ((s (make-swaption (euro-swap :payer 1 0.027d0 reset #D"2036-09-28") reset))
+              (let* ((s (make-swaption (on-swap (euro-swap :payer 1 0.027d0 reset #D"2036-09-28")) (expires reset)))
                      (target (price s (make-engine :jamshidian :process truth) market)))
                 `(,s ,(solve-brent (lambda (vol)
                                      (- (price s (make-engine :black-rates :volatility vol) market) target))

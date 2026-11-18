@@ -424,7 +424,7 @@ forecast on the :EUR curve."
                       (:receiver (* (path-discount) (max 0d0 (swap-npv (second swaps) market))))
                       (:swap (* (path-discount) (swap-npv (first swaps) market)))))))
     (iter (for swap in swaps) (for name in '(:payer :receiver))
-          (for jamshidian = (price (make-swaption swap expiry) (make-engine :jamshidian :process hw) m))
+          (for jamshidian = (price (make-swaption (on-swap swap) (expires expiry)) (make-engine :jamshidian :process hw) m))
           (multiple-value-bind (ok mean se) (output-within-3-se-p r name jamshidian)
             (check-that (format nil "~(~A~) swaption: mean discounted max(swap value, 0) at expiry ~,1F = Jamshidian ~,1F within 3 SE (~,1F)"
                                 name mean jamshidian se)

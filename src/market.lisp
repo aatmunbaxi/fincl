@@ -275,10 +275,12 @@ is a list or a function of no arguments returning one, called only then."
 
 (declaim (ftype (function (&key (:valuation-date t) (:day-counter t) (:underlyings list) (:curves list) (:discounting list) (:fixings list))
                     (values composite-market &optional))
-          make-market))
-(defun make-market (&key valuation-date (day-counter +actual-365-fixed+)
-                         underlyings curves discounting fixings)
-  "A COMPOSITE-MARKET observed on VALUATION-DATE. The arguments are lists:
+          make-market-from-specs))
+(defun make-market-from-specs (&key valuation-date (day-counter +actual-365-fixed+)
+                                    underlyings curves discounting fixings)
+  "A COMPOSITE-MARKET observed on VALUATION-DATE, from keyword arguments and
+nested lists: the call shape MAKE-MARKET accepts besides clauses. The
+arguments are lists:
 
   UNDERLYINGS  ((name :spot s [:currency c] [:dividend q] [:dividend-schedule d]
                 [:vol v]) ...)
@@ -299,7 +301,7 @@ is a list or a function of no arguments returning one, called only then."
 
 Reals are coerced to double-float.
 
-  (make-market :valuation-date #D\"2026-09-24\"
+  (make-market-from-specs :valuation-date #D\"2026-09-24\"
                :underlyings '((:spx :spot 5000 :currency :usd :dividend 0.015d0 :vol 0.18d0)
                               (:aapl :spot 230 :currency :usd :vol 0.25d0
                                :dividend-schedule ((\"2027-02-10\" 0.26d0)
@@ -378,12 +380,13 @@ holds (~{~S~^, ~})" (mapcar #'car curve-alist)))))
 currency, both :DEFAULT, discounting on the curve :DEFAULT. Numeric inputs
 are coerced to double-float; pass double-float or rational literals, since
 0.05 reads as a single-float and (float 0.05 1d0) is 0.05000000074505806d0.
-DIVIDEND-SCHEDULE adds discrete dividends, as in MAKE-MARKET.
+DIVIDEND-SCHEDULE adds discrete dividends, as in MAKE-MARKET-FROM-SPECS.
 
   (make-bs-market :valuation-date #D\"2026-09-24\"
                   :spot 100 :rate 0.05d0 :vol 0.2d0
                   :dividend-schedule '((\"2027-03-15\" 2)))"
-  (make-market :valuation-date valuation-date :day-counter day-counter
+  (make-market-from-specs
+               :valuation-date valuation-date :day-counter day-counter
                :underlyings `((:default :spot ,spot :currency :default
                                         :dividend ,dividend :vol ,vol
                                         ,@(when dividend-schedule
@@ -572,18 +575,6 @@ checked against the component's type; DATE names the market in the report."
                                  (format nil "~A for ~S on ~A" description target date)))
       (setf (gethash key (market-table market (component-table kind)))
             (if (eq kind :spot) (float value 1d0) value)))))
-
-(defmethod print-object ((m composite-market) stream)
-  (print-unreadable-object (m stream :type t)
-    (format stream "~A" (valuation-date m))
-    (dolist (u (market-underlyings m))
-      (format stream " ~S S=~,4F ~A ~A~@[ ~A~] ~A" u (underlying-spot m u)
-              (gethash u (market-underlying-currency m))
-              (gethash u (market-dividend-curves m))
-              (gethash u (market-dividend-schedules m))
-              (or (gethash u (market-vol-structures m)) "no vol")))
-    (dolist (id (sorted-keys (market-yield-curves m)))
-      (format stream " | ~S ~A" id (gethash id (market-yield-curves m))))))
 
 ;;; --------------------------------------------------------------------
 ;;; Views

@@ -56,44 +56,6 @@ Prices are per 100 of face, as quoted."))
 schedule and REDEMPTION per 100 of face with the last coupon. Build with
 MAKE-FIXED-RATE-BOND."))
 
-(declaim (ftype (function (t t t &key (:face t) (:currency t) (:settlement-days t) (:payment-convention t) (:redemption t) (:issue-date t) (:payment-calendar t))
-                    (values fixed-rate-bond &optional))
-          make-fixed-rate-bond))
-(defun make-fixed-rate-bond (schedule coupon day-counter
-                             &key (face 100) currency (settlement-days 2)
-                                  (payment-convention :following) (redemption 100) issue-date
-                                  payment-calendar)
-  "A fixed-rate bond (QuantLib's FixedRateBond): COUPON, a simple annual rate
-under DAY-COUNTER (or an INTEREST-RATE), on FACE (a real, with CURRENCY, or
-MONEY) over SCHEDULE's periods, paid on dates adjusted by PAYMENT-CONVENTION
-on PAYMENT-CALENDAR (default the schedule's, also the settlement calendar).
-REDEMPTION per 100 of face is paid with the last coupon.
-
-  (make-fixed-rate-bond (make-schedule #D\"2024-05-15\" #D\"2034-05-15\" #T\"6M\"
-                                       :calendar +united-states-government-bond+
-                                       :convention :unadjusted)
-                        0.04375d0 (make-instance 'actual-actual-icma :schedule s)
-                        :currency :usd :settlement-days 1)"
-  (check-input schedule schedule "a SCHEDULE")
-  (check-input settlement-days (integer 0) "a whole number of business days")
-  (check-input redemption real "a real redemption per 100 of face")
-  (when issue-date (check-input issue-date date "the issue date, or NIL"))
-  (multiple-value-bind (nominal currency) (notional-and-currency face currency)
-    (let* ((calendar (or payment-calendar (schedule-calendar schedule)))
-           (coupons (fixed-leg schedule (make-money nominal currency) coupon day-counter
-                               :payment-convention payment-convention :payment-calendar calendar))
-           (redemption (float redemption 1d0))
-           (maturity (payment-date (a:lastcar coupons))))
-      (make-instance 'fixed-rate-bond
-                     :currency currency :face nominal :settlement-days settlement-days
-                     :calendar calendar :issue-date issue-date :schedule schedule
-                     :coupon (fixed-coupon-rate (first coupons))
-                     :payment-convention payment-convention :redemption redemption
-                     :cashflows `(,@coupons
-                                  ,(make-instance 'simple-cashflow
-                                                  :payment-date maturity :currency currency
-                                                  :amount (/ (* nominal redemption) 100d0)))))))
-
 (declaim (ftype (function (t) (values date &optional)) bond-maturity-date))
 (defun bond-maturity-date (bond)
   "The date of BOND's redemption."
@@ -439,7 +401,17 @@ legs' values less the paid legs'."))
    (fixed-rate :initarg :fixed-rate :reader swap-fixed-rate :type rate)
    (spread :initarg :spread :reader swap-spread :type rate)
    (index :initarg :index :reader swap-index)
-   (fixed-schedule :initarg :fixed-schedule :reader swap-fixed-schedule))
+   (fixed-schedule :initarg :fixed-schedule :reader swap-fixed-schedule)
+   (floating-schedule :initarg :floating-schedule :reader swap-floating-schedule
+                      :documentation "The floating leg's schedule; the fixed leg's for an OIS.")
+   (fixed-day-counter :initarg :fixed-day-counter :reader swap-fixed-day-counter)
+   (floating-day-counter :initarg :floating-day-counter :initform nil
+                         :reader swap-floating-day-counter
+                         :documentation "As given, or NIL for the index's.")
+   (payment-convention :initarg :payment-convention :reader swap-payment-convention)
+   (payment-lag :initarg :payment-lag :initform 0 :reader swap-payment-lag)
+   (payment-calendar :initarg :payment-calendar :initform nil :reader swap-payment-calendar
+                     :documentation "As given, or NIL for the schedule's."))
   (:metaclass component-class)
   (:documentation "A fixed leg (leg 0) against a floating leg (leg 1) on the
 same nominal. A payer swap pays the fixed leg."))
@@ -447,75 +419,17 @@ same nominal. A payer swap pays the fixed leg."))
 (defclass vanilla-swap (fixed-vs-floating-swap) ()
   (:metaclass component-class)
   (:documentation "Fixed against Ibor coupons (QuantLib's VanillaSwap). Build
-with MAKE-VANILLA-SWAP."))
+with MAKE-SWAP and an Ibor index (or MAKE-VANILLA-SWAP)."))
 
 (defclass ois-swap (fixed-vs-floating-swap) ()
   (:metaclass component-class)
   (:documentation "Fixed against daily compounded overnight coupons on one
-schedule (QuantLib's OvernightIndexedSwap). Build with MAKE-OIS-SWAP."))
+schedule (QuantLib's OvernightIndexedSwap). Build with MAKE-SWAP and an
+overnight index (or MAKE-OIS-SWAP)."))
 
 (defun swap-signs-for (type)
   (check-input type swap-type ":PAYER (pays the fixed leg) or :RECEIVER")
   (if (eq type :payer) '(-1d0 1d0) '(1d0 -1d0)))
-
-(declaim (ftype (function (t t t t t t t &key (:spread t) (:floating-day-counter t) (:payment-convention t))
-                    (values vanilla-swap &optional))
-          make-vanilla-swap))
-(defun make-vanilla-swap (type nominal fixed-schedule fixed-rate fixed-day-counter
-                          float-schedule index
-                          &key (spread 0) floating-day-counter payment-convention)
-  "A vanilla swap (QuantLib's VanillaSwap): fixed coupons at FIXED-RATE under
-FIXED-DAY-COUNTER on FIXED-SCHEDULE against par Ibor coupons on INDEX plus
-SPREAD on FLOAT-SCHEDULE (FLOATING-DAY-COUNTER, default the index's), both
-on NOMINAL in the index's currency. TYPE is :PAYER or :RECEIVER of the fixed
-leg. Payment dates are adjusted by PAYMENT-CONVENTION, default the floating
-schedule's.
-
-  (make-vanilla-swap :payer 1d6 fixed 0.024d0 (make-instance 'thirty-360 :variant :bond-basis)
-                     floating (euribor #T\"6M\"))"
-  (check-input fixed-rate real "a real fixed rate")
-  (check-input spread real "a real spread")
-  (check-input index ibor-index "an Ibor index")
-  (let* ((signs (swap-signs-for type))
-         (convention (or payment-convention (schedule-convention float-schedule)))
-         (currency (index-currency index))
-         (fixed (fixed-leg fixed-schedule nominal fixed-rate fixed-day-counter
-                           :currency currency :payment-convention convention))
-         (floating (floating-leg float-schedule nominal index :spread spread
-                                                             :day-counter floating-day-counter
-                                                             :payment-convention convention)))
-    (make-instance 'vanilla-swap :type type :nominal (float nominal 1d0)
-                                 :fixed-rate (float fixed-rate 1d0) :spread (float spread 1d0)
-                                 :index index :currency currency :fixed-schedule fixed-schedule
-                                 :legs `(,fixed ,floating) :signs signs)))
-
-(declaim (ftype (function (t t t t t t &key (:spread t) (:payment-lag t) (:payment-convention t) (:payment-calendar t))
-                    (values ois-swap &optional))
-          make-ois-swap))
-(defun make-ois-swap (type nominal schedule fixed-rate fixed-day-counter index
-                      &key (spread 0) (payment-lag 0) (payment-convention :following) payment-calendar)
-  "An overnight indexed swap (QuantLib's OvernightIndexedSwap): fixed
-coupons at FIXED-RATE under FIXED-DAY-COUNTER against daily compounded
-coupons on the overnight INDEX plus SPREAD, both on SCHEDULE and NOMINAL,
-paid PAYMENT-LAG business days after each period on PAYMENT-CALENDAR
-(default the schedule's), adjusted by PAYMENT-CONVENTION.
-
-  (make-ois-swap :payer 1d6 schedule 0.033d0 +actual-360+ (sofr) :payment-lag 2)"
-  (check-input fixed-rate real "a real fixed rate")
-  (check-input spread real "a real spread")
-  (check-input index overnight-index "an overnight index")
-  (let* ((signs (swap-signs-for type))
-         (currency (index-currency index))
-         (fixed (fixed-leg schedule nominal fixed-rate fixed-day-counter
-                           :currency currency :payment-lag payment-lag
-                           :payment-convention payment-convention :payment-calendar payment-calendar))
-         (floating (floating-leg schedule nominal index :spread spread :payment-lag payment-lag
-                                                       :payment-convention payment-convention
-                                                       :payment-calendar payment-calendar)))
-    (make-instance 'ois-swap :type type :nominal (float nominal 1d0)
-                             :fixed-rate (float fixed-rate 1d0) :spread (float spread 1d0)
-                             :index index :currency currency :fixed-schedule schedule
-                             :legs `(,fixed ,floating) :signs signs)))
 
 (declaim (ftype (function (t (integer 0) t &key (:discount-curve t))
                     (values double-float &optional))
@@ -583,31 +497,6 @@ ForwardRateAgreement): on the value date the long side receives
 notional (F - K) T / (1 + F T), F the rate for the period and T its length
 under the index's day counter. Build with MAKE-FORWARD-RATE-AGREEMENT."))
 
-(declaim (ftype (function (t t t t t &key (:maturity-date t))
-                    (values forward-rate-agreement &optional))
-          make-forward-rate-agreement))
-(defun make-forward-rate-agreement (index value-date position strike notional &key maturity-date)
-  "An FRA on the Ibor INDEX from VALUE-DATE, POSITION :LONG (receives the
-rate) or :SHORT, at the simple STRIKE on NOTIONAL. Without MATURITY-DATE the
-period is the index tenor and the rate the index fixing; with it, the
-period ends there (adjusted) and the rate is the forward over it.
-
-  (make-forward-rate-agreement (euribor #T\"6M\") #D\"2026-12-29\" :long 0.02d0 1d6)"
-  (check-input index ibor-index "an Ibor index")
-  (check-input value-date date "the value date")
-  (check-input position (member :long :short) ":LONG or :SHORT")
-  (check-input strike real "a real strike rate")
-  (check-input notional (real (0)) "a positive notional")
-  (let ((maturity (adjust (index-fixing-calendar index)
-                          (or maturity-date (index-maturity-date index value-date))
-                          (index-convention index))))
-    (unless (date< value-date maturity)
-      (signal-invalid-argument 'maturity-date maturity 'date (format nil "a date after ~A" value-date)))
-    (make-instance 'forward-rate-agreement
-                   :index index :value-date value-date :maturity-date maturity :position position
-                   :strike (float strike 1d0) :notional (float notional 1d0)
-                   :indexed (null maturity-date) :currency (index-currency index))))
-
 (declaim (ftype (function (t t) (values double-float &optional)) fra-forward-rate))
 (defun fra-forward-rate (fra market)
   "The rate FRA settles on: the index fixing, or the forecast forward."
@@ -650,32 +539,6 @@ period ends there (adjusted) and the rate is the forward over it.
 max(floor - rate, 0), on the coupon's nominal and accrual; a collar is long
 the cap and short the floor. Build with MAKE-CAP-FLOOR."))
 
-(declaim (ftype (function (t t &key (:cap-rate t) (:floor-rate t))
-                    (values cap-floor &optional))
-          make-cap-floor))
-(defun make-cap-floor (type leg &key cap-rate floor-rate)
-  "Caplets (TYPE :CAP), floorlets (:FLOOR) or both (:COLLAR, long the cap)
-on LEG, a list of Ibor coupons (FLOATING-LEG). CAP-RATE and FLOOR-RATE are a
-real, or a list with one rate per coupon.
-
-  (make-cap-floor :cap (floating-leg schedule 1d6 (euribor #T\"6M\")) :cap-rate 0.025d0)"
-  (check-input type (member :cap :floor :collar) ":CAP, :FLOOR or :COLLAR")
-  (check-input leg (and list (not null)) "a non-empty leg of Ibor coupons")
-  (unless (every (lambda (c) (typep c 'ibor-coupon)) leg)
-    (signal-invalid-argument 'leg leg 'list "a leg of Ibor coupons (FLOATING-LEG on an Ibor index)"))
-  (flet ((rates (rate which needed)
-           (cond ((not needed) nil)
-                 ((realp rate) (make-list (length leg) :initial-element (float rate 1d0)))
-                 ((and (listp rate) (= (length rate) (length leg)) (every #'realp rate))
-                  (mapcar (lambda (r) (float r 1d0)) rate))
-                 (t (signal-invalid-argument which rate 'real
-                                             (format nil "a real rate, or a list of ~D (one per coupon)"
-                                                     (length leg)))))))
-    (make-instance 'cap-floor :type type :leg leg
-                              :cap-rates (rates cap-rate 'cap-rate (member type '(:cap :collar)))
-                              :floor-rates (rates floor-rate 'floor-rate (member type '(:floor :collar)))
-                              :currency (cashflow-currency (first leg)))))
-
 (defun caplet-forward (coupon market)
   "The rate COUPON's optionlet is struck on: its fixing net of spread and
 gearing (QuantLib's adjustedFixing)."
@@ -697,23 +560,6 @@ Bermudan for lattice engines. SETTLEMENT :PHYSICAL enters the swap;
 :CASH-ANNUITY pays its value with the fixed leg discounted at the swap rate
 (QuantLib's par yield curve method). Build with MAKE-SWAPTION."))
 
-(declaim (ftype (function (t t &key (:settlement t)) (values swaption &optional)) make-swaption))
-(defun make-swaption (swap exercise &key (settlement :physical))
-  "A swaption on SWAP. EXERCISE is an exercise object, or a date for a
-European swaption.
-
-  (make-swaption swap #D\"2027-09-24\")
-  (make-swaption swap (make-instance 'bermudan-exercise :dates dates))"
-  (check-input swap fixed-vs-floating-swap "a fixed-vs-floating swap (MAKE-VANILLA-SWAP, MAKE-OIS-SWAP)")
-  (check-input settlement (member :physical :cash-annuity) ":PHYSICAL or :CASH-ANNUITY")
-  (let ((exercise (if (typep exercise 'date)
-                      (make-instance 'european-exercise :expiry exercise)
-                      exercise)))
-    (check-input exercise (or european-exercise bermudan-exercise)
-                 "a European or Bermudan exercise, or an exercise date")
-    (make-instance 'swaption :swap swap :exercise exercise :settlement settlement
-                             :currency (instrument-currency swap))))
-
 ;;; --------------------------------------------------------------------
 ;;; Callable bonds
 ;;; --------------------------------------------------------------------
@@ -727,29 +573,6 @@ issuer may redeem at the price) or :PUT (the holder may), by date."))
 bond may be redeemed at a clean price per 100 of face plus accrued interest
 (QuantLib's CallableFixedRateBond). Build with
 MAKE-CALLABLE-FIXED-RATE-BOND; price with a lattice engine."))
-
-(declaim (ftype (function (t t t t &rest t &key &allow-other-keys)
-                    (values callable-fixed-rate-bond &optional))
-          make-callable-fixed-rate-bond))
-(defun make-callable-fixed-rate-bond (schedule coupon day-counter call-schedule &rest keys
-                                      &key &allow-other-keys)
-  "A fixed-rate bond as MAKE-FIXED-RATE-BOND (same keys) callable or
-puttable on CALL-SCHEDULE, a list of (date clean-price) or (date clean-price
-type), TYPE :CALL (default) or :PUT, prices per 100 of face.
-
-  (make-callable-fixed-rate-bond schedule 0.03d0 dc `((,#D\"2029-09-28\" 100) (,#D\"2030-09-30\" 100))
-                                 :currency :eur)"
-  (check-input call-schedule (and list (not null)) "a non-empty list of (date clean-price [type])")
-  (let ((bond (apply #'make-fixed-rate-bond schedule coupon day-counter keys))
-        (calls (mapcar (lambda (entry)
-                         (destructuring-bind (date price &optional (type :call)) entry
-                           (check-input date date "a call date")
-                           (check-input price real "a clean price per 100 of face")
-                           (check-input type (member :call :put) ":CALL or :PUT")
-                           `(,date ,(float price 1d0) ,type)))
-                       call-schedule)))
-    (change-class bond 'callable-fixed-rate-bond
-                  :call-schedule (sort calls #'date< :key #'first))))
 
 ;;; --------------------------------------------------------------------
 ;;; Fixing dates (task 32)

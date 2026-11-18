@@ -110,42 +110,22 @@ is a function, which a snapshot cannot hold" state)))
   (destructuring-bind (head q-form &rest options) (physical-form p)
     `(,head (,(first q-form) ,@(mapcar #'snapshot-form (rest q-form))) ,@options)))
 
-(defun structure-or-number (structure flat-class reader)
-  "STRUCTURE's snapshot form, or its number if it is the flat FLAT-CLASS (the
-form MAKE-MARKET's list DSL takes)."
-  (if (eq (class-name (class-of structure)) flat-class)
-      (funcall reader structure)
-      (snapshot-form structure)))
+(defun clause-snapshot-form (language clause)
+  "CLAUSE (data of LANGUAGE) as a snapshot form that evaluates to it: LIST
+calls for the clause and its sub-clauses, QUOTE for lists, SNAPSHOT-FORM for
+objects."
+  `(list ,(first clause)
+         ,@(mapcar (lambda (arg)
+                     (cond ((clause-like-p language arg) (clause-snapshot-form language arg))
+                           ((typep arg '(or number symbol string date)) arg)
+                           ((consp arg) `(quote ,arg))
+                           (t (snapshot-form arg))))
+                   (rest clause))))
 
 (defmethod snapshot-form ((m composite-market))
-  (flet ((entry (table key) (gethash key table)))
-    `(make-market
-      :valuation-date ,(valuation-date m)
-      :day-counter ,(snapshot-form (market-day-counter m))
-      :underlyings
-      (list ,@(iter (for u in (market-underlyings m))
-                    (collect `(list ,u :spot ,(underlying-spot m u)
-                                    :currency ,(entry (market-underlying-currency m) u)
-                                    :dividend ,(structure-or-number (entry (market-dividend-curves m) u)
-                                                                    'flat-dividend-curve #'flat-rate)
-                                    ,@(a:when-let ((s (entry (market-dividend-schedules m) u)))
-                                        `(:dividend-schedule ,(snapshot-form s)))
-                                    ,@(a:when-let ((v (entry (market-vol-structures m) u)))
-                                        `(:vol ,(structure-or-number v 'flat-black-vol #'flat-vol)))))))
-      :curves
-      (list ,@(iter (for id in (sorted-keys (market-yield-curves m)))
-                    (for c = (entry (market-yield-curves m) id))
-                    (collect (if (eq (class-name (class-of c)) 'flat-yield-curve)
-                                 `(list ,id :rate ,(flat-rate c))
-                                 `(list ,id :curve ,(snapshot-form c))))))
-      :discounting
-      (quote ,(iter (for currency in (sorted-keys (market-discount-curve-for m)))
-                    (collect (cons currency (entry (market-discount-curve-for m) currency)))))
-      :fixings
-      (quote ,(iter (for index in (sorted-keys (market-fixings m)))
-                    (for dates = (entry (market-fixings m) index))
-                    (collect `(,index ,@(iter (for d in (sort (a:hash-table-keys dates) #'date<))
-                                              (collect `(,d ,(gethash d dates)))))))))))
+  `(make-market-from-clauses
+    (list ,@(mapcar (lambda (clause) (clause-snapshot-form 'market clause))
+                    (object-clauses 'market m)))))
 
 ;;; Printing readably is printing the snapshot form.
 (defmethod print-object :around ((m composite-market) stream)
@@ -174,7 +154,7 @@ back.
         object))))
 
 (defparameter *snapshot-constructors*
-  '(make-market make-dividend-schedule make-instance make-interpolated-smile make-svi-slice
+  '(make-market make-market-from-clauses make-market-from-specs make-dividend-schedule make-instance make-interpolated-smile make-svi-slice
     make-smile-surface make-ssvi-surface make-option-from-clauses make-holding make-position
     make-portfolio make-cash-account make-engine make-gbm make-heston make-cev make-local-vol make-merton-jump
     make-kou-jump make-variance-gamma make-nig make-bates make-garch change-measure)
@@ -202,7 +182,8 @@ INVALID-ARGUMENT."
                 (let ((args (mapcar #'snapshot-eval args)))
                   (when (and (eq head 'make-instance) (not (member (first args) *snapshot-classes*)))
                     (refuse `(make-instance ',(first args))))
-                  (apply head args))))))
+                  ;; Snapshots written before markets had clauses call MAKE-MARKET with keywords.
+                  (apply (if (eq head 'make-market) 'make-market-from-specs head) args))))))
           ((and (symbolp form) (member form *snapshot-day-counters*)) (symbol-value form))
           ((and (symbolp form) (not (keywordp form)) (not (member form '(t nil)))) (refuse form))
           (t form))))

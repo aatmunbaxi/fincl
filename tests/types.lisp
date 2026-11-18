@@ -106,7 +106,9 @@ declared bounds, and accept the bounds' endpoints where they are inclusive."
      "MAKE-BATES" "MAKE-CEV" "MAKE-CGMY" "MAKE-GARCH" "MAKE-GBM" "MAKE-HESTON"
      "MAKE-HULL-WHITE" "MAKE-KOU-JUMP" "MAKE-LOCAL-VOL" "MAKE-MERTON-JUMP" "MAKE-NIG"
      "MAKE-VARIANCE-GAMMA")
-    ("data function written by DEFINE-CONSTRUCTION-LANGUAGE" "MAKE-OPTION-FROM-CLAUSES")
+    ("data function written by DEFINE-CONSTRUCTION-LANGUAGE" "MAKE-OPTION-FROM-CLAUSES" "MAKE-MARKET-FROM-CLAUSES"
+     "MAKE-SWAP-FROM-CLAUSES" "MAKE-BOND-FROM-CLAUSES" "MAKE-FRA-FROM-CLAUSES"
+     "MAKE-CAP-FLOOR-FROM-CLAUSES" "MAKE-SWAPTION-FROM-CLAUSES")
     ("helper defined by tests/cos.lisp, which shares the FINCL symbol" "COS-ENGINE"))
   "(reason name...): exported ordinary functions with no declared function type.
 Functions written by DEFINE-PROCESS, DEFINE-PAYOFF, DEFINE-PATH-PAYOFF and the

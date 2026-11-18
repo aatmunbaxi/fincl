@@ -90,7 +90,7 @@ its own market" name style (class-name (class-of engine)))
     (check-that "the market prints its underlyings and curves"
                 (let ((printed (prin1-to-string m)))
                   (every (lambda (s) (search s printed))
-                         '(":SPX" ":NDX" ":USD-OIS" ":EUR-ESTR" "vol=0.2200" "r=0.0400"))))
+                         '(":spx" ":ndx" ":usd-ois" ":eur-estr" "(vol 0.22d0)" "(rate 0.04d0)"))))
     (check-error "a non-positive spot"
                  (make-market :valuation-date *today* :underlyings '((:x :spot -1))
                               :curves '((:c :rate 0)))

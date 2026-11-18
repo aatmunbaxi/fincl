@@ -61,6 +61,21 @@ the new scope; reads fall back to the enclosing scopes.
   `(let ((*scope* `(,@*scope* ,,key)))
      ,@body))
 
+(defmacro in-scope ((scope) &body body)
+  "Run BODY in SCOPE, a scope as SCOPES-WITH-FACT returns it, with reads
+falling back to its enclosing scopes."
+  `(let ((*scope* ,scope))
+     ,@body))
+
+(defun scopes-with-fact (fact)
+  "The scopes holding an entry for FACT, in the order the entries were made.
+A language with a variable number of parts (one scope per part) lists them by
+a fact each part's clause publishes.
+
+  (scopes-with-fact :underlying-name) => (((:underlying :spx)) ((:underlying :aapl)))"
+  (iter (for ((scope . entry-fact) nil) in-hashtable (fact-table-entries *fact-table*))
+        (when (eq entry-fact fact) (collect scope))))
+
 (defun record-fact (fact value priority provenance)
   "Store VALUE for FACT in the current scope, resolving priorities."
   (let* ((key (cons *scope* fact))
@@ -106,6 +121,12 @@ be defined (DEFINE-FACT) and declared in the clause's :PUBLISHES.
           (when entry (return entry))
           (while scope))))
 
+(declaim (ftype (function (t) (values boolean &optional)) fact-set-here-p))
+(defun fact-set-here-p (fact)
+  "True if a clause or convention gave FACT in exactly the current scope, not
+in an enclosing one. Does not derive and does not mark the fact used."
+  (and (gethash (cons *scope* fact) (fact-table-entries *fact-table*)) t))
+
 (declaim (ftype (function (t) (values t &rest t)) fact))
 (defun fact (fact)
   "The value of FACT seen from the current scope, deriving it by rule if no
@@ -119,6 +140,17 @@ fact used.
         (progn (setf (fact-entry-read entry) t)
                (values (fact-entry-value entry) t))
         (derive-fact fact))))
+
+(defun optional-fact (fact)
+  "The value of FACT seen from the current scope, or NIL if no clause, default
+or rule gave it. Marks the fact used."
+  (values (fact fact)))
+
+(defun consume-facts (facts)
+  "Mark each of FACTS used in the current scope, so that a part a clause gave
+but another clause superseded does not raise an UNUSED-FACT warning."
+  (dolist (fact facts)
+    (optional-fact fact)))
 
 (declaim (ftype (function (t) (values boolean &optional)) fact-present-p))
 (defun fact-present-p (fact)
