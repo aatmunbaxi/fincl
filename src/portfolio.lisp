@@ -295,13 +295,34 @@ UNSUPPORTED-COMBINATION fallback, by its classes alone."
           (some (lambda (m) (and (null (method-qualifiers m)) (not (fallback-method-p m))))
                 methods))))))
 
-(defvar *default-engines* '(:black-scholes :rgw :baw :cos :fd :binomial :mc :merton-series :cev)
-  "The engine designators APPLICABLE-ENGINES considers by default.")
+(defvar *default-engines* nil
+  "The engine designators APPLICABLE-ENGINES considers by default. NIL means
+every registered designator whose engine class has an ENGINE-DISPATCH method
+(see DEFAULT-ENGINES), so an engine a user defines is found; a list replaces it.")
+
+(defparameter *built-in-engine-order*
+  '(:black-scholes :rgw :baw :cos :fd :binomial :mc :merton-series :cev)
+  "The built-in designators in the order that breaks ties of ENGINE-PREFERENCE.")
+
+(defun default-engines ()
+  "The designators of the registered engines that price options: the
+built-in ones in *BUILT-IN-ENGINE-ORDER*, then the others sorted. An engine
+prices options when ENGINE-DISPATCH has a method for its class.
+
+  (default-engines) => (:black-scholes :rgw :baw ... :cev :my-engine)"
+  (let* ((option (find-class 'option))
+         (pricing (remove-if-not
+                   (lambda (key)
+                     (c2mop:compute-applicable-methods-using-classes
+                      #'engine-dispatch `(,(designated-class key) ,option)))
+                   (engine-designators))))
+    `(,@(remove-if-not (lambda (key) (member key pricing)) *built-in-engine-order*)
+      ,@(remove-if (lambda (key) (member key *built-in-engine-order*)) pricing))))
 
 (defgeneric applicable-engines (instrument market &key candidates process)
   (:documentation "The engines that have a pricing method for INSTRUMENT, as
 instances, ordered by ENGINE-PREFERENCE: those of CANDIDATES (designators,
-default *DEFAULT-ENGINES*) that model PROCESS (default GBM on the market)
+default *DEFAULT-ENGINES*, else DEFAULT-ENGINES) that model PROCESS (default GBM on the market)
 and whose pricing generic function has a method for the instrument's
 exercise, payoff and path classes more specific than the
 UNSUPPORTED-COMBINATION fallback. An engine listed may still decline in a
@@ -310,7 +331,7 @@ model); SELECT-ENGINE and PRICE-PORTFOLIO move on when it does.
 
   (applicable-engines (make-option (put 100) (american) (expires d)) m :process (make-heston))
   => (#<ENGINE (make-engine :fd :process (make-heston))> #<ENGINE (make-engine :mc ...)>)")
-  (:method ((o option) market &key (candidates *default-engines*) (process (make-gbm)))
+  (:method ((o option) market &key (candidates (or *default-engines* (default-engines))) (process (make-gbm)))
     (require-risk-neutral process "APPLICABLE-ENGINES")
     (let ((market (pricing-market market o)))
       (-> (iter (for key in candidates)

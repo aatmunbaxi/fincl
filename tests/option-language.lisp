@@ -268,3 +268,109 @@
                     (format t "~&    ~(~A~) ~A~%" (class-name class) o)))))))))
     (check-that (format nil "~D rebuilt options price = to the originals under every engine" count)
                 (zerop mismatches))))
+
+;;; --------------------------------------------------------------------
+;;; Extensions that add a path kind, an exercise style and payoff bodies
+;;; --------------------------------------------------------------------
+
+;;; A path kind: the clause publishes the keyword, a method builds the feature.
+(defclass ratchet-path (path-independent) ()
+  (:documentation "A path feature added outside fincl."))
+
+(defmethod fincl::assemble-path-feature ((kind (eql :ratchet)))
+  (make-instance 'ratchet-path))
+
+(define-clause option ratchet ()
+  (:publishes :path-kind)
+  "A path feature added outside fincl."
+  (publish :path-kind :ratchet))
+
+;;; An exercise style: exercise in the second half of the life only.
+(defclass late-exercise (fincl::exercise) ()
+  (:metaclass fincl::component-class)
+  (:documentation "Exercise on any date in the second half of the life."))
+
+(defmethod fincl::assemble-exercise ((style (eql :late)))
+  (fincl::make-from-facts 'late-exercise))
+
+(defmethod fincl::exercise-mask ((x late-exercise) market times)
+  (declare (ignore market))
+  (let ((mask (make-array (length times) :element-type 'bit :initial-element 0))
+        (half (* 0.5d0 (aref times (1- (length times))))))
+    (dotimes (i (length times) mask)
+      (when (>= (aref times i) half) (setf (sbit mask i) 1)))))
+
+(define-clause option late ()
+  (:publishes :exercise-style)
+  "Exercise on any date in the second half of the life."
+  (publish :exercise-style :late))
+
+(define-payoff integer-valued-call (strike-payoff) ()
+  (s)
+  (if (> (* phi (- s strike)) 0d0) 1 0))
+
+(define-payoff symbol-valued-call (strike-payoff) ()
+  (s)
+  (if (> (* phi (- s strike)) 0d0) :in :out))
+
+(define-path-payoff integer-valued-path (payoff) ()
+  (s)
+  (:final 1))
+
+(define-checks option-extension-checks
+  (format t "~&Option language: path kinds, exercise styles and payoff bodies added from outside~%")
+  (let* ((d #D"2027-09-24")
+         (m (make-bs-market :valuation-date *today* :spot 100 :rate 0.05d0 :vol 0.2d0))
+         (ratchet (make-option (call 100) (ratchet) (expires d))))
+    (check-that "a clause publishing a new path kind builds that kind's feature"
+                (typep (option-path ratchet) 'ratchet-path))
+    (check "an option on the new path kind prices as the vanilla it reduces to"
+           (price (make-option (call 100) (expires d)) :black-scholes m)
+           (price ratchet :black-scholes m) 1d-12)
+    (check-that "an unknown path kind names the kinds that have a method"
+                (let ((message (error-message
+                                (lambda () (fincl::assemble-path-feature :nonesuch)))))
+                  (and message (search "independent" message :test #'char-equal)
+                       (search "ratchet" message :test #'char-equal))))
+    (check-error "an unknown exercise style is an invalid-argument"
+                 (fincl::assemble-exercise :nonesuch) invalid-argument)
+    (let ((late (make-option (put 110) (late) (expires d))))
+      (check-that "a clause publishing a new exercise style builds that style's exercise"
+                  (typep (option-exercise late) 'late-exercise))
+      (check-equal "exercise-style of a user's exercise class is its class name"
+                   'late-exercise (fincl::exercise-style (option-exercise late)))
+      (let ((european (price (make-option (put 110) (expires d)) :fd m))
+            (late-price (price late :fd m))
+            (american (price (make-option (put 110) (american) (expires d)) :fd m)))
+        (check-that "an exercise class with its own mask prices on finite differences, between European and American"
+                    (and (> late-price european) (< late-price american))))))
+  (let ((call (make-instance 'integer-valued-call :kind :call :strike 100d0))
+        (k nil))
+    (setf k (payoff-kernel call))
+    (check-that "a payoff body returning an integer gives a double from both PAYOFF-VALUE and the kernel"
+                (and (typep (payoff-value call 120d0) 'double-float)
+                     (typep (funcall k 120d0) 'double-float)
+                     (= 1d0 (payoff-value call 120d0) (funcall k 120d0))
+                     (= 0d0 (payoff-value call 80d0) (funcall k 80d0)))))
+  (let ((call (make-instance 'symbol-valued-call :kind :call :strike 100d0)))
+    (check-error "a payoff body returning a non-real signals invalid-argument"
+                 (payoff-value call 120d0) invalid-argument)
+    (check-that "the report names the payoff"
+                (search "symbol-valued-call" (error-message (lambda () (funcall (payoff-kernel call) 120d0)))
+                        :test #'char-equal)))
+  (let ((m (make-bs-market :valuation-date *today* :spot 100 :rate 0.05d0 :vol 0.2d0)))
+    (check "a path payoff whose :final is an integer pays it, discounted"
+           (exp -0.05d0)
+           (price (make-option (integer-valued-path) (expires #D"2027-09-24"))
+                  (make-engine :mc :n-paths 1000) m)
+           1d-12)))
+
+(define-checks default-engine-checks
+  (format t "~&Portfolios: the default engine list comes from the registry~%")
+  (let ((defaults (fincl::default-engines)))
+    (check-that "the built-in option engines come first, in their old order"
+                (equal '(:black-scholes :rgw :baw :cos :fd :binomial :mc :merton-series :cev)
+                       (subseq defaults 0 9)))
+    (check-that "rates engines, which price no option, are not listed"
+                (notany (lambda (key) (member key '(:discounting :black-rates :jamshidian)))
+                        defaults))))

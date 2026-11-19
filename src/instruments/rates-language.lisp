@@ -769,9 +769,12 @@ written without it."
 (defun assemble-swaption ()
   (let* ((swap (require-fact :swap))
          (settlement (require-fact :swaption-settlement))
-         (exercise (ecase (require-fact :exercise-style)
-                     (:european (make-from-facts 'european-exercise))
-                     (:bermudan (check-bermudan-expiry) (make-from-facts 'bermudan-exercise)))))
+         (style (require-fact :exercise-style))
+         (exercise (progn
+                     (unless (member style '(:european :bermudan))
+                       (signal-invalid-argument :exercise-style style 'keyword
+                                                "a swaption exercise: :EUROPEAN or :BERMUDAN"))
+                     (assemble-exercise style))))
     (check-input swap fixed-vs-floating-swap
                  "a fixed-vs-floating swap (MAKE-SWAP)")
     (make-instance 'swaption :swap swap :exercise exercise :settlement settlement

@@ -68,7 +68,7 @@ falling back to its enclosing scopes."
      ,@body))
 
 (defun scopes-with-fact (fact)
-  "The scopes holding an entry for FACT, in the order the entries were made.
+  "The scopes holding an entry for FACT, in no specified order.
 A language with a variable number of parts (one scope per part) lists them by
 a fact each part's clause publishes.
 

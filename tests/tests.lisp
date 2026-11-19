@@ -131,7 +131,7 @@ passed."
 
 (defparameter *fast-checks*
   (list 'construction-checks 'construction-equality-checks 'market-language-checks 'rates-language-checks 'rates-checks 'market-checks 'composite-market-checks 'dated-pricing-checks 'payoff-protocol-checks
-        'define-payoff-checks 'option-language-checks 'exercise-mask-checks
+        'define-payoff-checks 'option-language-checks 'option-extension-checks 'default-engine-checks 'exercise-mask-checks
         'cos-checks 'cos-term-structure-checks 'binomial-checks 'analytic-checks 'parameter-checks
         'error-checks 'condition-hierarchy-checks 'restart-checks 'lsm-basis-checks
         'lbr-reference-checks 'implied-vol-checks 'engine-implied-vol-checks

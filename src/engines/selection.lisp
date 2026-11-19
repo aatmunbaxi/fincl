@@ -241,11 +241,14 @@ designator gets the process: '(:mc :n-paths 20000)).
            (*engine-fallback-allowed* ,(if fallback (second fallback) '*engine-fallback-allowed*)))
        ,@body)))
 
-(defun exercise-style (exercise)
-  (etypecase exercise
-    (american-exercise :american)
-    (bermudan-exercise :bermudan)
-    (european-exercise :european)))
+(defgeneric exercise-style (exercise)
+  (:documentation "The keyword naming EXERCISE's style, as WITH-ENGINES
+selectors use it: :EUROPEAN, :AMERICAN, :BERMUDAN, and for any other
+exercise class its class name.")
+  (:method ((x european-exercise)) :european)
+  (:method ((x american-exercise)) :american)
+  (:method ((x bermudan-exercise)) :bermudan)
+  (:method ((x exercise)) (class-name (class-of x))))
 
 (defun selector-matches-p (selector exercise process)
   (etypecase selector

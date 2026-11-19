@@ -229,7 +229,7 @@ model."))
    (day-counter :initarg :day-counter :reader market-day-counter
                 :type day-counter :initform +actual-365-fixed+)
    (underlyings :initarg :underlyings :reader market-underlyings :type list
-                :documentation "Underlying names, in the order given.")
+                :documentation "Underlying names, in no specified order; printing sorts them.")
    (spots :initarg :spots :reader market-spots :type hash-table)
    (yield-curves :initarg :yield-curves :reader market-yield-curves :type hash-table)
    (dividend-curves :initarg :dividend-curves :reader market-dividend-curves :type hash-table)

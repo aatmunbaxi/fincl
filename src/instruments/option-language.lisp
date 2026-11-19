@@ -31,7 +31,9 @@
 (define-fact :kind (member :call :put) "Call or put.")
 (define-fact :strike double-float "The strike." :coerce #'real-to-double)
 (define-fact :expiry date "The last exercise date.")
-(define-fact :exercise-style (member :european :american :bermudan) "The exercise rights.")
+(define-fact :exercise-style keyword
+  "The exercise rights, a keyword with an ASSEMBLE-EXERCISE method (:EUROPEAN,
+:AMERICAN, :BERMUDAN, or a user's own).")
 (define-fact :exercise-dates (satisfies date-list-p) "Bermudan exercise dates, sorted."
   :coerce #'sorted-dates)
 (define-fact :exercise-tenor tenor "Spacing of generated Bermudan dates.")
@@ -44,9 +46,10 @@
 (define-fact :payoff-class (satisfies payoff-class-name-p) "The payoff's class name.")
 (define-fact :payoff-initargs list "Initargs for the payoff, beside its :FACT slots.")
 (define-fact :underlying keyword "The market underlying an instrument refers to.")
-(define-fact :path-kind (member :independent :asian :barrier :lookback)
-  "What the payoff depends on beside the terminal value: nothing, an average,
-a barrier, or the path's extremum.")
+(define-fact :path-kind keyword
+  "What the payoff depends on beside the terminal value, a keyword with an
+ASSEMBLE-PATH-FEATURE method: :INDEPENDENT (nothing), :ASIAN (an average),
+:BARRIER, :LOOKBACK (the path's extremum), or a user's own.")
 (define-fact :currency keyword "The currency an instrument pays in.")
 
 ;;; --------------------------------------------------------------------
@@ -198,19 +201,44 @@ given, by ROLL-CONVENTION; the expiry stays as given."
                  (not (date= (a:lastcar (fact :exercise-dates)) (fact :expiry))))
         (error 'conflicting-clauses :fact :expiry :earlier dates-source :later expiry-source)))))
 
+(defun eql-specializer-keywords (generic-function)
+  "The keywords GENERIC-FUNCTION has an (EQL keyword) method for, in the order
+of definition."
+  (iter (for method in (reverse (c2mop:generic-function-methods generic-function)))
+        (for specializer = (first (c2mop:method-specializers method)))
+        (when (typep specializer 'c2mop:eql-specializer)
+          (collect (c2mop:eql-specializer-object specializer)))))
+
 (defgeneric assemble-path-feature (kind)
   (:documentation "The path feature of kind KIND (the :PATH-KIND fact), built
-from the facts in scope.")
-  (:method ((kind (eql :independent))) (make-instance 'path-independent)))
+from the facts in scope. A method on (EQL :keyword) adds a kind; a clause
+publishes the keyword as :PATH-KIND. An unknown kind signals
+INVALID-ARGUMENT naming the kinds that have a method.")
+  (:method ((kind (eql :independent))) (make-instance 'path-independent))
+  (:method (kind)
+    (signal-invalid-argument :path-kind kind 'keyword
+                             (format nil "a kind with an ASSEMBLE-PATH-FEATURE method: ~{~S~^, ~}"
+                                     (eql-specializer-keywords #'assemble-path-feature)))))
+
+(defgeneric assemble-exercise (style)
+  (:documentation "The exercise of style STYLE (the :EXERCISE-STYLE fact), built
+from the facts in scope. A method on (EQL :keyword) adds a style; a clause
+publishes the keyword as :EXERCISE-STYLE. An unknown style signals
+INVALID-ARGUMENT naming the styles that have a method.")
+  (:method ((style (eql :european))) (make-from-facts 'european-exercise))
+  (:method ((style (eql :american))) (make-from-facts 'american-exercise))
+  (:method ((style (eql :bermudan)))
+    (check-bermudan-expiry)
+    (make-from-facts 'bermudan-exercise))
+  (:method (style)
+    (signal-invalid-argument :exercise-style style 'keyword
+                             (format nil "a style with an ASSEMBLE-EXERCISE method: ~{~S~^, ~}"
+                                     (eql-specializer-keywords #'assemble-exercise)))))
 
 (defun assemble-option ()
   (let* ((payoff (apply #'make-from-facts (require-fact :payoff-class)
                         (values (fact :payoff-initargs))))
-         (exercise (ecase (require-fact :exercise-style)
-                     (:european (make-from-facts 'european-exercise))
-                     (:american (make-from-facts 'american-exercise))
-                     (:bermudan (check-bermudan-expiry)
-                                (make-from-facts 'bermudan-exercise)))))
+         (exercise (assemble-exercise (require-fact :exercise-style))))
     (make-from-facts 'option :payoff payoff :exercise exercise
                              :path (assemble-path-feature (require-fact :path-kind)))))
 

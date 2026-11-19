@@ -142,13 +142,13 @@
           };
 
           # The default shell plus Clozure CL and ECL, to load fincl on an
-          # implementation other than SBCL (task 34). Opt-in:
+          # implementation other than SBCL. Opt-in:
           #
           #   nix develop .#portability -c ccl
           portability = pkgs.mkShell {
             name = "fincl-portability";
             inputsFrom = [ self.devShells.${pkgs.system}.default ];
-            packages = [ pkgs.ccl pkgs.ecl ];
+            packages = [ pkgs.ccl pkgs.ecl pkgs.abcl ];
           };
 
           # The default shell plus QuantLib and a C++ toolchain, for the

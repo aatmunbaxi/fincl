@@ -286,6 +286,18 @@ formulas for subclasses of CLASS, for a payoff class written by hand.
   `(eval-when (:compile-toplevel :load-toplevel :execute)
      (setf (gethash ',class *payoff-variables*) ',variables)))
 
+(declaim (inline payoff-result)
+         (ftype (function (symbol t) (values double-float &optional)) payoff-result))
+(defun payoff-result (payoff value)
+  "VALUE as a double-float, the result of the formula of the payoff class
+PAYOFF. A value that is not a real signals INVALID-ARGUMENT naming PAYOFF.
+
+  (payoff-result 'capped-call 1) => 1.0d0"
+  (if (realp value)
+      (float value 1d0)
+      (signal-invalid-argument payoff value 'real
+                               "a real number as the result of the payoff formula")))
+
 (defmacro define-payoff (name superclasses slots (observable) &body body)
   "Define the payoff class NAME and derive PAYOFF-VALUE and PAYOFF-KERNEL
 from one formula. Each of SLOTS is (slot-name type &key initform reader doc
@@ -330,13 +342,13 @@ at macroexpansion.
          (defmethod payoff-value ((,payoff ,name) ,observable)
            (let ((,observable (float ,observable 1d0)) ,@(bindings))
              (declare (double-float ,observable) ,@(declarations))
-             ,@body))
+             (payoff-result ',name (progn ,@body))))
          (defmethod payoff-kernel ((,payoff ,name))
            (let (,@(bindings))
              (declare ,@(declarations))
              (lambda (,observable)
-               (declare (double-float ,observable) (optimize (speed 3) (safety 0)))
-               ,@body)))
+               (declare (double-float ,observable) (optimize (speed 3)))
+               (payoff-result ',name (progn ,@body)))))
          ',name))))
 
 (defgeneric validate-payoff (payoff market expiry)

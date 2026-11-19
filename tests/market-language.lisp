@@ -168,9 +168,9 @@ shape found in tests/ and its clause twin, written by hand."
 
 (defun market-probe-price (market)
   "The Black-Scholes price of an at-the-money call on the first underlying of
-MARKET that has a vol, or NIL if there is none."
+MARKET, by name, that has a vol, or NIL if there is none."
   (let ((u (find-if (lambda (u) (gethash u (fincl::market-vol-structures market)))
-                    (fincl::market-underlyings market))))
+                    (sort (copy-list (fincl::market-underlyings market)) #'string<))))
     (when u
       (price (make-option (call (fincl::underlying-spot market u)) (expires #D"2027-09-24")
                           (underlying u))

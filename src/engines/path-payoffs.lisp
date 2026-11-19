@@ -174,7 +174,7 @@ in any of them ends the path, which then pays nothing at expiry.
                 (lambda (,acc ,j ,state ,pay)
                   (declare (type (simple-array double-float (*)) ,acc ,state) (fixnum ,j)
                            (type function ,pay) (ignorable ,acc ,pay)
-                           (optimize (speed 3) (safety 0)))
+                           (optimize (speed 3)))
                   (block ,step-block
                     (macrolet ((,stop-macro () '(return-from ,step-block nil))
                                (,pay-macro (&rest arguments)
@@ -195,14 +195,14 @@ in any of them ends the path, which then pays nothing at expiry.
                                           (let ((,index (aref ,positions ,j)))
                                             (declare (fixnum ,index) (ignorable ,index))
                                             (macrolet ((,pay-macro (amount &optional (date ',index))
-                                                         `(funcall ,',pay (float ,amount 1d0)
+                                                         `(funcall ,',pay (payoff-result ',',name ,amount)
                                                                    (+ ,',offset ,date))))
                                               ,@forms)))))))))
                       t)))
                 (lambda (,acc ,state)
                   (declare (type (simple-array double-float (*)) ,acc ,state) (ignorable ,acc)
-                           (optimize (speed 3) (safety 0)))
-                  ,(with-path-variables `((float ,final 1d0))))))))
+                           (optimize (speed 3)))
+                  ,(with-path-variables `((payoff-result ',name ,final))))))))
          ',name))))
 
 ;;; Path payoffs carry their own path logic.
