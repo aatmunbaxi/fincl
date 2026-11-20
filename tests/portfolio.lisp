@@ -252,13 +252,14 @@ Asians, holdings, under several engines, long and short."
                                               :dividend-schedule (("2027-01-15" 20d0)
                                                                   ("2027-07-15" 0.01d0 :kind :proportional))
                                               :vol ,(make-grid-vol-surface
-                                                     '(0.5d0 1d0 2d0) '(-0.2d0 0d0 0.2d0)
-                                                     '((0.25d0 0.2d0 0.21d0) (0.24d0 0.2d0 0.205d0)
+                                                     :expiries '(0.5d0 1d0 2d0)
+                                                     :log-moneyness '(-0.2d0 0d0 0.2d0)
+                                                     :vols '((0.25d0 0.2d0 0.21d0) (0.24d0 0.2d0 0.205d0)
                                                        (0.23d0 0.2d0 0.2d0))))
                                         (:ndx :spot 18000 :currency :usd
                                               :vol ,(make-ssvi-surface '(0.25 0.5 1 2) '(0.01 0.02 0.04 0.08)
                                                                        :rho -0.4 :eta 1 :gamma 0.4)))
-                         :curves `((:usd-ois :curve ,(make-instance 'interpolated-zero-curve
+                         :curves `((:usd-ois :curve ,(make-interpolated-zero-curve
                                                                     :dates (list *today* #D"2027-09-24" #D"2031-09-24")
                                                                     :zero-rates '(0.04d0 0.041d0 0.043d0))))
                          :discounting '((:usd . :usd-ois))

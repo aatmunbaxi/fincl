@@ -84,14 +84,14 @@
     (let ((dates (mapcar #'fixture-date dates))
           (dc (rates-day-counter day-counter)))
       (ecase kind
-        (:discount (make-instance 'interpolated-discount-curve :dates dates :discounts values
+        (:discount (make-interpolated-discount-curve :dates dates :discounts values
                                                                :day-counter dc
                                                                :interpolation interpolation))
-        (:zero (make-instance 'interpolated-zero-curve :dates dates :zero-rates values
+        (:zero (make-interpolated-zero-curve :dates dates :zero-rates values
                                                        :day-counter dc :interpolation interpolation
                                                        :compounding compounding
                                                        :frequency frequency))
-        (:forward (make-instance 'interpolated-forward-curve :dates dates :forwards values
+        (:forward (make-interpolated-forward-curve :dates dates :forwards values
                                                              :day-counter dc
                                                              :interpolation interpolation))))))
 
@@ -133,13 +133,13 @@
                           (every (lambda (d v) (= v (curve-discount curve d))) dates values)
                           (every #'= values (coerce (fincl::curve-values curve) 'list))))))))
   (let* ((dates (list #D"2026-09-24" #D"2027-09-24" #D"2031-09-24"))
-         (curve (make-instance 'interpolated-discount-curve :dates dates :discounts '(1 0.96d0 0.8d0))))
+         (curve (make-interpolated-discount-curve :dates dates :discounts '(1 0.96d0 0.8d0))))
     (check-error "a date before the reference date" (curve-discount curve #D"2026-09-01")
                  invalid-argument)
     (check-error "discount factors not starting at 1"
-                 (make-instance 'interpolated-discount-curve :dates dates :discounts '(0.99d0 0.96d0 0.8d0))
+                 (make-interpolated-discount-curve :dates dates :discounts '(0.99d0 0.96d0 0.8d0))
                  invalid-argument)
-    (check-error "a date on a flat curve" (curve-discount (make-instance 'flat-yield-curve :rate 0.03d0)
+    (check-error "a date on a flat curve" (curve-discount (make-flat-yield-curve :rate 0.03d0)
                                                           #D"2027-01-01")
                  invalid-argument)))
 
@@ -148,8 +148,8 @@
   (let* ((today #D"2026-09-24")
          (dates (list today #D"2027-03-24" #D"2027-09-24" #D"2029-09-24" #D"2036-09-24"))
          (dfs '(1 0.98d0 0.955d0 0.88d0 0.68d0))
-         (act365 (make-instance 'interpolated-discount-curve :dates dates :discounts dfs))
-         (act360 (make-instance 'interpolated-discount-curve :dates dates :discounts dfs
+         (act365 (make-interpolated-discount-curve :dates dates :discounts dfs))
+         (act360 (make-interpolated-discount-curve :dates dates :discounts dfs
                                                              :day-counter +actual-360+))
          (market (lambda (curve &optional (day today))
                    (make-market :valuation-date day
@@ -205,7 +205,7 @@
   (make-market
    :valuation-date #D"2026-09-24"
    :curves (iter (for (id . plist) in (rest (assoc :curves fixture)))
-                 (collect `(,id :curve ,(make-instance 'interpolated-discount-curve
+                 (collect `(,id :curve ,(make-interpolated-discount-curve
                                                        :dates (mapcar #'fixture-date (getf plist :dates))
                                                        :discounts (getf plist :discounts)))))
    :discounting '((:eur . :estr) (:usd . :sofr) (:gbp . :sonia))
@@ -220,18 +220,18 @@
                             termination-convention rule end-of-month first-date day-counter index
                             rate gearing payment-lag extra currency &allow-other-keys)
       spec
-    (let ((schedule (make-schedule (fixture-date effective) (fixture-date termination)
-                                   (parse-tenor tenor)
+    (let ((schedule (make-schedule :effective (fixture-date effective) :termination (fixture-date termination)
+                                   :tenor (parse-tenor tenor)
                                    :calendar (fixture-calendar calendar) :convention convention
                                    :termination-convention termination-convention :rule rule
                                    :end-of-month end-of-month
                                    :first-date (and first-date (fixture-date first-date)))))
       (ecase kind
-        (:fixed (fixed-leg schedule (make-money 100 currency) rate (rates-day-counter day-counter)
+        (:fixed (fixed-leg :schedule schedule :notional (make-money 100 currency) :rate rate :day-counter (rates-day-counter day-counter)
                            :payment-lag payment-lag
                            :compounding (if (string= extra "compounded") :compounded :simple)))
         ((:ibor :overnight)
-         (apply #'floating-leg schedule 100 (fixture-index index) :spread rate :gearing gearing
+         (apply #'floating-leg :schedule schedule :notional 100 :index (fixture-index index) :spread rate :gearing gearing
                 :payment-lag payment-lag
                 (when (string= extra "0") '(:fixing-days 0))))))))
 
@@ -303,10 +303,10 @@
                (coupon-rate coupon thin))
              1d-15))
     (check-error "a leg in two currencies"
-                 (leg-npv (append (fixed-leg (make-schedule #D"2027-01-15" #D"2028-01-15" #T"6M")
-                                             (make-money 1 :usd) 0.01d0 +actual-360+)
-                                  (fixed-leg (make-schedule #D"2027-01-15" #D"2028-01-15" #T"6M")
-                                             (make-money 1 :eur) 0.01d0 +actual-360+))
+                 (leg-npv (append (fixed-leg :schedule (make-schedule :effective #D"2027-01-15" :termination #D"2028-01-15" :tenor #T"6M")
+                                             :notional (make-money 1 :usd) :rate 0.01d0 :day-counter +actual-360+)
+                                  (fixed-leg :schedule (make-schedule :effective #D"2027-01-15" :termination #D"2028-01-15" :tenor #T"6M")
+                                             :notional (make-money 1 :eur) :rate 0.01d0 :day-counter +actual-360+))
                           market)
                  currency-mismatch)))
 

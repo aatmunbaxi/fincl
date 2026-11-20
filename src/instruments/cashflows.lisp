@@ -256,11 +256,14 @@ lockout and observation shift are not modelled."))
 (defun payment-date-for (calendar end lag convention)
   (advance calendar end (make-tenor lag :days) :convention convention))
 
-(declaim (ftype (function (t t t t &key (:currency t) (:payment-convention t) (:payment-lag t) (:payment-calendar t) (:compounding t) (:frequency t))
+(declaim (ftype (function (&key (:schedule t) (:notional t) (:rate t) (:day-counter t) (:currency t) (:payment-convention t) (:payment-lag t) (:payment-calendar t) (:compounding t) (:frequency t))
                     (values list &optional))
           fixed-leg))
-(defun fixed-leg (schedule notional rate day-counter
-                  &key currency (payment-convention :following) (payment-lag 0) payment-calendar
+(defun fixed-leg (&key (schedule (required fixed-leg :schedule))
+                       (notional (required fixed-leg :notional))
+                       (rate (required fixed-leg :rate))
+                       (day-counter (required fixed-leg :day-counter))
+                       currency (payment-convention :following) (payment-lag 0) payment-calendar
                        (compounding :simple) (frequency :annual))
   "Fixed-rate coupons on SCHEDULE's periods: NOTIONAL (a real, with CURRENCY,
 or MONEY) at RATE (a real quoted with DAY-COUNTER, COMPOUNDING and FREQUENCY,
@@ -269,7 +272,8 @@ period end, adjusted by PAYMENT-CONVENTION on PAYMENT-CALENDAR (default the
 schedule's). A short or long first or last period accrues against a notional
 regular period.
 
-  (fixed-leg schedule (make-money 1d6 :usd) 0.04d0 (make-instance 'thirty-360 :variant :bond-basis))"
+  (fixed-leg :schedule schedule :notional (make-money 1d6 :usd) :rate 0.04d0
+             :day-counter (make-instance 'thirty-360 :variant :bond-basis))"
   (check-input schedule schedule "a SCHEDULE")
   (multiple-value-bind (nominal currency) (notional-and-currency notional currency)
     (let* ((rate (if (interest-rate-p rate)
@@ -302,11 +306,13 @@ regular period.
                                       :ref-start ref-start :ref-end ref-end
                                       :day-counter (interest-rate-day-counter rate) :rate rate)))))))
 
-(declaim (ftype (function (t t t &key (:currency t) (:spread real) (:gearing real) (:day-counter t) (:payment-convention t) (:payment-lag t) (:payment-calendar t) (:fixing-days t))
+(declaim (ftype (function (&key (:schedule t) (:notional t) (:index t) (:currency t) (:spread real) (:gearing real) (:day-counter t) (:payment-convention t) (:payment-lag t) (:payment-calendar t) (:fixing-days t))
                     (values list &optional))
           floating-leg))
-(defun floating-leg (schedule notional index
-                     &key currency (spread 0) (gearing 1) day-counter
+(defun floating-leg (&key (schedule (required floating-leg :schedule))
+                          (notional (required floating-leg :notional))
+                          (index (required floating-leg :index))
+                          currency (spread 0) (gearing 1) day-counter
                           (payment-convention :following) (payment-lag 0) payment-calendar
                           fixing-days)
   "Floating coupons on SCHEDULE's periods paying GEARING times INDEX plus
@@ -315,7 +321,8 @@ IBOR-COUPONs for an Ibor index, fixed FIXING-DAYS (default the index's)
 before each period; OVERNIGHT-INDEXED-COUPONs for an overnight index.
 DAY-COUNTER defaults to the index's. Payment dates as in FIXED-LEG.
 
-  (floating-leg schedule 1d6 (euribor #T\"6M\") :spread 0.001d0)"
+  (floating-leg :schedule schedule :notional 1d6 :index (euribor #T\"6M\")
+                :spread 0.001d0)"
   (check-input schedule schedule "a SCHEDULE")
   (check-input index ibor-index "an Ibor or overnight index")
   (multiple-value-bind (nominal currency)
@@ -373,7 +380,7 @@ DAY-COUNTER defaults to the index's. Payment dates as in FIXED-LEG.
 after it, as MONEY. DISCOUNT-CURVE is a curve or a curve id; by default the
 curve the market discounts the leg's currency on.
 
-  (leg-npv (fixed-leg schedule (make-money 1d6 :eur) 0.03d0 +actual-360+) market)"
+  (leg-npv (fixed-leg :schedule schedule :notional (make-money 1d6 :eur) :rate 0.03d0 :day-counter +actual-360+) market)"
   (check-input market composite-market "a composite market")
   (let ((curve (market-discount-curve market (leg-discount-curve leg market discount-curve))))
     (make-money (iter (for cf in (live-cashflows leg market))

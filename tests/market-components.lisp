@@ -273,8 +273,8 @@ specializers on one, and MEMBER types of two or more."
                (eval-in-tests '(define-market-component :thing :type real :clause (thing (key value)) :fact :expiry))
                invalid-argument)
   ;; Rates vols in the market.
-  (let* ((leg (floating-leg (make-schedule #D"2026-09-28" #D"2031-09-29" #T"6M" :calendar +target+)
-                            1d6 (euribor #T"6M")))
+  (let* ((leg (floating-leg :schedule (make-schedule :effective #D"2026-09-28" :termination #D"2031-09-29" :tenor #T"6M" :calendar +target+)
+                            :notional 1d6 :index (euribor #T"6M")))
          (cap (make-cap-floor (cap 0.022d0) (on-leg leg)))
          (m (component-rates-market 0.25d0))
          (by-id (make-engine :black-rates :volatility :eur-cap))
@@ -290,7 +290,7 @@ specializers on one, and MEMBER types of two or more."
                 (equal (mapcar (lambda (v) (+ v 1/100)) '(0.3d0 0.28d0))
                        (fincl::rates-vol-vols
                         (market-component (bump (component-rates-market
-                                                 (make-instance 'expiry-rates-vol
+                                                 (make-expiry-rates-vol
                                                                 :dates (list #D"2027-03-24" #D"2027-09-24")
                                                                 :vols '(0.3d0 0.28d0)))
                                                 '(:rates-vol :eur-cap) '(:absolute 1/100))

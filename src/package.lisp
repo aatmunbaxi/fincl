@@ -82,7 +82,7 @@
    #:market #:make-bs-market
    #:spot #:zero-rate #:dividend-yield #:black-vol
    #:discount-factor #:forward-factor #:forward #:black-variance
-   #:carry-factor #:discrete-dividends #:make-dividend-schedule #:dividend-schedule
+   #:carry-factor #:discrete-dividends #:make-dividend-schedule #:make-dividend #:dividend-schedule
    #:bivariate-norm-cdf
    ;; portfolios and risk
    #:holding #:make-holding
@@ -133,8 +133,10 @@
    #:option-quote #:make-option-quote #:quote-set #:quote-set-quotes #:quote-instrument
    #:quote-weight #:quote-implied-vol #:quote-price #:quotes-vol-surface
    #:fit-svi #:fit-ssvi #:fit-sabr #:local-vol #:make-local-vol #:calibrate
-   #:structure-black-variance #:structure-black-vol #:bump-structure #:shift #:apply-shift
-   #:flat-yield-curve #:flat-dividend-curve #:flat-black-vol #:flat-rate #:flat-vol
+   #:structure-black-variance #:structure-black-vol #:bump-structure #:shift #:risk-factor #:apply-shift
+   #:flat-yield-curve #:flat-dividend-curve #:flat-black-vol #:make-flat-yield-curve
+   #:make-flat-dividend-curve #:make-flat-black-vol #:make-interpolated-discount-curve
+   #:make-interpolated-zero-curve #:make-interpolated-forward-curve #:flat-rate #:flat-vol
    #:dated-curve #:interpolated-discount-curve #:interpolated-zero-curve
    #:interpolated-forward-curve #:curve-forward-rate #:curve-reference-date #:curve-day-counter
    #:curve-time #:curve-dates
@@ -170,7 +172,7 @@
    #:fra-npv
    #:cap-floor #:make-cap-floor #:cap-floor-type #:cap-floor-leg #:cap-rates #:floor-rates
    #:swaption #:make-swaption #:swaption-swap #:swaption-exercise #:swaption-settlement
-   #:rates-vol-structure #:flat-rates-vol #:expiry-rates-vol #:rates-vol-variance
+   #:rates-vol-structure #:flat-rates-vol #:expiry-rates-vol #:make-flat-rates-vol #:make-expiry-rates-vol #:rates-vol-variance
    ;; path simulation
    #:payoff-requirements #:path-accumulator-size #:path-payment-dates #:path-kernel
    #:define-path-payoff #:path-payoff

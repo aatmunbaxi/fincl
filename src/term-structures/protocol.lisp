@@ -37,7 +37,7 @@ STRUCTURE-BLACK-VARIANCE, with STRUCTURE-BLACK-VOL derived."))
   (:documentation "Discount factor to X: a horizon (a real, in the curve's
 time), or a date for a curve with a reference date.
 
-  (curve-discount (make-instance 'flat-yield-curve :rate 0.05d0) 1d0) => 0.951229..."))
+  (curve-discount (make-flat-yield-curve :rate 0.05d0) 1d0) => 0.951229..."))
 
 (defmethod curve-discount ((c yield-curve) (x date))
   (signal-invalid-argument 'x x 'real
@@ -149,6 +149,12 @@ STRUCTURE-BLACK-VARIANCE).")
 ;;; Shifts, for risk-factor bumps
 ;;; --------------------------------------------------------------------
 
+(deftype risk-factor ()
+  "A named risk factor, a keyword kind and its key: (:spot :spx), (:curve :usd-ois),
+(:quote :usd-ois #T\"5Y\"). Which kinds are valid is the registry of market
+component kinds, so the type checks only the shape."
+  '(cons keyword list))
+
 (deftype shift ()
   "(:relative x) multiplies by 1 + x; (:absolute x) adds x."
   '(cons (member :relative :absolute) (cons real null)))
@@ -181,7 +187,7 @@ structure rebuilt. Only bootstrapped curves have quotes.")
 x) or (:absolute x)): rates for curves, the vol for vol structures.
 STRUCTURE is unchanged. An object with no method signals INVALID-ARGUMENT.
 
-  (bump-structure (make-instance 'flat-black-vol :vol 0.2d0) '(:absolute 0.01d0))
+  (bump-structure (make-flat-black-vol :vol 0.2d0) '(:absolute 0.01d0))
   => a flat 21% vol")
   (:method (structure shift)
     (declare (ignore shift))

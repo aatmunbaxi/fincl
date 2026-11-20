@@ -177,6 +177,7 @@ DATE a date or a \"YYYY-MM-DD\" string. Replaces an entry of :FIXINGS."
   :type rates-vol-structure :description "a RATES-VOL-STRUCTURE" :what "rates vol structure"
   :input 'ensure-rates-vol :input-type (or real rates-vol-structure)
   :clause (rates-vol (id structure)) :key-fact :rates-vol-id :fact :rates-vol
+  :snapshot-constructors (make-flat-rates-vol make-expiry-rates-vol)
   :snapshot-classes (flat-rates-vol expiry-rates-vol)
   :key-documentation "The id of a rates vol structure of a market."
   :fact-documentation "A rates vol: a real for a flat vol or a rates vol structure."

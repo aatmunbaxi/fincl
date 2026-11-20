@@ -19,7 +19,7 @@ expiry: RATES-VOL-VARIANCE."))
   (:documentation "Total variance (vol squared times time) of the rate from
 REFERENCE-DATE to the expiry DATE.
 
-  (rates-vol-variance (make-instance 'flat-rates-vol :vol 0.2d0) today #D\"2027-09-24\")"))
+  (rates-vol-variance (make-flat-rates-vol :vol 0.2d0) today #D\"2027-09-24\")"))
 
 (defun rates-vol-time (structure reference-date date)
   (year-fraction (rates-vol-day-counter structure) reference-date date))
@@ -28,7 +28,17 @@ REFERENCE-DATE to the expiry DATE.
   ((vol :initarg :vol :reader rates-vol :type volatility))
   (:documentation "One volatility for every expiry.
 
-  (make-instance 'flat-rates-vol :vol 0.25d0)"))
+  (make-flat-rates-vol :vol 0.25d0)"))
+
+(declaim (ftype (function (&key (:vol t) (:day-counter t)) (values flat-rates-vol &optional))
+          make-flat-rates-vol))
+(defun make-flat-rates-vol (&key (vol (required make-flat-rates-vol :vol))
+                                 (day-counter +actual-365-fixed+))
+  "A FLAT-RATES-VOL: the volatility VOL (a non-negative real) of a rate at every
+expiry, with times measured by DAY-COUNTER.
+
+  (make-flat-rates-vol :vol 0.25d0)"
+  (make-instance 'flat-rates-vol :vol vol :day-counter day-counter))
 
 (defmethod initialize-instance :after ((s flat-rates-vol) &key)
   (check-input (slot-value s 'vol) (real 0) "a non-negative volatility")
@@ -45,8 +55,20 @@ REFERENCE-DATE to the expiry DATE.
 time between the knots and from zero at the reference date, and the vol is
 flat beyond the last date.
 
-  (make-instance 'expiry-rates-vol :dates (list #D\"2027-03-24\" #D\"2027-09-24\")
-                                   :vols '(0.32d0 0.28d0))"))
+  (make-expiry-rates-vol :dates (list #D\"2027-03-24\" #D\"2027-09-24\")
+                         :vols '(0.32d0 0.28d0))"))
+
+(declaim (ftype (function (&key (:dates t) (:vols t) (:day-counter t)) (values expiry-rates-vol &optional))
+          make-expiry-rates-vol))
+(defun make-expiry-rates-vol (&key (dates (required make-expiry-rates-vol :dates))
+                                   (vols (required make-expiry-rates-vol :vols))
+                                   (day-counter +actual-365-fixed+))
+  "An EXPIRY-RATES-VOL: one non-negative volatility in VOLS per expiry date in
+DATES (increasing), with times measured by DAY-COUNTER.
+
+  (make-expiry-rates-vol :dates (list #D\"2027-03-24\" #D\"2027-09-24\")
+                         :vols '(0.32d0 0.28d0))"
+  (make-instance 'expiry-rates-vol :dates dates :vols vols :day-counter day-counter))
 
 (defmethod initialize-instance :after ((s expiry-rates-vol) &key)
   (let ((dates (slot-value s 'dates)) (vols (slot-value s 'vols)))
@@ -80,12 +102,12 @@ flat beyond the last date.
 (defmethod bump-structure ((s flat-rates-vol) shift)
   "S with its vol moved by SHIFT, in the units of the vol: lognormal for a
 Black engine, normal (rate units) for a Bachelier one."
-  (make-instance 'flat-rates-vol :vol (apply-shift (rates-vol s) shift)
+  (make-flat-rates-vol :vol (apply-shift (rates-vol s) shift)
                                  :day-counter (rates-vol-day-counter s)))
 
 (defmethod bump-structure ((s expiry-rates-vol) shift)
   "S with every vol moved by SHIFT, in the units of the vols."
-  (make-instance 'expiry-rates-vol :dates (rates-vol-dates s)
+  (make-expiry-rates-vol :dates (rates-vol-dates s)
                                    :vols (mapcar (lambda (v) (apply-shift v shift)) (rates-vol-vols s))
                                    :day-counter (rates-vol-day-counter s)))
 
@@ -93,4 +115,4 @@ Black engine, normal (rate units) for a Bachelier one."
   "VOLATILITY as a rates vol structure: a structure, or a real for a flat one."
   (etypecase volatility
     (rates-vol-structure volatility)
-    (real (make-instance 'flat-rates-vol :vol volatility))))
+    (real (make-flat-rates-vol :vol volatility))))

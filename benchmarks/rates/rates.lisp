@@ -83,14 +83,14 @@ EUR on EUR-DISCOUNT."
                  :discounting `((:usd . :sofr) (:eur . ,eur-discount)))))
 
 (defun euro-swap (type nominal rate start end &key (spread 0))
-  (make-vanilla-swap type nominal (make-schedule start end #T"1Y" :calendar +target+)
+  (make-vanilla-swap type nominal (make-schedule :effective start :termination end :tenor #T"1Y" :calendar +target+)
                      rate (make-instance 'thirty-360 :variant :bond-basis)
-                     (make-schedule start end #T"6M" :calendar +target+) (euribor #T"6M")
+                     (make-schedule :effective start :termination end :tenor #T"6M" :calendar +target+) (euribor #T"6M")
                      :spread spread :floating-day-counter +actual-360+))
 
 (defun treasury ()
   "The 10Y Treasury: 4.375% semiannual, ACT/ACT (ICMA), T+1."
-  (let ((schedule (make-schedule #D"2024-05-15" #D"2034-05-15" #T"6M"
+  (let ((schedule (make-schedule :effective #D"2024-05-15" :termination #D"2034-05-15" :tenor #T"6M"
                                  :calendar +united-states-government-bond+ :convention :unadjusted
                                  :termination-convention :unadjusted :rule :backward)))
     (values (make-fixed-rate-bond schedule 0.04375d0 (make-instance 'actual-actual-icma :schedule schedule)
@@ -167,9 +167,9 @@ the fixed leg's BPS")
      :tolerance 1d-4 :notes "tolerance 1e-10 per unit nominal, the fixtures'")
     ((m (rates-market))
      (cap (make-cap-floor (cap 0.025d0)
-                          (on-leg (floating-leg (make-schedule #D"2026-09-28" #D"2031-09-29" #T"6M"
+                          (on-leg (floating-leg :schedule (make-schedule :effective #D"2026-09-28" :termination #D"2031-09-29" :tenor #T"6M"
                                                                :calendar +target+)
-                                                1d6 (euribor #T"6M")))))
+                                                :notional 1d6 :index (euribor #T"6M")))))
      (e (make-engine :black-rates :volatility 0.25d0)))
   (priced cap e m))
 

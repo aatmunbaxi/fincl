@@ -34,7 +34,7 @@ USD discounted on :SOFR, EUR on :ESTR, EURIBOR 6M forecast on :EURIBOR-6M."
   (destructuring-bind (&key effective termination tenor calendar convention termination-convention
                             rule end-of-month first-date)
       spec
-    (make-schedule (fixture-date effective) (fixture-date termination) (parse-tenor tenor)
+    (make-schedule :effective (fixture-date effective) :termination (fixture-date termination) :tenor (parse-tenor tenor)
                    :calendar (fixture-calendar calendar) :convention convention
                    :termination-convention termination-convention :rule rule
                    :end-of-month end-of-month
@@ -125,13 +125,13 @@ the worst |expected - actual| per name. In BODY, (record name expected actual)."
       (ecase kind
         (:vanilla
          (make-vanilla-swap type nominal
-                            (make-schedule start end #T"1Y" :calendar +target+)
+                            (make-schedule :effective start :termination end :tenor #T"1Y" :calendar +target+)
                             fixed-rate (make-instance 'thirty-360 :variant :bond-basis)
-                            (make-schedule start end #T"6M" :calendar +target+)
+                            (make-schedule :effective start :termination end :tenor #T"6M" :calendar +target+)
                             (euribor #T"6M")
                             :spread spread :floating-day-counter +actual-360+))
         (:ois
-         (make-ois-swap type nominal (make-schedule start end #T"1Y" :calendar +united-states-sofr+)
+         (make-ois-swap type nominal (make-schedule :effective start :termination end :tenor #T"1Y" :calendar +united-states-sofr+)
                         fixed-rate +actual-360+ (sofr) :spread spread :payment-lag payment-lag))))))
 
 (defun swap-checks (&optional (builder (function fixture-swap)))
@@ -189,14 +189,14 @@ the worst |expected - actual| per name. In BODY, (record name expected actual)."
     (:black-per-expiry
      (let ((vols (getf (caps-fixture) :per-expiry-vols)))
        (make-engine :black-rates
-                    :volatility (make-instance 'expiry-rates-vol
+                    :volatility (make-expiry-rates-vol
                                                :dates (mapcar (lambda (row) (fixture-date (first row))) vols)
                                                :vols (mapcar #'second vols)))))))
 
 (defun fixture-cap-leg (spec)
   (destructuring-bind (&key nominal start end &allow-other-keys) spec
-    (floating-leg (make-schedule (fixture-date start) (fixture-date end) #T"6M" :calendar +target+)
-                  nominal (euribor #T"6M"))))
+    (floating-leg :schedule (make-schedule :effective (fixture-date start) :termination (fixture-date end) :tenor #T"6M" :calendar +target+)
+                  :notional nominal :index (euribor #T"6M"))))
 
 (defun fixture-cap (spec)
   (destructuring-bind (&key type cap-rate floor-rate &allow-other-keys) spec
@@ -224,8 +224,8 @@ the worst |expected - actual| per name. In BODY, (record name expected actual)."
   ;; Cap - floor = a payer swap paying the strike on the floating schedule.
   (let* ((m (rates-market))
          (start #D"2026-09-28") (end #D"2031-09-29") (k 0.022d0)
-         (schedule (make-schedule start end #T"6M" :calendar +target+))
-         (leg (floating-leg schedule 1d6 (euribor #T"6M")))
+         (schedule (make-schedule :effective start :termination end :tenor #T"6M" :calendar +target+))
+         (leg (floating-leg :schedule schedule :notional 1d6 :index (euribor #T"6M")))
          (swap (make-vanilla-swap :payer 1d6 schedule k +actual-360+ schedule (euribor #T"6M"))))
     (dolist (vol '(:black :normal :black-per-expiry))
       (let ((engine (fixture-rates-engine vol)))
@@ -266,9 +266,9 @@ the worst |expected - actual| per name. In BODY, (record name expected actual)."
 (defun fixture-swaption-swap (spec)
   (destructuring-bind (&key type fixed-rate spread nominal start end &allow-other-keys) spec
     (let ((start (fixture-date start)) (end (fixture-date end)))
-      (make-vanilla-swap type nominal (make-schedule start end #T"1Y" :calendar +target+)
+      (make-vanilla-swap type nominal (make-schedule :effective start :termination end :tenor #T"1Y" :calendar +target+)
                          fixed-rate (make-instance 'thirty-360 :variant :bond-basis)
-                         (make-schedule start end #T"6M" :calendar +target+) (euribor #T"6M")
+                         (make-schedule :effective start :termination end :tenor #T"6M" :calendar +target+) (euribor #T"6M")
                          :spread spread :floating-day-counter +actual-360+))))
 
 (defun fixture-swaption (spec settlement)
@@ -317,9 +317,9 @@ prices on one curve."
   (list #D"2027-09-28" #D"2028-09-28" #D"2029-09-28" #D"2030-09-30" #D"2031-09-29"))
 
 (defun hull-white-swap (type rate start &optional (end #D"2036-09-28") (nominal 1d6))
-  (make-vanilla-swap type nominal (make-schedule start end #T"1Y" :calendar +target+)
+  (make-vanilla-swap type nominal (make-schedule :effective start :termination end :tenor #T"1Y" :calendar +target+)
                      rate (make-instance 'thirty-360 :variant :bond-basis)
-                     (make-schedule start end #T"6M" :calendar +target+) (euribor #T"6M")
+                     (make-schedule :effective start :termination end :tenor #T"6M" :calendar +target+) (euribor #T"6M")
                      :floating-day-counter +actual-360+))
 
 (defun relative-error (expected actual)
@@ -400,7 +400,7 @@ prices on one curve."
                                             (price swaption (make-engine :hull-white-tree :process hw
                                                                                           :time-steps steps)
                                                    m)))))
-        (let* ((schedule (make-schedule #D"2026-09-28" #D"2036-09-28" #T"1Y" :calendar +target+
+        (let* ((schedule (make-schedule :effective #D"2026-09-28" :termination #D"2036-09-28" :tenor #T"1Y" :calendar +target+
                                         :convention :unadjusted))
                (bond (make-callable-fixed-rate-bond
                       schedule 0.03d0 (make-instance 'thirty-360 :variant :bond-basis)

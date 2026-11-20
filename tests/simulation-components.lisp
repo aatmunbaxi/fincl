@@ -174,7 +174,7 @@ paths = to the code before task 32" name workers workers)
     ;; A deterministic sequence of surfaces, by date.
     (let ((table (make-hash-table :test 'equalp)))
       (iter (for d in (cons *today* dates)) (for v from 20)
-            (setf (gethash d table) (make-instance 'flat-black-vol :vol (/ v 100d0))))
+            (setf (gethash d table) (make-flat-black-vol :vol (/ v 100d0))))
       (let ((r (simulate ((make-gbm) m dates :n-paths 100 :antithetic t)
                  (:derive (:vol :spx) (market date) (gethash date table))
                  (:start (market) (record :same (if (eq (market-component market '(:vol :spx)) (gethash *today* table)) 1 0)))
@@ -188,7 +188,7 @@ paths = to the code before task 32" name workers workers)
       (count-calls (copies 'fincl::copy-composite-market)
         (simulate ((make-gbm) m dates :n-paths 3)
           (:derive (:dividend :spx) (market) (market-component market '(:dividend :spx)))
-          (:derive (:vol :spx) () (make-instance 'flat-black-vol :vol 0.3d0))
+          (:derive (:vol :spx) () (make-flat-black-vol :vol 0.3d0))
           (:every (date market)
             (setf (car copies) 0)
             (spot market)
@@ -217,7 +217,7 @@ paths = to the code before task 32" name workers workers)
     ;; The data form.
     (let* ((derive `(((:vol :spx) ,(lambda (market date states)
                                      (declare (ignore market date))
-                                     (make-instance 'flat-black-vol :vol (* 0.002d0 (aref (svref states 0) 0)))))))
+                                     (make-flat-black-vol :vol (* 0.002d0 (aref (svref states 0) 0)))))))
            (plan (fincl::make-simulation-plan (make-gbm) m dates :n-paths 10 :derive derive))
            (states (vector (coerce '(150d0) 'fincl:double-vector))))
       (check-that "make-simulation-plan :derive (data form): market-at-state sets the spot then the derived vol"
@@ -300,7 +300,7 @@ paths = to the code before task 32" name workers workers)
   "An upward-sloping EUR curve: zero rates 2% to 3.8% out to 30 years."
   (let ((dates (cons *today* (mapcar (lambda (n) (years-after *today* n)) '(1 2 5 10 30))))
         (zeros '(0d0 0.02d0 0.025d0 0.03d0 0.034d0 0.038d0)))
-    (make-instance 'interpolated-discount-curve
+    (make-interpolated-discount-curve
                    :dates dates
                    :discounts (mapcar (lambda (d z) (exp (- (* z (year-fraction +actual-365-fixed+ *today* d)))))
                                       dates zeros))))
@@ -330,9 +330,9 @@ paths = to the code before task 32" name workers workers)
 (defun euribor-swap (type rate start end)
   "A EUR swap from START to END: annual 30/360 fixed against EURIBOR 6M
 forecast on the :EUR curve."
-  (make-vanilla-swap type 1d6 (make-schedule start end #T"1Y" :calendar +target+)
+  (make-vanilla-swap type 1d6 (make-schedule :effective start :termination end :tenor #T"1Y" :calendar +target+)
                      rate (make-instance 'thirty-360 :variant :bond-basis)
-                     (make-schedule start end #T"6M" :calendar +target+)
+                     (make-schedule :effective start :termination end :tenor #T"6M" :calendar +target+)
                      (euribor #T"6M" :forecast-curve :eur)
                      :floating-day-counter +actual-360+))
 
@@ -439,7 +439,7 @@ forecast on the :EUR curve."
          (start #D"2026-12-29")
          (swap (let ((s (euribor-swap :payer 0.03d0 start #D"2031-12-29")))
                  (euribor-swap :payer (fair-rate s m) start #D"2031-12-29")))
-         (bond (make-fixed-rate-bond (make-schedule #D"2027-09-24" #D"2032-09-24" #T"1Y" :calendar +target+)
+         (bond (make-fixed-rate-bond (make-schedule :effective #D"2027-09-24" :termination #D"2032-09-24" :tenor #T"1Y" :calendar +target+)
                                      0.035d0 +actual-365-fixed+ :settlement-days 0 :currency :eur))
          (horizon #D"2027-04-15")
          (dates (sort `(,horizon ,@(remove-if-not (lambda (d) (date< d horizon)) (fixing-dates swap m))) #'date<))
@@ -518,7 +518,7 @@ forecast on the :EUR curve."
 (defmethod structure-at-state ((p test-vasicek) target initial market date state &key)
   (declare (ignore target initial))
   (let ((knots (mapcar (lambda (n) (years-after date n)) '(1 2 3 4 5 6 7 8 9 10))))
-    (make-instance 'interpolated-discount-curve
+    (make-interpolated-discount-curve
                    :dates (cons date knots)
                    :discounts (cons 1d0 (mapcar (lambda (d) (vasicek-bond p (year-fraction +actual-365-fixed+ date d)
                                                                          (aref state 0)))
@@ -617,7 +617,7 @@ expected integrated variance from variance V."
       (check-that "... read through a market, the at-the-money-forward Black variance is a(tau) (1e-12)"
                   (< (abs (1- (/ (black-variance view (forward view d) d) (funcall a (market-time m d))))) 1d-12)))
     (check-that "a flat base rescales to a(tau) at every strike"
-                (let ((f (rescale-vol-structure (make-instance 'flat-black-vol :vol 0.2d0) a)))
+                (let ((f (rescale-vol-structure (make-flat-black-vol :vol 0.2d0) a)))
                   (< (abs (- (fincl::surface-variance f 0.7d0 2d0) (funcall a 2d0))) 1d-15)))
     (check-error "a structure that is neither a moneyness surface nor flat is refused"
                  (rescale-vol-structure (hw-initial-curve) a) invalid-argument)))
@@ -637,7 +637,7 @@ derived from the world's Heston variance."
 (defun derived-surface-checks ()
   (format t "~&Simulated components: example 3, a surface derived from the Heston variance~%")
   (let* ((heston (make-heston :v0 0.04d0 :theta 0.06d0 :kappa 1.5d0 :xi 0d0 :rho -0.7d0))
-         (m (desk-market (make-instance 'flat-black-vol :vol 0.2d0)))
+         (m (desk-market (make-flat-black-vol :vol 0.2d0)))
          (call (make-option (call 105) (expires #D"2028-09-24") (underlying :spx)))
          (r (example-3-run heston m (sim-quarterly-dates) :n-paths 5 :keep 5))
          (worst 0d0))
@@ -843,7 +843,7 @@ with fincl:syntax."
 (defun reference-example-checks ()
   (format t "~&Simulated components: the brief's reference examples~%")
   ;; 1. Equity P&L of a held stock and a short call, unchanged.
-  (let* ((m (desk-market (make-instance 'flat-black-vol :vol 0.2d0)))
+  (let* ((m (desk-market (make-flat-black-vol :vol 0.2d0)))
          (dates (sim-quarterly-dates))
          (call (make-option (call 100) (expires #D"2027-09-24") (underlying :spx)))
          (r (simulate ((make-heston) m dates :n-paths 500)
@@ -855,7 +855,7 @@ with fincl:syntax."
                      (equal '((:book :value)) (simulation-recorded-names r)))))
   ;; 2. Swap exposure under Hull-White, with fixings.
   (let* ((m (make-market :valuation-date *today* :curves '((:sofr :rate 0.04d0)) :discounting '((:usd . :sofr))))
-         (swap (make-ois-swap :payer 1d6 (make-schedule #D"2026-09-28" #D"2027-03-29" #T"3M" :calendar +united-states-sofr+)
+         (swap (make-ois-swap :payer 1d6 (make-schedule :effective #D"2026-09-28" :termination #D"2027-03-29" :tenor #T"3M" :calendar +united-states-sofr+)
                               0.04d0 +actual-360+ (sofr)))
          (monthly-dates (mapcar (lambda (n) (add-tenor *today* (make-tenor n :months))) '(1 2 3 4 5)))
          (r (simulate ((make-hull-white :a 0.03d0 :sigma 0.008d0) m
@@ -875,9 +875,9 @@ with fincl:syntax."
                          :underlyings '((:spx :spot 100 :currency :eur :vol 0.2d0))
                          :curves '((:eur-ois :rate 0.03d0) (:eur-6m :rate 0.0315d0))
                          :discounting '((:eur . :eur-ois))))
-         (swap (make-vanilla-swap :payer 1d6 (make-schedule #D"2026-12-29" #D"2029-12-28" #T"1Y" :calendar +target+)
+         (swap (make-vanilla-swap :payer 1d6 (make-schedule :effective #D"2026-12-29" :termination #D"2029-12-28" :tenor #T"1Y" :calendar +target+)
                                   0.032d0 (make-instance 'thirty-360 :variant :bond-basis)
-                                  (make-schedule #D"2026-12-29" #D"2029-12-28" #T"6M" :calendar +target+)
+                                  (make-schedule :effective #D"2026-12-29" :termination #D"2029-12-28" :tenor #T"6M" :calendar +target+)
                                   (euribor #T"6M" :forecast-curve :eur-6m)))
          (call (make-option (call 100) (expires #D"2027-09-24") (underlying :spx)))
          (book (make-portfolio "b" (make-position swap :engine :discounting) (make-position call)))

@@ -190,7 +190,7 @@ the kept paths also hold their recorded values in a list."
                 (check (format nil "E[path-discount x P(~D, ~D)] = P(0, ~D) within 3 SE (~,5F)" tt (+ tt n) (+ tt n) se)
                        p0 mean (* 3 se))))))
     ;; A bond on the date's market = its flows' Hull-White bond prices.
-    (let* ((bond (make-fixed-rate-bond (make-schedule *today* (years-from *today* 10) (make-tenor 1 :years))
+    (let* ((bond (make-fixed-rate-bond (make-schedule :effective *today* :termination (years-from *today* 10) :tenor (make-tenor 1 :years))
                                        0.04d0 +actual-365-fixed+ :currency :usd :settlement-days 0))
            (r (simulate ((((:curve :usd) hw)) m (list (years-from *today* 2) (add-tenor *today* (make-tenor 43 :months)))
                          :n-paths 200)
@@ -285,7 +285,7 @@ so the call's payoff is subtracted as by hand (r = 0, so interest is 1)."
                 (equalp (simulation-values hand :pnl) (simulation-values book :pnl))))
   (let ((m (usd-market))
         (dates (monthly-dates 2))
-        (bond (make-fixed-rate-bond (make-schedule *today* (years-from *today* 5) (make-tenor 1 :years))
+        (bond (make-fixed-rate-bond (make-schedule :effective *today* :termination (years-from *today* 5) :tenor (make-tenor 1 :years))
                                     0.04d0 +actual-365-fixed+ :currency :usd :settlement-days 0)))
     (check-error "TRADE of an instrument that cannot be priced (a bond under :AUTO) signals its condition"
                  (simulate ((make-gbm) m dates :n-paths 2)
@@ -356,7 +356,7 @@ so the call's payoff is subtracted as by hand (r = 0, so interest is 1)."
       (:final (:pv (* (path-discount) (price book :black-scholes market)))))))
 
 (defun annual-bond (start years &key (coupon 0.04d0))
-  (make-fixed-rate-bond (make-schedule start (years-from start years) (make-tenor 1 :years))
+  (make-fixed-rate-bond (make-schedule :effective start :termination (years-from start years) :tenor (make-tenor 1 :years))
                         coupon +actual-365-fixed+ :currency :usd :settlement-days 0))
 
 (defun income-checks ()
@@ -456,11 +456,11 @@ so the call's payoff is subtracted as by hand (r = 0, so interest is 1)."
 (defun constant-maturity-bond (date years rate)
   "A bullet bond issued on DATE, maturing YEARS later, paying the annual
 coupon RATE (user code in the manual's example)."
-  (make-fixed-rate-bond (make-schedule date (years-from date years) (make-tenor years :years))
+  (make-fixed-rate-bond (make-schedule :effective date :termination (years-from date years) :tenor (make-tenor years :years))
                         rate +actual-365-fixed+ :currency :usd :settlement-days 0))
 
 (defun annual-bond-from (date years rate)
-  (make-fixed-rate-bond (make-schedule date (years-from date years) (make-tenor 1 :years))
+  (make-fixed-rate-bond (make-schedule :effective date :termination (years-from date years) :tenor (make-tenor 1 :years))
                         rate +actual-365-fixed+ :currency :usd :settlement-days 0))
 
 (defun par-rate (market years)

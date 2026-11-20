@@ -109,8 +109,10 @@ moneyness by INTERPOLATION; between expiries linear in total variance.
   (quotes-vol-surface (quote-set quotes) market)"
   (make-smile-surface
    (mapcar (lambda (group)
-             (make-interpolated-smile (first (first group)) (mapcar #'second group)
-                                      (mapcar #'third group) :interpolation interpolation))
+             (make-interpolated-smile :expiry (first (first group))
+                                      :log-moneyness (mapcar #'second group)
+                                      :total-variances (mapcar #'third group)
+                                      :interpolation interpolation))
            (points-by-expiry (quote-points quotes market)))
    :class 'grid-vol-surface
    :check-range (reduce #'max (mapcar (lambda (p) (abs (second p))) (quote-points quotes market)))))
@@ -256,8 +258,10 @@ Returns (values surface rmse)."
          (groups (points-by-expiry points))
          (times (mapcar (lambda (g) (first (first g))) groups))
          (atm (mapcar (lambda (g)
-                        (let ((smile (make-interpolated-smile (first (first g)) (mapcar #'second g)
-                                                              (mapcar #'third g) :interpolation :linear)))
+                        (let ((smile (make-interpolated-smile :expiry (first (first g))
+                                                              :log-moneyness (mapcar #'second g)
+                                                              :total-variances (mapcar #'third g)
+                                                              :interpolation :linear)))
                           (smile-variance smile 0d0)))
                       groups))
          ;; Increments of the ATM variance, so the fitted ones stay increasing.

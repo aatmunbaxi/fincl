@@ -36,14 +36,15 @@ MAKE-MARKET-FROM-SPECS builds from the same keyword arguments."
 (defun market-shapes ()
   "A list of (name specs twin): the keyword arguments of one MAKE-MARKET call
 shape found in tests/ and its clause twin, written by hand."
-  (let ((zero-curve (make-instance 'interpolated-zero-curve
+  (let ((zero-curve (make-interpolated-zero-curve
                                    :dates (list *today* #D"2027-09-24" #D"2031-09-24")
                                    :zero-rates '(0.04d0 0.041d0 0.043d0)))
-        (discount-curve (make-instance 'interpolated-discount-curve
+        (discount-curve (make-interpolated-discount-curve
                                        :dates (list *today* #D"2027-09-24")
                                        :discounts '(1d0 0.95d0)))
-        (grid (make-grid-vol-surface '(0.5d0 1d0 2d0) '(-0.2d0 0d0 0.2d0)
-                                     '((0.25d0 0.2d0 0.21d0) (0.24d0 0.2d0 0.205d0)
+        (grid (make-grid-vol-surface :expiries '(0.5d0 1d0 2d0)
+                                     :log-moneyness '(-0.2d0 0d0 0.2d0)
+                                     :vols '((0.25d0 0.2d0 0.21d0) (0.24d0 0.2d0 0.205d0)
                                        (0.23d0 0.2d0 0.2d0))))
         (ssvi (make-ssvi-surface '(0.25 0.5 1 2) '(0.0121 0.0225 0.04 0.072)
                                  :rho -0.6 :eta 1.2 :gamma 0.4)))
@@ -195,7 +196,7 @@ MARKET, by name, that has a vol, or NIL if there is none."
             (check-that (format nil "prices are = on both: ~A" name)
                         (= p (market-probe-price by-twin))))))))
   ;; The macro written as clauses, with arguments evaluated.
-  (let ((spot 5000) (curve (make-instance 'interpolated-zero-curve
+  (let ((spot 5000) (curve (make-interpolated-zero-curve
                                           :dates (list *today* #D"2027-09-24")
                                           :zero-rates '(0.04d0 0.041d0))))
     (check-that "the macro takes clauses with evaluated arguments"
@@ -280,7 +281,7 @@ MARKET, by name, that has a vol, or NIL if there is none."
     (check-that "a market with a bootstrapped or non-writable curve still prints, with #<...>"
                 (search "#<" (princ-to-string
                               (make-market (valued-on *today*)
-                                           (curve :c (structure (make-instance 'interpolated-zero-curve
+                                           (curve :c (structure (make-interpolated-zero-curve
                                                                                :dates (list *today* #D"2027-09-24")
                                                                                :zero-rates '(0.04d0 0.041d0)))))))))
   (let* ((old (with-open-file (s (asdf:system-relative-pathname "fincl" "tests/fixtures/market-snapshot-v1.sexp"))

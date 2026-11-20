@@ -173,7 +173,7 @@ CALENDAR with ROLL-CONVENTION (see RESOLVE-EXPIRY)."
 of the backward MAKE-SCHEDULE from FROM to EXPIRY, without its first (FROM
 itself or a stub start). Dates move onto business days of CALENDAR, if
 given, by ROLL-CONVENTION; the expiry stays as given."
-  (rest (schedule-dates (make-schedule from expiry tenor
+  (rest (schedule-dates (make-schedule :effective from :termination expiry :tenor tenor
                                        :calendar (or calendar (make-instance 'null-calendar))
                                        :convention roll-convention
                                        :termination-convention :unadjusted

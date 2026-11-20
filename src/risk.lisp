@@ -19,7 +19,7 @@ a number of calendar days, or a date to move the valuation date to)."
   (bumps '() :type list :read-only t)
   (age nil :read-only t))
 
-(declaim (ftype (function (t &key (:bumps list) (:age t))
+(declaim (ftype (function (t &key (:bumps t) (:age t))
                     (values scenario &optional))
           make-scenario))
 (defun make-scenario (name &key bumps age)
@@ -28,7 +28,10 @@ a number of calendar days, or a date to move the valuation date to)."
 
   (make-scenario \"spot -10%, vol +5\" :bumps '(((:spot :spx) (:relative -1/10))
                                                ((:vol :spx) (:absolute 5/100))))"
-  (check-input bumps list "a list of (factor shift)")
+  (check-input bumps list "a list of (risk-factor shift)")
+  (dolist (bump bumps)
+    (check-input bump (cons risk-factor (cons shift null))
+                 "a list of a risk factor such as (:spot :spx) and a shift such as (:relative 0.1)"))
   (check-input age (or null integer date) "NIL, a number of days, or a date")
   (%make-scenario name bumps age))
 

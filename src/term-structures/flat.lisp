@@ -11,20 +11,41 @@
          :initform (a:required-argument :rate)))
   (:documentation "A constant continuously compounded rate.
 
-  (make-instance 'flat-yield-curve :rate 0.04d0)"))
+  (make-flat-yield-curve :rate 0.04d0)"))
+
+(declaim (ftype (function (&key (:rate t)) (values flat-yield-curve &optional)) make-flat-yield-curve))
+(defun make-flat-yield-curve (&key (rate (required make-flat-yield-curve :rate)))
+  "A FLAT-YIELD-CURVE at the continuously compounded RATE (a real).
+
+  (make-flat-yield-curve :rate 0.04d0)"
+  (make-instance 'flat-yield-curve :rate rate))
 
 (defclass flat-dividend-curve (dividend-curve)
   ((rate :initarg :rate :reader flat-rate :type rate :initform 0d0))
   (:documentation "A constant continuously compounded dividend yield.
 
-  (make-instance 'flat-dividend-curve :rate 0.015d0)"))
+  (make-flat-dividend-curve :rate 0.015d0)"))
+
+(declaim (ftype (function (&key (:rate t)) (values flat-dividend-curve &optional)) make-flat-dividend-curve))
+(defun make-flat-dividend-curve (&key (rate (required make-flat-dividend-curve :rate)))
+  "A FLAT-DIVIDEND-CURVE at the continuous dividend yield RATE (a real).
+
+  (make-flat-dividend-curve :rate 0.015d0)"
+  (make-instance 'flat-dividend-curve :rate rate))
 
 (defclass flat-black-vol (black-vol-structure)
   ((vol :initarg :vol :reader flat-vol :type double-float
         :initform (a:required-argument :vol)))
   (:documentation "One Black vol for every strike and horizon.
 
-  (make-instance 'flat-black-vol :vol 0.2d0)"))
+  (make-flat-black-vol :vol 0.2d0)"))
+
+(declaim (ftype (function (&key (:vol t)) (values flat-black-vol &optional)) make-flat-black-vol))
+(defun make-flat-black-vol (&key (vol (required make-flat-black-vol :vol)))
+  "A FLAT-BLACK-VOL: the Black volatility VOL (a real) at every strike and horizon.
+
+  (make-flat-black-vol :vol 0.2d0)"
+  (make-instance 'flat-black-vol :vol vol))
 
 (defmethod initialize-instance :after ((c flat-yield-curve) &key)
   (check-input (slot-value c 'rate) real "a real rate")
@@ -61,11 +82,11 @@
   (flat-vol s))
 
 (defmethod bump-structure ((c flat-yield-curve) shift)
-  (make-instance 'flat-yield-curve :rate (apply-shift (flat-rate c) shift)))
+  (make-flat-yield-curve :rate (apply-shift (flat-rate c) shift)))
 (defmethod bump-structure ((c flat-dividend-curve) shift)
-  (make-instance 'flat-dividend-curve :rate (apply-shift (flat-rate c) shift)))
+  (make-flat-dividend-curve :rate (apply-shift (flat-rate c) shift)))
 (defmethod bump-structure ((s flat-black-vol) shift)
-  (make-instance 'flat-black-vol :vol (apply-shift (flat-vol s) shift)))
+  (make-flat-black-vol :vol (apply-shift (flat-vol s) shift)))
 
 (defmethod print-object ((c flat-yield-curve) stream)
   (print-unreadable-object (c stream :type t) (format stream "r=~,4F" (flat-rate c))))

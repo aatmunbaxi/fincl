@@ -44,18 +44,23 @@ dividend-schedule and smile/SSVI structures, an option, a holding, a position or
           (call-next-method))))
 
 (defmethod snapshot-form ((s dividend-schedule))
-  `(make-dividend-schedule (quote ,(schedule-entries s))))
+  `(make-dividend-schedule
+    (list ,@(iter (for d in (schedule-dividends s))
+                  (collect `(make-dividend ,(dividend-ex-date d) ,(dividend-amount d)
+                                           ,@(unless (eq (dividend-kind d) :cash)
+                                               `(:kind ,(dividend-kind d)))
+                                           ,@(unless (date= (dividend-pay-date d) (dividend-ex-date d))
+                                               `(:pay-date ,(dividend-pay-date d)))))))))
 
-(defun interpolated-curve-form (c values-initarg)
-  `(make-instance ',(class-name (class-of c))
-                  :dates (quote ,(coerce (curve-dates c) 'list))
-                  ,values-initarg (quote ,(coerce (curve-values c) 'list))
-                  :day-counter ,(snapshot-form (curve-day-counter c))
-                  :interpolation ,(curve-interpolation c)))
+(defun interpolated-curve-form (c constructor values-initarg)
+  `(,constructor :dates (quote ,(coerce (curve-dates c) 'list))
+                 ,values-initarg (quote ,(coerce (curve-values c) 'list))
+                 :day-counter ,(snapshot-form (curve-day-counter c))
+                 :interpolation ,(curve-interpolation c)))
 
-(defmethod snapshot-form ((c interpolated-discount-curve)) (interpolated-curve-form c :discounts))
-(defmethod snapshot-form ((c interpolated-zero-curve)) (interpolated-curve-form c :zero-rates))
-(defmethod snapshot-form ((c interpolated-forward-curve)) (interpolated-curve-form c :forwards))
+(defmethod snapshot-form ((c interpolated-discount-curve)) (interpolated-curve-form c 'make-interpolated-discount-curve :discounts))
+(defmethod snapshot-form ((c interpolated-zero-curve)) (interpolated-curve-form c 'make-interpolated-zero-curve :zero-rates))
+(defmethod snapshot-form ((c interpolated-forward-curve)) (interpolated-curve-form c 'make-interpolated-forward-curve :forwards))
 
 (defmethod snapshot-form ((c state-curve))
   (signal-invalid-argument 'curve c 'interpolated-discount-curve
@@ -64,9 +69,9 @@ give its leg :KNOTS (tenors) to simulate an interpolated curve instead"))
 
 (defmethod snapshot-form ((s interpolated-smile))
   (let ((i (smile-interpolator s)))
-    `(make-interpolated-smile ,(smile-expiry s)
-                              (quote ,(coerce (interpolator-knots i) 'list))
-                              (quote ,(coerce (interpolator-values i) 'list))
+    `(make-interpolated-smile :expiry ,(smile-expiry s)
+                              :log-moneyness (quote ,(coerce (interpolator-knots i) 'list))
+                              :total-variances (quote ,(coerce (interpolator-values i) 'list))
                               :interpolation ,(interpolator-method i))))
 
 (defmethod snapshot-form ((s svi-slice))
@@ -123,12 +128,12 @@ objects."
                    (rest clause))))
 
 (defmethod snapshot-form ((s flat-rates-vol))
-  `(make-instance 'flat-rates-vol :vol ,(rates-vol s)
-                                  :day-counter ,(snapshot-form (rates-vol-day-counter s))))
+  `(make-flat-rates-vol :vol ,(rates-vol s)
+                        :day-counter ,(snapshot-form (rates-vol-day-counter s))))
 
 (defmethod snapshot-form ((s expiry-rates-vol))
-  `(make-instance 'expiry-rates-vol :dates (quote ,(rates-vol-dates s)) :vols (quote ,(rates-vol-vols s))
-                                    :day-counter ,(snapshot-form (rates-vol-day-counter s))))
+  `(make-expiry-rates-vol :dates (quote ,(rates-vol-dates s)) :vols (quote ,(rates-vol-vols s))
+                          :day-counter ,(snapshot-form (rates-vol-day-counter s))))
 
 (defun kind-snapshot-form (language clause kinds)
   "CLAUSE's snapshot form, for a market clause giving entries of KINDS:
@@ -184,7 +189,9 @@ constructors; its form calls ~S" head)))
         object))))
 
 (defparameter *snapshot-constructors*
-  '(make-market make-market-from-clauses make-market-from-specs make-dividend-schedule make-instance make-interpolated-smile make-svi-slice
+  '(make-market make-market-from-clauses make-market-from-specs make-dividend-schedule make-dividend make-instance make-interpolated-smile make-svi-slice
+    make-interpolated-discount-curve make-interpolated-zero-curve make-interpolated-forward-curve
+    make-flat-yield-curve make-flat-dividend-curve make-flat-black-vol
     make-smile-surface make-ssvi-surface make-option-from-clauses make-holding make-position
     make-portfolio make-cash-account make-engine make-gbm make-heston make-cev make-local-vol make-merton-jump
     make-kou-jump make-variance-gamma make-nig make-bates make-garch change-measure)

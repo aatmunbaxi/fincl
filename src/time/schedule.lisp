@@ -38,11 +38,13 @@ and year tenors)."
   (let ((twentieth (make-date (date-year date) (date-month date) 20)))
     (if (date< twentieth date) (add-tenor twentieth (make-tenor 1 :months)) twentieth)))
 
-(declaim (ftype (function (date date tenor &key (:calendar calendar) (:convention symbol) (:termination-convention symbol) (:rule t) (:end-of-month t) (:first-date (or null date)) (:next-to-last-date (or null date)))
+(declaim (ftype (function (&key (:effective date) (:termination date) (:tenor tenor) (:calendar calendar) (:convention symbol) (:termination-convention symbol) (:rule t) (:end-of-month t) (:first-date (or null date)) (:next-to-last-date (or null date)))
                     (values schedule &optional))
           make-schedule))
-(defun make-schedule (effective termination tenor
-                      &key (calendar (make-instance 'null-calendar))
+(defun make-schedule (&key (effective (required make-schedule :effective))
+                           (termination (required make-schedule :termination))
+                           (tenor (required make-schedule :tenor))
+                           (calendar (make-instance 'null-calendar))
                            (convention :modified-following)
                            (termination-convention convention)
                            (rule :backward) end-of-month first-date next-to-last-date)
@@ -54,7 +56,7 @@ last one by TERMINATION-CONVENTION. END-OF-MONTH, for month and year tenors,
 keeps a schedule seeded on a month end on month ends. FIRST-DATE and
 NEXT-TO-LAST-DATE give explicit stubs (backward and forward rules only).
 
-  (make-schedule #D\"2027-01-31\" #D\"2032-01-31\" #T\"6M\" :calendar +target+
+  (make-schedule :effective #D\"2027-01-31\" :termination #D\"2032-01-31\" :tenor #T\"6M\" :calendar +target+
                  :end-of-month t)"
   (check-input rule (member :backward :forward :zero :twentieth)
                ":BACKWARD, :FORWARD, :ZERO or :TWENTIETH")

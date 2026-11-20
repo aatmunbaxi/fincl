@@ -91,20 +91,26 @@ spread over [-RANGE, RANGE] (default six ATM standard deviations). Returns
   (:documentation "w(k) interpolated through knots (natural or monotone
 cubic), flat beyond them."))
 
-(declaim (ftype (function (real t t &key (:interpolation t))
+(declaim (ftype (function (&key (:expiry t) (:log-moneyness t) (:total-variances t) (:interpolation t))
                     (values interpolated-smile &optional))
           make-interpolated-smile))
-(defun make-interpolated-smile (expiry ks ws &key (interpolation :natural-cubic))
-  "A smile at EXPIRY through the total variances WS at log-moneyness KS,
-interpolated by INTERPOLATION (:NATURAL-CUBIC or :MONOTONE-CUBIC) and flat
-beyond the knots.
+(defun make-interpolated-smile (&key (expiry (required make-interpolated-smile :expiry))
+                                     (log-moneyness (required make-interpolated-smile :log-moneyness))
+                                     (total-variances (required make-interpolated-smile :total-variances))
+                                     (interpolation :natural-cubic))
+  "A smile at EXPIRY (years) through TOTAL-VARIANCES w(k) = vol^2 T at
+LOG-MONEYNESS k = ln(K/F), interpolated by INTERPOLATION (:NATURAL-CUBIC,
+:MONOTONE-CUBIC or :LINEAR) and flat beyond the knots.
 
-  (make-interpolated-smile 1 '(-0.2 0 0.2) '(0.05 0.04 0.042))"
+  (make-interpolated-smile :expiry 1 :log-moneyness '(-0.2 0 0.2)
+                           :total-variances '(0.05 0.04 0.042))"
+  (check-input expiry real "a real expiry in years")
   (check-input interpolation (member :natural-cubic :monotone-cubic :linear)
                ":NATURAL-CUBIC, :MONOTONE-CUBIC or :LINEAR")
   (make-instance 'interpolated-smile
                  :expiry expiry
-                 :interpolator (make-interpolator interpolation ks ws :extrapolation :flat)))
+                 :interpolator (make-interpolator interpolation log-moneyness total-variances
+                                                  :extrapolation :flat)))
 
 (defmethod smile-variance-derivatives ((s interpolated-smile) k)
   (let ((i (smile-interpolator s))
@@ -355,33 +361,37 @@ CALENDAR-ARBITRAGE if w falls between consecutive expiries at some k in
                            (+ w02 (* u (- w12 w02)))
                            (/ (- w1 w0) (- t1 t0)))))))))))
 
-(declaim (ftype (function (t t t &key (:interpolation t))
+(declaim (ftype (function (&key (:expiries t) (:log-moneyness t) (:vols t) (:interpolation t))
                     (values grid-vol-surface &optional))
           make-grid-vol-surface))
-(defun make-grid-vol-surface (expiries moneyness vols &key (interpolation :natural-cubic))
+(defun make-grid-vol-surface (&key (expiries (required make-grid-vol-surface :expiries))
+                                   (log-moneyness (required make-grid-vol-surface :log-moneyness))
+                                   (vols (required make-grid-vol-surface :vols))
+                                   (interpolation :natural-cubic))
   "A GRID-VOL-SURFACE: at each of EXPIRIES (market time), a cubic in
-log-moneyness through VOLS. MONEYNESS is one list of log-moneyness values
+log-moneyness through VOLS. LOG-MONEYNESS is one list of log-moneyness values
 for every expiry, or a list of lists, one per expiry; VOLS is a list of
 lists of Black vols, one list per expiry. Total variance is interpolated, so
 calendar arbitrage between expiries signals CALENDAR-ARBITRAGE.
 
-  (make-grid-vol-surface '(0.5 1) '(-0.2 0 0.2) '((0.25 0.2 0.21) (0.24 0.2 0.205)))"
+  (make-grid-vol-surface :expiries '(0.5 1) :log-moneyness '(-0.2 0 0.2)
+                         :vols '((0.25 0.2 0.21) (0.24 0.2 0.205)))"
   (check-input expiries (and list (not null)) "a non-empty list of expiries")
   (unless (= (length vols) (length expiries))
     (signal-invalid-argument 'vols vols 'list "one list of vols per expiry"))
   (make-smile-surface
    (iter (for expiry in expiries)
          (for row in vols)
-         (for ks in (if (listp (first moneyness)) moneyness (make-list (length expiries)
-                                                                         :initial-element moneyness)))
+         (for ks in (if (listp (first log-moneyness)) log-moneyness
+                        (make-list (length expiries) :initial-element log-moneyness)))
          (unless (= (length ks) (length row))
            (signal-invalid-argument 'vols row 'list "one vol per log-moneyness knot"))
-         (collect (make-interpolated-smile expiry ks
-                                           (mapcar (lambda (vol) (* vol vol expiry)) row)
+         (collect (make-interpolated-smile :expiry expiry :log-moneyness ks
+                                           :total-variances (mapcar (lambda (vol) (* vol vol expiry)) row)
                                            :interpolation interpolation)))
    :class 'grid-vol-surface
    :check-range (reduce #'max (mapcar (lambda (ks) (reduce #'max (mapcar #'abs ks)))
-                                      (if (listp (first moneyness)) moneyness `(,moneyness))))))
+                                      (if (listp (first log-moneyness)) log-moneyness `(,log-moneyness))))))
 
 (declaim (ftype (function (t) (values svi-surface &optional)) make-svi-surface))
 (defun make-svi-surface (slices)

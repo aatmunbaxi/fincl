@@ -84,7 +84,7 @@ outermost first, and A and B are the differing values.
 (define-checks construction-equality-checks
   (format t "~&CONSTRUCTION-EQUAL-P~%")
   (let ((curve (lambda (rate)
-                 (make-instance 'interpolated-zero-curve
+                 (make-interpolated-zero-curve
                                 :dates (list #D"2026-09-24" #D"2027-09-24" #D"2029-09-24")
                                 :zero-rates (list 0.03d0 rate 0.04d0)))))
     (check-that "the same numbers, lists, dates and strings are equal"

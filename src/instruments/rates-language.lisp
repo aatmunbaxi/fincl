@@ -79,10 +79,11 @@ the one built from the schedule clauses. Giving both is a conflict."
                             rule end-of-month first-date next-to-last-date)
   "The schedule the schedule clauses describe; a TERMINATION that is a tenor
 is added to EFFECTIVE."
-  (apply #'make-schedule effective
-         (if (typep termination 'tenor) (add-tenor effective termination) termination)
-         tenor
-         `(,@(when calendar `(:calendar ,calendar))
+  (apply #'make-schedule
+         `(:effective ,effective
+           :termination ,(if (typep termination 'tenor) (add-tenor effective termination) termination)
+           :tenor ,tenor
+           ,@(when calendar `(:calendar ,calendar))
            ,@(when convention `(:convention ,convention))
            ,@(when termination-convention `(:termination-convention ,termination-convention))
            ,@(when rule `(:rule ,rule))
@@ -220,10 +221,10 @@ swap have the same dates."
              (floating-schedule (if ois fixed-schedule floating-schedule))
              (floating-day-counter (and (not ois)
                                         (with-scope (:floating) (optional-fact :day-counter))))
-             (fixed (fixed-leg fixed-schedule nominal fixed-rate fixed-day-counter
+             (fixed (fixed-leg :schedule fixed-schedule :notional nominal :rate fixed-rate :day-counter fixed-day-counter
                                :currency currency :payment-convention convention
                                :payment-lag (or lag 0) :payment-calendar calendar))
-             (floating (floating-leg floating-schedule nominal index :spread spread
+             (floating (floating-leg :schedule floating-schedule :notional nominal :index index :spread spread
                                      :day-counter floating-day-counter
                                      :payment-convention convention
                                      :payment-lag (or lag 0) :payment-calendar calendar)))
@@ -379,7 +380,7 @@ terms the helpers read from the same table."
       (check-input call-entries (and list (not null)) "a non-empty list of (date clean-price [type])"))
     (multiple-value-bind (nominal currency) (notional-and-currency face currency)
       (let* ((calendar (or payment-calendar (schedule-calendar schedule)))
-             (coupons (fixed-leg schedule (make-money nominal currency) coupon day-counter
+             (coupons (fixed-leg :schedule schedule :notional (make-money nominal currency) :rate coupon :day-counter day-counter
                                  :payment-convention payment-convention :payment-calendar calendar))
              (redemption (float redemption 1d0))
              (maturity (payment-date (a:lastcar coupons)))
@@ -590,7 +591,7 @@ periods, paid on dates adjusted by PAYMENT-CONVENTION on PAYMENT-CALENDAR
 (default the schedule's, also the settlement calendar). REDEMPTION per 100 of
 face is paid with the last coupon. Calls MAKE-BOND-FROM-CLAUSES.
 
-  (make-fixed-rate-bond (make-schedule #D\"2024-05-15\" #D\"2034-05-15\" #T\"6M\"
+  (make-fixed-rate-bond (make-schedule :effective #D\"2024-05-15\" :termination #D\"2034-05-15\" :tenor #T\"6M\"
                                        :calendar +united-states-government-bond+
                                        :convention :unadjusted)
                         0.04375d0 (make-instance 'actual-actual-icma :schedule s)
@@ -670,7 +671,7 @@ MAKE-FRA-FROM-CLAUSES.
 
 (defun cap-leg-from-facts (schedule nominal index spread day-counter payment-convention payment-lag
                            payment-calendar)
-  (floating-leg schedule nominal index :spread spread :day-counter day-counter
+  (floating-leg :schedule schedule :notional nominal :index index :spread spread :day-counter day-counter
                                        :payment-convention payment-convention
                                        :payment-lag payment-lag :payment-calendar payment-calendar))
 

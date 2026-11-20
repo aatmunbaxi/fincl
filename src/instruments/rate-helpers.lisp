@@ -226,15 +226,15 @@ end of its last fixing's deposit.
                          (calendar-end-of-month-p calendar start))
                     (calendar-end-of-month calendar end)
                     end)))
-         (schedule (make-schedule start end (make-tenor (/ 12 (frequency-periods payment-frequency))
+         (schedule (make-schedule :effective start :termination end :tenor (make-tenor (/ 12 (frequency-periods payment-frequency))
                                                         :months)
                                   :calendar calendar :convention convention
                                   :termination-convention convention :rule :backward
                                   :end-of-month eom))
          (projection (index-with-forecast-curve index :projection))
-         (fixed (fixed-leg schedule 1 0d0 (index-day-counter index) :currency (index-currency index)
+         (fixed (fixed-leg :schedule schedule :notional 1 :rate 0d0 :day-counter (index-day-counter index) :currency (index-currency index)
                                           :payment-lag payment-lag :payment-convention payment-convention))
-         (floating (floating-leg schedule 1 projection :payment-lag payment-lag
+         (floating (floating-leg :schedule schedule :notional 1 :index projection :payment-lag payment-lag
                                                        :payment-convention payment-convention))
          (last-fixing (a:last-elt (overnight-fixing-dates (a:lastcar floating))))
          (fixing-end (index-maturity-date index (index-value-date index last-fixing)))
@@ -282,19 +282,19 @@ is the later of the maturity and the end of the last coupon's forecast.
   (let* ((calendar (or calendar (index-fixing-calendar index)))
          (start (index-value-date index (adjust (index-fixing-calendar index) valuation-date)))
          (end (add-tenor start tenor))
-         (fixed-schedule (make-schedule start end (make-tenor (/ 12 (frequency-periods fixed-frequency))
+         (fixed-schedule (make-schedule :effective start :termination end :tenor (make-tenor (/ 12 (frequency-periods fixed-frequency))
                                                               :months)
                                         :calendar calendar :convention fixed-convention
                                         :termination-convention fixed-convention :rule :backward))
-         (float-schedule (make-schedule start end (index-tenor index)
+         (float-schedule (make-schedule :effective start :termination end :tenor (index-tenor index)
                                         :calendar calendar :convention (index-convention index)
                                         :termination-convention (index-convention index)
                                         :rule :backward))
          (projection (index-with-forecast-curve index :projection))
          (payment-convention (index-convention index))
-         (fixed (fixed-leg fixed-schedule 1 0d0 fixed-day-counter :currency (index-currency index)
+         (fixed (fixed-leg :schedule fixed-schedule :notional 1 :rate 0d0 :day-counter fixed-day-counter :currency (index-currency index)
                                                               :payment-convention payment-convention))
-         (floating (floating-leg float-schedule 1 projection :payment-convention payment-convention))
+         (floating (floating-leg :schedule float-schedule :notional 1 :index projection :payment-convention payment-convention))
          (maturity (iter (for cf in (append fixed floating))
                          (finding (accrual-end cf) maximizing (date-serial (accrual-end cf)))))
          (h (make-instance 'swap-helper
@@ -344,11 +344,11 @@ through the nodes. Built by BOOTSTRAP-CURVE."))
   "The interpolated curve through DATES and DATA: discount factors for
 :LOG-LINEAR, period forwards for :MONOTONE-CONVEX and :BACKWARD-FLAT."
   (ecase interpolation
-    (:log-linear (make-instance 'interpolated-discount-curve :dates dates :discounts data
+    (:log-linear (make-interpolated-discount-curve :dates dates :discounts data
                                                              :day-counter day-counter
                                                              :interpolation :log-linear))
     ((:monotone-convex :backward-flat)
-     (make-instance 'interpolated-forward-curve :dates dates :forwards data :day-counter day-counter
+     (make-interpolated-forward-curve :dates dates :forwards data :day-counter day-counter
                                                 :interpolation interpolation))))
 
 (declaim (ftype (function (list &key (:interpolation t) (:discount-curve t) (:day-counter t) (:accuracy real) (:max-passes (integer 1)))

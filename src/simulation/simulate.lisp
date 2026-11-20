@@ -218,7 +218,7 @@ written.
                      a leg's. For example, a flat implied vol that
                      follows the spot S (a :STATE variable):
                        (:derive (:vol :spx) ()
-                         (make-instance 'flat-black-vol :vol (* 0.002d0 s)))
+                         (make-flat-black-vol :vol (* 0.002d0 s)))
   (:start [([market] &key time)] form ...)
                      at the valuation date, before the first step. The optional
                      (market) binds that date's market, TIME 0. RECORD here

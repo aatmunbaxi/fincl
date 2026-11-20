@@ -412,7 +412,7 @@ curve's day counter."
         (let ((r (aref state 0))
               (dates (curve-knot-dates date knots
                                        (and (typep initial 'interpolated-curve) (a:last-elt (curve-dates initial))))))
-          (make-instance 'interpolated-discount-curve
+          (make-interpolated-discount-curve
                          :dates (cons date dates)
                          :day-counter (if (typep initial 'dated-curve)
                                           (curve-day-counter initial)

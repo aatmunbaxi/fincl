@@ -100,8 +100,25 @@ reference date) and one value per date, interpolated in time."))
 date), interpolated by INTERPOLATION (default :LOG-LINEAR, which gives
 piecewise-flat forwards).
 
-  (make-instance 'interpolated-discount-curve :dates dates :discounts dfs
-                                              :day-counter +actual-360+)"))
+  (make-interpolated-discount-curve :dates dates :discounts dfs
+                                    :day-counter +actual-360+)"))
+
+(declaim (ftype (function (&key (:dates t) (:discounts t) (:day-counter t) (:interpolation t))
+                    (values interpolated-discount-curve &optional))
+          make-interpolated-discount-curve))
+(defun make-interpolated-discount-curve (&key (dates (required make-interpolated-discount-curve :dates))
+                                              (discounts (required make-interpolated-discount-curve :discounts))
+                                              (day-counter +actual-365-fixed+)
+                                              (interpolation :log-linear))
+  "An INTERPOLATED-DISCOUNT-CURVE through DISCOUNTS (the first 1) at DATES (the
+first is the reference date), measured by DAY-COUNTER and interpolated by
+INTERPOLATION (:LOG-LINEAR, :LINEAR, :NATURAL-CUBIC, :MONOTONE-CUBIC).
+
+  (make-interpolated-discount-curve :dates (list #D\"2027-01-15\" #D\"2028-01-15\")
+                                    :discounts '(1d0 0.96d0))"
+  (make-instance 'interpolated-discount-curve :dates dates :discounts discounts
+                                              :day-counter day-counter
+                                              :interpolation interpolation))
 
 (defmethod initialize-instance :after ((c interpolated-discount-curve) &key dates discounts)
   (prepare-knots c dates discounts 'discounts)
@@ -128,7 +145,7 @@ piecewise-flat forwards).
 
 (defmethod bump-structure ((c interpolated-discount-curve) shift)
   ;; Zero rates at the knots move by SHIFT: e^(-z t) -> e^(-z' t).
-  (make-instance 'interpolated-discount-curve
+  (make-interpolated-discount-curve
                  :dates (curve-dates c) :day-counter (curve-day-counter c)
                  :interpolation (curve-interpolation c)
                  :discounts (map 'list (lambda (time df)
@@ -155,8 +172,29 @@ piecewise-flat forwards).
 converted to continuous compounding at construction, the first over one
 day.
 
-  (make-instance 'interpolated-zero-curve :dates dates :zero-rates zs
-                                          :compounding :compounded :frequency :annual)"))
+  (make-interpolated-zero-curve :dates dates :zero-rates zs
+                                :compounding :compounded :frequency :annual)"))
+
+(declaim (ftype (function (&key (:dates t) (:zero-rates t) (:day-counter t) (:interpolation t)
+                                (:compounding t) (:frequency t))
+                    (values interpolated-zero-curve &optional))
+          make-interpolated-zero-curve))
+(defun make-interpolated-zero-curve (&key (dates (required make-interpolated-zero-curve :dates))
+                                          (zero-rates (required make-interpolated-zero-curve :zero-rates))
+                                          (day-counter +actual-365-fixed+)
+                                          (interpolation :linear)
+                                          (compounding :continuous) (frequency :annual))
+  "An INTERPOLATED-ZERO-CURVE through ZERO-RATES at DATES (the first is the
+reference date), measured by DAY-COUNTER and interpolated by INTERPOLATION
+(:LINEAR, :LOG-LINEAR, :NATURAL-CUBIC, :MONOTONE-CUBIC). Rates quoted with
+COMPOUNDING and FREQUENCY are converted to continuous compounding.
+
+  (make-interpolated-zero-curve :dates (list #D\"2027-01-15\" #D\"2028-01-15\")
+                                :zero-rates '(0.04d0 0.042d0))"
+  (make-instance 'interpolated-zero-curve :dates dates :zero-rates zero-rates
+                                          :day-counter day-counter
+                                          :interpolation interpolation
+                                          :compounding compounding :frequency frequency))
 
 (defmethod initialize-instance :after ((c interpolated-zero-curve)
                                        &key dates zero-rates (compounding :continuous)
@@ -189,7 +227,7 @@ day.
     (if (zerop time) 1d0 (exp (- (* (interpolated-zero c time) time))))))
 
 (defmethod bump-structure ((c interpolated-zero-curve) shift)
-  (make-instance 'interpolated-zero-curve
+  (make-interpolated-zero-curve
                  :dates (curve-dates c) :day-counter (curve-day-counter c)
                  :interpolation (curve-interpolation c)
                  :zero-rates (map 'list (lambda (z) (apply-shift z shift)) (curve-values c))))
@@ -211,7 +249,24 @@ the value at a date is the average forward over the period
 ending there, the first is ignored). The discount factor is exp(-integral
 of the forward); beyond the last date the forward is the last value.
 
-  (make-instance 'interpolated-forward-curve :dates dates :forwards fs)"))
+  (make-interpolated-forward-curve :dates dates :forwards fs)"))
+
+(declaim (ftype (function (&key (:dates t) (:forwards t) (:day-counter t) (:interpolation t))
+                    (values interpolated-forward-curve &optional))
+          make-interpolated-forward-curve))
+(defun make-interpolated-forward-curve (&key (dates (required make-interpolated-forward-curve :dates))
+                                             (forwards (required make-interpolated-forward-curve :forwards))
+                                             (day-counter +actual-365-fixed+)
+                                             (interpolation :backward-flat))
+  "An INTERPOLATED-FORWARD-CURVE through the instantaneous FORWARDS at DATES (the
+first is the reference date), measured by DAY-COUNTER, with INTERPOLATION
+:BACKWARD-FLAT, :LINEAR or :MONOTONE-CONVEX.
+
+  (make-interpolated-forward-curve :dates (list #D\"2027-01-15\" #D\"2028-01-15\")
+                                   :forwards '(0.04d0 0.045d0))"
+  (make-instance 'interpolated-forward-curve :dates dates :forwards forwards
+                                             :day-counter day-counter
+                                             :interpolation interpolation))
 
 (defmethod initialize-instance :after ((c interpolated-forward-curve) &key dates forwards)
   (prepare-knots c dates forwards 'forwards)
@@ -270,7 +325,7 @@ of the forward); beyond the last date the forward is the last value.
     (if (zerop time) 1d0 (exp (- (* (/ (forward-integral c time) time) time))))))
 
 (defmethod bump-structure ((c interpolated-forward-curve) shift)
-  (make-instance 'interpolated-forward-curve
+  (make-interpolated-forward-curve
                  :dates (curve-dates c) :day-counter (curve-day-counter c)
                  :interpolation (curve-interpolation c)
                  :forwards (map 'list (lambda (f) (apply-shift f shift)) (curve-values c))))

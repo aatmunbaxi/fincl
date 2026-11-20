@@ -64,8 +64,8 @@ ln(K/F(tau)): by Black price with PRICE, else by vol."
                                                        (1 0.04 0.1 -0.35 0.03 0.2)))
                      (collect (make-svi-slice tau :a a :b b :rho rho :m mm :sigma sigma)))))
          (knots (strikes-between -0.5d0 0.5d0 21))
-         (grid (make-grid-vol-surface '(0.25 0.5 1) knots
-                                      (iter (for tau in '(0.25 0.5 1))
+         (grid (make-grid-vol-surface :expiries '(0.25 0.5 1) :log-moneyness knots
+                                      :vols (iter (for tau in '(0.25 0.5 1))
                                             (collect (mapcar (lambda (k) (sqrt (/ (surface-variance svi k tau) tau)))
                                                              knots))))))
     (declare (ignorable m))
@@ -78,10 +78,11 @@ ln(K/F(tau)): by Black price with PRICE, else by vol."
                           worst)
                   (< worst 1d-4))))
   (check-error "a grid surface whose total variance falls in T"
-               (make-grid-vol-surface '(0.5 1) '(-0.1 0 0.1) '((0.3 0.3 0.3) (0.2 0.2 0.2)))
+               (make-grid-vol-surface :expiries '(0.5 1) :log-moneyness '(-0.1 0 0.1)
+                                     :vols '((0.3 0.3 0.3) (0.2 0.2 0.2)))
                calendar-arbitrage)
   (check-error "a moneyness surface read without a forward"
-               (structure-black-variance (make-grid-vol-surface '(1) '(-0.1 0 0.1) '((0.2 0.2 0.2))) 100 1)
+               (structure-black-variance (make-grid-vol-surface :expiries '(1) :log-moneyness '(-0.1 0 0.1) :vols '((0.2 0.2 0.2))) 100 1)
                invalid-argument))
 
 ;;; --------------------------------------------------------------------
@@ -171,8 +172,8 @@ ln(K/F(tau)): by Black price with PRICE, else by vol."
              (surface-market :vol 0.2d0 :dividend 0d0))
     (within-se "a flat 20% surface gives Black-Scholes's 10.4506 through Monte Carlo"
                v 10.450583572185565d0 se))
-  (let* ((grid (make-grid-vol-surface '(0.25 0.5 1 2) '(-1 -0.5 0 0.5 1)
-                                      '((0.3 0.3 0.3 0.3 0.3) (0.25 0.25 0.25 0.25 0.25)
+  (let* ((grid (make-grid-vol-surface :expiries '(0.25 0.5 1 2) :log-moneyness '(-1 -0.5 0 0.5 1)
+                                      :vols '((0.3 0.3 0.3 0.3 0.3) (0.25 0.25 0.25 0.25 0.25)
                                         (0.22 0.22 0.22 0.22 0.22) (0.2 0.2 0.2 0.2 0.2))))
          (m (surface-market :vol grid))
          (tau (market-time m (days-out 365))))

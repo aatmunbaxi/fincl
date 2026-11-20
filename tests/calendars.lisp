@@ -135,8 +135,8 @@
                                 next-to-last-date dates regular icma icma-reference)
           case
         (let* ((calendar (symbol-value (find-symbol (format nil "+~:@(~A~)+" calendar) '#:fincl)))
-               (schedule (make-schedule (parse-date effective) (parse-date termination)
-                                        (parse-tenor tenor)
+               (schedule (make-schedule :effective (parse-date effective) :termination (parse-date termination)
+                                        :tenor (parse-tenor tenor)
                                         :calendar calendar :convention convention
                                         :termination-convention termination-convention
                                         :rule rule :end-of-month end-of-month
@@ -179,7 +179,7 @@
     (check-that (format nil "ICMA with each period as its own reference within 1e-15 (worst ~,1E)"
                         worst-reference)
                 (<= worst-reference 1d-15)))
-  (let ((s (make-schedule #D"2024-03-15" #D"2029-01-31" #T"6M" :calendar +target+)))
+  (let ((s (make-schedule :effective #D"2024-03-15" :termination #D"2029-01-31" :tenor #T"6M" :calendar +target+)))
     (check-that "unadjusted dates adjust to the dates"
                 (every (lambda (u d) (date= (adjust +target+ u :modified-following) d))
                        (schedule-unadjusted-dates s) (schedule-dates s)))
@@ -187,9 +187,9 @@
                 (and (zerop (sbit (schedule-regular-p s) 0))
                      (every #'plusp (subseq (schedule-regular-p s) 1)))))
   (check-error "termination before effective"
-               (make-schedule #D"2029-01-31" #D"2024-01-31" #T"6M") invalid-input)
+               (make-schedule :effective #D"2029-01-31" :termination #D"2024-01-31" :tenor #T"6M") invalid-input)
   (check-error "a first date with the :zero rule"
-               (make-schedule #D"2024-01-31" #D"2029-01-31" #T"6M" :rule :zero
+               (make-schedule :effective #D"2024-01-31" :termination #D"2029-01-31" :tenor #T"6M" :rule :zero
                                                                   :first-date #D"2024-06-30")
                invalid-input)
   (check-equal "advance counts business days" #D"2027-07-02"

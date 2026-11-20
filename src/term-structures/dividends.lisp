@@ -28,36 +28,43 @@ MAKE-DIVIDEND-SCHEDULE."))
     (check-input date date (format nil "a date or a \"YYYY-MM-DD\" string for ~A" what))
     date))
 
+(declaim (ftype (function (t t &key (:kind t) (:pay-date t)) (values dividend &optional)) make-dividend))
+(defun make-dividend (ex-date amount &key (kind :cash) pay-date)
+  "A dividend going ex on EX-DATE, a date or a \"YYYY-MM-DD\" string, of
+AMOUNT: for KIND :CASH a non-negative sum of money paid on PAY-DATE (default
+EX-DATE; it may not precede EX-DATE), for :PROPORTIONAL a fraction in [0, 1)
+of the price.
+
+  (make-dividend #D\"2027-02-10\" 0.82d0 :pay-date #D\"2027-03-01\")"
+  (let ((ex-date (as-date ex-date "an ex-date"))
+        (pay-date (as-date (or pay-date ex-date) "a pay date")))
+    (check-input kind (member :cash :proportional) ":CASH or :PROPORTIONAL")
+    (if (eq kind :cash)
+        (check-input amount (real 0) "a non-negative cash amount")
+        (check-input amount (real 0 (1)) "a proportional amount in [0, 1)"))
+    (when (date< pay-date ex-date)
+      (signal-invalid-argument 'pay-date pay-date 'date
+                               (format nil "a pay date on or after the ex-date ~A" ex-date)))
+    (%make-dividend ex-date (float amount 1d0) kind pay-date)))
+
 (declaim (ftype (function (t) (values dividend-schedule &optional)) make-dividend-schedule))
-(defun make-dividend-schedule (entries)
-  "A DIVIDEND-SCHEDULE from ENTRIES, a list of
+(defun make-dividend-schedule (dividends)
+  "A DIVIDEND-SCHEDULE of DIVIDENDS, a list of MAKE-DIVIDEND results, kept in
+order of ex-date. An element may also be a list (ex-date amount &key kind
+pay-date), the arguments of MAKE-DIVIDEND.
 
-  (ex-date amount &key (kind :cash) pay-date)
-
-EX-DATE and PAY-DATE are dates or \"YYYY-MM-DD\" strings; PAY-DATE (default
-EX-DATE) may not precede EX-DATE. A :CASH AMOUNT is a non-negative sum of
-money, a :PROPORTIONAL one a fraction in [0, 1) of the price.
-
-  (make-dividend-schedule '((#D\"2027-02-10\" 0.82d0 :pay-date #D\"2027-03-01\")
-                            (#D\"2027-08-10\" 0.85d0)))"
-  (check-input entries list "a list of (ex-date amount &key kind pay-date)")
+  (make-dividend-schedule
+   (list (make-dividend #D\"2027-02-10\" 0.82d0 :pay-date #D\"2027-03-01\")
+         (make-dividend #D\"2027-08-10\" 0.85d0)))"
+  (check-input dividends list "a list of dividends from MAKE-DIVIDEND, or of (ex-date amount &key kind pay-date)")
   (make-instance
    'dividend-schedule
    :dividends
    (stable-sort
-    (iter (for entry in entries)
-          (collect
-              (destructuring-bind (ex-date amount &key (kind :cash) pay-date) entry
-                (let ((ex-date (as-date ex-date "an ex-date"))
-                      (pay-date (as-date (or pay-date ex-date) "a pay date")))
-                  (check-input kind (member :cash :proportional) ":CASH or :PROPORTIONAL")
-                  (if (eq kind :cash)
-                      (check-input amount (real 0) "a non-negative cash amount")
-                      (check-input amount (real 0 (1)) "a proportional amount in [0, 1)"))
-                  (when (date< pay-date ex-date)
-                    (signal-invalid-argument 'pay-date pay-date 'date
-                                             (format nil "a pay date on or after the ex-date ~A" ex-date)))
-                  (%make-dividend ex-date (float amount 1d0) kind pay-date)))))
+    (iter (for entry in dividends)
+          (collect (etypecase entry
+                     (dividend entry)
+                     (cons (apply #'make-dividend entry)))))
     #'date< :key #'dividend-ex-date)))
 
 (defun schedule-entries (schedule)

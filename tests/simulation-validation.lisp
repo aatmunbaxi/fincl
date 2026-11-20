@@ -223,7 +223,7 @@ date is a step."
 ;;; --------------------------------------------------------------------
 
 (defun v4-bond (call-dates)
-  (make-callable-fixed-rate-bond (make-schedule *today* (years-after *today* 6) #T"1Y" :calendar +target+)
+  (make-callable-fixed-rate-bond (make-schedule :effective *today* :termination (years-after *today* 6) :tenor #T"1Y" :calendar +target+)
                                  0.04d0 +actual-365-fixed+
                                  (mapcar (lambda (d) `(,d 100)) call-dates)
                                  :currency :eur :settlement-days 0))

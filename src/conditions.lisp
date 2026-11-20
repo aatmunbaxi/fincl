@@ -61,6 +61,16 @@ DATUM, which is not of EXPECTED-TYPE; EXPECTED describes valid values.
   (error 'invalid-argument :place place :datum datum :expected-type expected-type
                            :expected expected))
 
+(defmacro required (constructor keyword)
+  "Default form of a required keyword argument of CONSTRUCTOR: signals
+INVALID-ARGUMENT naming KEYWORD and CONSTRUCTOR when the caller omits it.
+Works where NIL is a valid value. Not exported.
+
+  (defun make-thing (&key (size (required make-thing :size))) size)"
+  `(signal-invalid-argument ,(string-downcase (symbol-name keyword)) nil t
+                            ,(format nil "given as the keyword ~S, which ~(~S~) requires"
+                                     keyword constructor)))
+
 ;;; --------------------------------------------------------------------
 ;;; Portability
 ;;; --------------------------------------------------------------------

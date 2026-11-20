@@ -166,9 +166,9 @@ convention written out as a clause, no convention clause."
                           (bonds-swaps-fixture :fras))))
   (format t "~&Rates languages: the macros, the kind of a swap, conflicts~%")
   (let* ((today #D"2026-09-24")
-         (sofr-schedule (make-schedule #D"2026-09-28" #D"2027-03-29" #T"3M" :calendar +united-states-sofr+))
-         (euribor-fixed (make-schedule #D"2026-12-29" #D"2029-12-28" #T"1Y" :calendar +target+))
-         (euribor-floating (make-schedule #D"2026-12-29" #D"2029-12-28" #T"6M" :calendar +target+))
+         (sofr-schedule (make-schedule :effective #D"2026-09-28" :termination #D"2027-03-29" :tenor #T"3M" :calendar +united-states-sofr+))
+         (euribor-fixed (make-schedule :effective #D"2026-12-29" :termination #D"2029-12-28" :tenor #T"1Y" :calendar +target+))
+         (euribor-floating (make-schedule :effective #D"2026-12-29" :termination #D"2029-12-28" :tenor #T"6M" :calendar +target+))
          (thirty (make-instance 'thirty-360 :variant :bond-basis))
          (ois (make-swap (nominal 1d6)
                          (fixed-leg (pays) (schedule sofr-schedule) (rate 0.04d0) (day-counter +actual-360+))
@@ -239,7 +239,7 @@ convention written out as a clause, no convention clause."
     (check-error "an OIS with two different schedules"
                  (make-swap (nominal 1d6)
                             (fixed-leg (pays) (schedule sofr-schedule) (rate 0.04d0) (day-counter +actual-360+))
-                            (floating-leg (index (sofr)) (schedule (make-schedule #D"2026-09-28" #D"2027-09-28" #T"3M"
+                            (floating-leg (index (sofr)) (schedule (make-schedule :effective #D"2026-09-28" :termination #D"2027-09-28" :tenor #T"3M"
                                                                                   :calendar +united-states-sofr+))))
                  clause-argument-error)
     (check-that "a schedule given whole and in parts conflicts, and the report names both clauses"
@@ -275,7 +275,7 @@ convention written out as a clause, no convention clause."
     (check-error "an unknown clause" (macroexpand-1 '(make-swap (nominl 1d6))) unknown-clause)
     ;; Bonds
     (format t "~&Rates languages: bonds and FRAs~%")
-    (let* ((s (make-schedule #D"2024-05-15" #D"2034-05-15" #T"6M"
+    (let* ((s (make-schedule :effective #D"2024-05-15" :termination #D"2034-05-15" :tenor #T"6M"
                              :calendar +united-states-government-bond+ :convention :unadjusted))
            (icma (make-instance 'actual-actual-icma :schedule s))
            (old (make-fixed-rate-bond s 0.04375d0 icma :currency :usd :settlement-days 1
@@ -350,7 +350,7 @@ convention written out as a clause, no convention clause."
                     (construction-equal-p
                      swap (make-swap-from-clauses
                            `((:convention ,convention) ,@clauses)))))))
-  (let* ((s (make-schedule #D"2026-09-28" #D"2027-03-29" #T"3M" :calendar +united-states-sofr+))
+  (let* ((s (make-schedule :effective #D"2026-09-28" :termination #D"2027-03-29" :tenor #T"3M" :calendar +united-states-sofr+))
          (short (make-swap (convention :usd-sofr-ois) (nominal 1d6) (schedule s)
                            (fixed-leg (pays) (rate 0.04d0))))
          (spelled (make-swap (nominal 1d6) (schedule s) (payment-lag 2) (payment-convention :following)
@@ -364,7 +364,7 @@ convention written out as a clause, no convention clause."
                      (= 5 (fincl::swap-payment-lag (make-swap (convention :usd-sofr-ois) (payment-lag 5) (nominal 1d6)
                                                        (schedule s) (fixed-leg (pays) (rate 0.04d0))))))))
   (let* ((cal (index-fixing-calendar (estr)))
-         (s (make-schedule #D"2026-09-28" #D"2027-03-29" #T"3M" :calendar cal))
+         (s (make-schedule :effective #D"2026-09-28" :termination #D"2027-03-29" :tenor #T"3M" :calendar cal))
          (short (make-swap (convention :eur-estr-ois) (nominal 1d6) (schedule s) (fixed-leg (receives) (rate 0.03d0))))
          (spelled (make-swap (nominal 1d6) (schedule s) (payment-lag 1) (payment-convention :following)
                              (fixed-leg (receives) (rate 0.03d0) (day-counter (fincl::index-day-counter (estr))))
@@ -431,12 +431,12 @@ convention written out as a clause, no convention clause."
                 (construction-equal-p
                  (make-cap-floor (cap 0.025d0)
                                  (floating-leg (nominal 1d6) (index (euribor #T"6M"))
-                                               (schedule (make-schedule #D"2026-09-28" #D"2031-09-29" #T"6M"
+                                               (schedule (make-schedule :effective #D"2026-09-28" :termination #D"2031-09-29" :tenor #T"6M"
                                                                         :calendar +target+))))
                  (make-cap-floor (cap 0.025d0)
-                                 (on-leg (floating-leg (make-schedule #D"2026-09-28" #D"2031-09-29" #T"6M"
+                                 (on-leg (floating-leg :schedule (make-schedule :effective #D"2026-09-28" :termination #D"2031-09-29" :tenor #T"6M"
                                                                       :calendar +target+)
-                                                       1d6 (euribor #T"6M"))))))
+                                                       :notional 1d6 :index (euribor #T"6M"))))))
     (check-that "leg clauses work without the floating-leg grouping"
                 (construction-equal-p
                  (make-cap-floor (cap 0.025d0) (nominal 1d6) (index (euribor #T"6M")) (effective #D"2026-09-28")
@@ -454,8 +454,8 @@ convention written out as a clause, no convention clause."
                        (search "(on-leg" (princ-to-string c)) (search "(nominal" (princ-to-string c)))))
     (check-error "a leg of fixed coupons is not an Ibor leg"
                  (make-cap-floor (cap 0.02d0)
-                                 (on-leg (fixed-leg (make-schedule #D"2026-09-28" #D"2027-09-28" #T"6M")
-                                                    (make-money 1d6 :eur) 0.02d0 +actual-360+)))
+                                 (on-leg (fixed-leg :schedule (make-schedule :effective #D"2026-09-28" :termination #D"2027-09-28" :tenor #T"6M")
+                                                    :notional (make-money 1d6 :eur) :rate 0.02d0 :day-counter +actual-360+)))
                  invalid-argument)
     (check-error "a rate list of the wrong length" (make-cap-floor (cap '(0.01d0 0.02d0)) (on-leg leg))
                  invalid-argument)

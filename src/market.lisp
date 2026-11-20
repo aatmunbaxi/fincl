@@ -431,7 +431,7 @@ DIVIDEND-SCHEDULE adds discrete dividends, as in MAKE-MARKET-FROM-SPECS.
   "A copy of the composite MARKET whose component (KIND KEY) is VALUE, KIND a
 registered kind (see DEFINE-MARKET-COMPONENT); MARKET is unchanged.
 
-  (market-with m :vol :spx (make-instance 'flat-black-vol :vol 0.2d0))"
+  (market-with m :vol :spx (make-flat-black-vol :vol 0.2d0))"
   (let ((new (copy-composite-market market)))
     (setf (gethash key (kind-table new (find-market-component-kind kind) t)) value)
     new))
