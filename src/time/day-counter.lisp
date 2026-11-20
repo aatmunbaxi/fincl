@@ -1,8 +1,10 @@
 ;;;; time/day-counter.lisp --- day-count conventions
 ;;;;
-;;;; Definitions follow QuantLib; tests/fixtures/day-counters.sexp, generated
-;;;; from QuantLib, is the reference. Both generics are antisymmetric: when
-;;;; END precedes START the result is minus the result for (END, START).
+;;;; Both generics are antisymmetric: when END precedes START the result is
+;;;; minus the result for (END, START).
+;;;;
+;;;; Provenance: the definitions follow QuantLib, and
+;;;; tests/fixtures/day-counters.sexp, generated from QuantLib, is the reference.
 
 (in-package #:fincl)
 
@@ -62,8 +64,7 @@ a reference period; none of the conventions here use them.
   ((variant :initarg :variant :reader thirty-360-variant
             :initform (a:required-argument :variant)
             :type (member :bond-basis :european)))
-  (:documentation "30/360. :BOND-BASIS is the US bond basis (QuantLib
-Thirty360::BondBasis); :EUROPEAN is 30E/360 (Thirty360::European).
+  (:documentation "30/360. :BOND-BASIS is the US bond basis; :EUROPEAN is 30E/360.
 
   (make-instance 'thirty-360 :variant :european)"))
 
@@ -95,7 +96,7 @@ that year's length (365 or 366)."))
   (declare (ignore ref-start ref-end))
   (if (date= start end)
       0d0
-      ;; Same operation order as QuantLib, so results match bit for bit.
+      ;; The operation order is fixed so results match the reference fixtures bit for bit.
       (let* ((y1 (date-year start))
              (y2 (date-year end))
              (dib1 (if (leap-year-p y1) 366d0 365d0))
@@ -147,19 +148,18 @@ ROUND rounds halves to even)."
   ((schedule :initarg :schedule :initform nil :reader day-counter-schedule)
    (coupons :initform nil
             :documentation "ICMA-COUPONS of the schedule, made on first use."))
-  (:documentation "ACT/ACT ICMA (ISMA), as QuantLib's ActualActual(ISMA). With a
+  (:documentation "ACT/ACT ICMA (ISMA). With a
 SCHEDULE, a period is split along the schedule's coupon dates, stubs
 completed by notional coupon dates, and each piece counts its days over its
 reference period's days times the coupons per year. Without one, the
-reference period is REF-START to REF-END of YEAR-FRACTION (QuantLib's
+reference period is REF-START to REF-END of YEAR-FRACTION (the
 original ISMA algorithm, which also splits long stubs).
 
   (make-instance 'actual-actual-icma :schedule (make-schedule ...))"))
 
 (defun icma-quasi-coupon-dates (schedule)
   "The schedule's dates with each stub's end replaced by the notional coupon
-date one tenor away, and a further notional date for a long stub (QuantLib's
-getListOfPeriodDatesIncludingQuasiPayments, indexing quirk included)."
+date one tenor away, and a further notional date for a long stub, with the indexing quirk of the reference list construction."
   (let* ((dates (coerce (schedule-dates schedule) 'list))
          (size (length dates))
          (regular (schedule-regular-p schedule))
@@ -177,8 +177,8 @@ getListOfPeriodDatesIncludingQuasiPayments, indexing quirk included)."
             (push (move notional back) new))))
       (when (zerop (sbit regular (1- (length regular))))
         (let ((notional (move (nth (- size 2) dates) tenor)))
-          ;; QuantLib writes position size - 1 of the list it has possibly
-          ;; just extended at the front; so does this.
+          ;; The reference construction writes position size - 1 of the list it
+          ;; has possibly just extended at the front; so does this.
           (setf (nth (1- size) new) notional)
           (when (date< notional (a:lastcar dates))
             (setf new `(,@new ,(move notional tenor)))))))
@@ -196,7 +196,7 @@ or NIL below 16 days, where the reference is a year from the first date."
                            (/ 12d0 <>)
                            lround)))
         ;; A reference period over two years implies no coupons a year, where
-        ;; QuantLib divides by zero.
+        ;; the reference construction would divide by zero.
         (when (zerop per-year)
           (signal-invalid-argument '(- d4 d3) (date- d4 d3) '(integer 0 730)
                                    "a reference period of at most two years for ICMA"))
@@ -243,7 +243,7 @@ dates, their earliest and latest, and ICMA-PERIOD-DENOMINATOR of each period
         (t (icma-reference-year-fraction start end (or ref-start start) (or ref-end end)))))
 
 (defun icma-reference-year-fraction (d1 d2 ref-start ref-end)
-  "QuantLib's original ISMA algorithm (Old_ISMA_Impl) for D1 < D2."
+  "The original ISMA algorithm for D1 < D2."
   (cond
     ((date= d1 d2) 0d0)
     (t

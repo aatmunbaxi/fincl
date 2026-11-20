@@ -1,4 +1,4 @@
-;;;; portfolio.lisp --- holdings, positions, portfolios (task 22)
+;;;; portfolio.lisp --- holdings, positions, portfolios
 ;;;;
 ;;;; A position is an instrument and a signed quantity: long when positive,
 ;;;; short when negative. A portfolio is a named tree of positions and
@@ -334,14 +334,14 @@ model); SELECT-ENGINE and PRICE-PORTFOLIO move on when it does.
   (:method ((o option) market &key (candidates (or *default-engines* (default-engines))) (process (make-gbm)))
     (require-risk-neutral process "APPLICABLE-ENGINES")
     (let ((market (pricing-market market o)))
-      (-> (iter (for key in candidates)
-                (for class = (designated-class key))
-                (when (class-models-process-p class process)
-                  (let ((engine (handler-case (ensure-engine key process)
-                                  (invalid-argument () nil))))
-                    (when (and engine (engine-has-method-p engine o market))
-                      (collect engine)))))
-          (stable-sort #'< :key #'engine-preference))))
+      (stable-sort (iter (for key in candidates)
+                         (for class = (designated-class key))
+                         (when (class-models-process-p class process)
+                           (let ((engine (handler-case (ensure-engine key process)
+                                           (invalid-argument () nil))))
+                             (when (and engine (engine-has-method-p engine o market))
+                               (collect engine)))))
+                   #'< :key #'engine-preference)))
   (:method ((h holding) market &key candidates process)
     (declare (ignore market candidates process))
     ;; Any engine prices a holding; the Black-Scholes one stands for all.

@@ -150,7 +150,7 @@ PRICE-POSITION's fallbacks; a price that fails signals its condition."
             (values (set-book-balance traded (- (book-balance book) cost)) cost))))))
 
 ;;; --------------------------------------------------------------------
-;;; Income of a book's positions (task 33)
+;;; Income of a book's positions
 ;;; --------------------------------------------------------------------
 
 (defgeneric position-income (instrument from to market-from market-to)
@@ -283,9 +283,7 @@ positions that matured or expired are removed."
                       (error 'currency-mismatch :currencies `(,currency ,cash-currency)
                                                 :operation (format nil "income of ~A on ~A into a book's cash" p to))))
                   (incf balance (* (position-quantity p) amount (growth pay)))))))))
-      (-> book
-          (set-book-balance balance)
-          (remove-finished-positions finished)))))
+      (remove-finished-positions (set-book-balance book balance) finished))))
 
 (defun output-value (name path value)
   (if (realp value)

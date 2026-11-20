@@ -264,10 +264,10 @@ overrides (priority 0), then ENGINE-CANDIDATES by priority."
     `(,@(iter (for (selector designator) in *engine-preferences*)
               (when (selector-matches-p selector exercise process)
                 (collect `(0 ,designator))))
-      ,@(-> (iter (for key in (engine-designators))
-                  (appending (engine-candidates key exercise (option-payoff option)
-                                                (option-path option) process)))
-            (stable-sort #'< :key #'first)))))
+      ,@(stable-sort (iter (for key in (engine-designators))
+                           (appending (engine-candidates key exercise (option-payoff option)
+                                                         (option-path option) process)))
+                     #'< :key #'first))))
 
 (defvar *selections* 0
   "Automatic selections made, for tests.")

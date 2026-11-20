@@ -4,6 +4,9 @@
 ;;;; with a USE-VALUE restart, and for bracketing solvers a
 ;;;; RETRY-WITH-BRACKET restart, so the caller chooses the recovery policy.
 ;;;;
+;;;; Provenance: SOLVE-BRENT-FROM-GUESS reproduces the iterates of QuantLib's
+;;;; Brent::solve with a guess, and QL-CLOSE-P is QuantLib's close().
+;;;;
 ;;;;   SOLVE-BISECTION  bracketed, linear convergence, cannot fail once bracketed
 ;;;;   SOLVE-BRENT      bracketed, superlinear; the default choice
 ;;;;   SOLVE-NEWTON     from a starting point, quadratic near the root, with
@@ -148,7 +151,7 @@ EXPAND-HI and the restarts.
 ;;; --------------------------------------------------------------------
 
 (defun ql-close-p (x y)
-  "QuantLib's close(x, y): equal within 42 ulps of both (of 0, within
+  "Whether X and Y are equal within 42 ulps of both (of 0, within
 (42 eps)^2)."
   (declare (double-float x y))
   (or (= x y)
@@ -162,10 +165,10 @@ EXPAND-HI and the restarts.
                     (values real &optional))
           solve-brent-from-guess))
 (defun solve-brent-from-guess (f lo hi guess &key (tolerance 1d-8) (max-evaluations 10000))
-  "Root of F on [LO, HI] by QuantLib's Brent solver started from GUESS
-inside the bracket, to within TOLERANCE in x: the same iterates as
-QuantLib's Brent::solve(f, accuracy, guess, xMin, xMax). Use it where a
-result must match QuantLib's at its accuracy (Jamshidian's critical rate);
+  "Root of F on [LO, HI] by Brent's method started from GUESS inside the
+bracket, to within TOLERANCE in x, with the iterates of the reference
+implementation. Use it where a result must match the reference at its
+accuracy (Jamshidian's critical rate);
 SOLVE-BRENT is the general solver.
 
   (solve-brent-from-guess (lambda (x) (- (* x x) 2)) 0d0 2d0 1d0) => 1.4142135623730951d0"

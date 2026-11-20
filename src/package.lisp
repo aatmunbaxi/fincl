@@ -41,7 +41,7 @@
    #:object-clauses #:print-clause-form #:round-trip-p
    #:construction-error #:undeclared-fact #:fact-type-error #:conflicting-clauses
    #:missing-fact #:fact-rule-cycle #:unknown-clause #:unknown-convention #:unused-fact
-   #:clause-argument-error #:ambiguous-clause #:malformed-clause #:unknown-language
+   #:clause-argument-error #:clause-redefined #:ambiguous-clause #:malformed-clause #:unknown-language
    ;; dates and tenors
    #:date #:datep #:make-date #:parse-date #:invalid-date #:date-serial
    #:date-year #:date-month #:date-day #:day-of-week
@@ -84,7 +84,7 @@
    #:discount-factor #:forward-factor #:forward #:black-variance
    #:carry-factor #:discrete-dividends #:make-dividend-schedule #:dividend-schedule
    #:bivariate-norm-cdf
-   ;; portfolios and risk (task 22)
+   ;; portfolios and risk
    #:holding #:make-holding
    #:portfolio-position #:make-position #:derive-position #:position-instrument #:position-quantity
    #:position-engine #:position-tags
@@ -101,7 +101,7 @@
    #:repair-positive-semidefinite #:curve-delta-ladder #:vega-ladder #:explain-pnl
    #:snapshot-form #:write-snapshot #:read-snapshot
    #:adjust-position #:same-instrument-p
-   ;; market path simulation (task 29)
+   ;; market path simulation
    #:simulate #:map-simulated-paths #:market-at-state #:simulation-underlyings
    #:simulation-result #:simulation-output-names #:simulation-values #:simulation-mean
    #:simulation-standard-error #:simulation-quantile #:simulation-summary
@@ -109,21 +109,21 @@
    #:path-markets #:spot-loadings
    #:simulation-recorded-names #:simulation-kept-paths #:simulation-quantiles-p
    #:simulation-path-state
-   ;; self-financing books, exact simulated curves, per-path records (task 33)
+   ;; self-financing books, exact simulated curves, per-path records
    #:simulation-path-record #:state-discount-bond #:market-curve-discount
    #:cash-account #:make-cash-account
-   ;; change of measure (task 36)
+   ;; change of measure
    #:change-measure #:physical-process #:risk-neutral-process
    #:invalid-measure-change #:risk-neutral-process-required #:feller-condition-violated
    #:simulation-measure
-   ;; simulated market components (task 32)
-   #:market-component #:structure-at-state #:process-targets #:fixing-dates
+   ;; simulated market components
+   #:market-component #:define-market-component #:market-component-redefined #:structure-at-state #:process-targets #:fixing-dates
    #:surface-quotes #:rescale-vol-structure
    #:valuation-date #:market-day-counter #:market-time #:derive-market
    ;; term structures and composite markets
    #:term-structure #:yield-curve #:dividend-curve #:black-vol-structure
    #:curve-discount #:curve-zero-rate #:curve-dividend-discount #:curve-dividend-yield
-   ;; vol surfaces and calibration (task 17)
+   ;; vol surfaces and calibration
    #:smile #:smile-variance #:smile-vol #:smile-expiry #:make-interpolated-smile
    #:svi-slice #:make-svi-slice #:sabr-smile #:make-sabr-smile #:sabr-volatility
    #:moneyness-vol-structure #:surface-variance #:smile-surface #:make-smile-surface
@@ -156,7 +156,7 @@
    #:rate-helper #:deposit-helper #:fra-helper #:futures-helper #:ois-helper #:swap-helper
    #:helper-quote #:helper-pillar-date #:helper-implied-quote #:helper-tenor
    #:bootstrap-curve #:piecewise-yield-curve #:curve-helpers #:bump-structure-quote
-   ;; interest-rate instruments (task 16)
+   ;; interest-rate instruments
    #:rates-instrument #:bond #:fixed-rate-bond #:make-fixed-rate-bond #:bond-cashflows
    #:bond-face #:bond-schedule #:bond-coupon #:bond-redemption #:bond-settlement-days
    #:bond-maturity-date #:bond-settlement-date #:bond-notional
@@ -171,7 +171,7 @@
    #:cap-floor #:make-cap-floor #:cap-floor-type #:cap-floor-leg #:cap-rates #:floor-rates
    #:swaption #:make-swaption #:swaption-swap #:swaption-exercise #:swaption-settlement
    #:rates-vol-structure #:flat-rates-vol #:expiry-rates-vol #:rates-vol-variance
-   ;; path simulation (task 19)
+   ;; path simulation
    #:payoff-requirements #:path-accumulator-size #:path-payment-dates #:path-kernel
    #:define-path-payoff #:path-payoff
    #:process-state-names #:state-index #:instrument-mandatory-dates

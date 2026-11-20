@@ -17,7 +17,7 @@
 ;;;; (their BBSR). Europeans under GBM are left to the
 ;;;; Black-Scholes engine, which is exact.
 ;;;;
-;;;; Discrete dividends (task 21). The tree grows at the CARRY-FACTOR, so it
+;;;; Discrete dividends. The tree grows at the CARRY-FACTOR, so it
 ;;;; stays recombining, and each dividend is applied at the step nearest its
 ;;;; ex-date. Under the spot model the value just before the ex-date at a
 ;;;; node with spot S is the value after it at S - D, interpolated (natural

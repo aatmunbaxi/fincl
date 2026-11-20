@@ -5,10 +5,13 @@
 ;;;; Hull and White's (1994) trinomial tree for x = r - phi(t) on a grid that
 ;;;; contains every cash-flow and exercise time, fits phi(t) by forward
 ;;;; induction so the tree reprices the curve's discount factors, and rolls
-;;;; Bermudan swaptions and callable bonds back. Both follow QuantLib
-;;;; (JamshidianSwaptionEngine, TrinomialTree, HullWhite::tree,
-;;;; TreeSwaptionEngine, TreeCallableFixedRateBondEngine), and price on one
-;;;; curve: the model's, which both forecasts and discounts.
+;;;; Bermudan swaptions and callable bonds back. Both price on one curve: the
+;;;; model's, which both forecasts and discounts.
+;;;;
+;;;; Provenance: both follow QuantLib (JamshidianSwaptionEngine,
+;;;; TrinomialTree, HullWhite::tree, TreeSwaptionEngine,
+;;;; TreeCallableFixedRateBondEngine, TimeGrid, DiscretizedSwap,
+;;;; DiscretizedCallableFixedRateBond).
 
 (in-package #:fincl)
 
@@ -40,7 +43,7 @@ decomposition into bond options. Physical settlement, no floating spread.
 (defclass hull-white-tree-engine (hull-white-engine)
   ((time-steps :initarg :time-steps :initform 200 :reader engine-time-steps
                :documentation "Steps over the whole grid, spread between its
-mandatory times (QuantLib's TimeGrid)."))
+mandatory times."))
   (:metaclass engine-class)
   (:designator :hull-white-tree)
   (:documentation "Hull-White trinomial tree for European and Bermudan
@@ -106,7 +109,7 @@ times.
 ;;; --------------------------------------------------------------------
 
 (defun ql-close-enough-p (x y)
-  "QuantLib's close_enough(x, y): equal within 42 ulps of either."
+  "Whether X and Y are equal within 42 ulps of either."
   (or (= x y)
       (let ((diff (abs (- x y)))
             (tolerance (* 42 double-float-epsilon)))
@@ -115,7 +118,7 @@ times.
             (or (<= diff (* tolerance (abs x))) (<= diff (* tolerance (abs y))))))))
 
 (defun mandatory-time-grid (times steps)
-  "QuantLib's TimeGrid(times, steps): 0, then each of the sorted distinct
+  "The time grid of TIMES and STEPS: 0, then each of the sorted distinct
 TIMES with evenly spaced points between consecutive ones, about
 last/STEPS apart. A typed vector."
   (let* ((sorted (sort (remove-if #'minusp (map 'list (lambda (x) (float x 1d0)) times)) #'<))
@@ -134,8 +137,7 @@ last/STEPS apart. A typed vector."
     (coerce (nreverse grid) 'double-vector)))
 
 (defun grid-index (grid time)
-  "The index of TIME in GRID, which must hold it within QuantLib's
-close_enough (TimeGrid::index)."
+  "The index of TIME in GRID, which must hold it to within 42 ulps."
   (let* ((n (length grid))
          (i (let ((upper (or (position-if (lambda (x) (>= x time)) grid) n)))
               (cond ((zerop upper) 0)
@@ -198,7 +200,7 @@ fitted. Tabulated once, since every roll-back of the lattice reads it."
       (setf (aref discounts j) (exp (- (* (+ (lattice-x lattice i j) phi) dt)))))))
 
 (defun build-trinomial-tree (a sigma grid)
-  "The branching of QuantLib's TrinomialTree for the OU process dx = -a x dt
+  "The branching of the trinomial tree for the OU process dx = -a x dt
 + sigma dW from 0 on GRID: (values dxs jmins ks probabilities)."
   (let* ((n (1- (length grid)))
          (variances (make-array n :element-type 'double-float))
@@ -383,7 +385,7 @@ market time."
                                                                         :initial-element 0d0))
            (option nil))
       ;; A coupon enters the swap's value at its reset step, worth its
-      ;; discount bond from the payment step (QuantLib's DiscretizedSwap).
+      ;; discount bond from the payment step.
       ;; Each bond is a unit vector placed at the payment step and rolled
       ;; back with the swap: PENDING holds (reset-step bond coupon-value).
       (let ((pending '())
@@ -463,8 +465,7 @@ market time."
          (calls
            ;; A call date up to a week before a coupon date moves onto it
            ;; (its price carried by the discount ratio) and is applied
-           ;; after that coupon is added (QuantLib's
-           ;; DiscretizedCallableFixedRateBond).
+           ;; after that coupon is added.
            (iter (for (date clean type) in (bond-call-schedule b))
                  (unless (date<= date settlement)
                    (let ((call-time (funcall time date))
@@ -516,7 +517,7 @@ market time."
 
 (defun callable-dirty-price (bond date clean)
   "CLEAN (per 100) plus the interest accrued at DATE on the first coupon
-paying after it (QuantLib's CallableBond call prices)."
+paying after it."
   (let ((next (find-if (lambda (cf) (not (occurred-p cf date))) (bond-cashflows bond))))
     (+ clean (if (typep next 'coupon)
                  (/ (* (accrued-amount-to next date nil) 100d0) (bond-notional bond date))

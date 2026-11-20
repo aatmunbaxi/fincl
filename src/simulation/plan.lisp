@@ -63,17 +63,16 @@ the leg."
 
 (defgeneric target-view (kind market key)
   (:documentation "The market a process driving the component (KIND KEY) of
-the composite MARKET steps on (MAKE-STEPPER, INITIAL-STATE).")
+the composite MARKET steps on (MAKE-STEPPER, INITIAL-STATE): by default the
+kind's :VIEW (see DEFINE-MARKET-COMPONENT).")
   (:method ((kind t) market key)
-    (declare (ignore market))
-    (signal-invalid-argument 'target `(,kind ,key) 'list
-                             (format nil "a target kind a process can be stepped on: ~{~S~^, ~}"
-                                     '(:spot :vol :dividend :dividend-schedule :curve))))
-  (:method ((kind (eql :curve)) market key) (make-instance 'curve-view :market market :curve-id key))
-  (:method ((kind (eql :spot)) market key) (market-view market :underlying key))
-  (:method ((kind (eql :vol)) market key) (market-view market :underlying key))
-  (:method ((kind (eql :dividend)) market key) (market-view market :underlying key))
-  (:method ((kind (eql :dividend-schedule)) market key) (market-view market :underlying key)))
+    (a:if-let ((view (market-component-kind-view (find-market-component-kind kind))))
+      (funcall view market key)
+      (signal-invalid-argument 'target `(,kind ,key) 'list
+                               (format nil "a target kind a process can be stepped on: ~{~S~^, ~}"
+                                       (iter (for k in (market-component-kinds))
+                                             (when (market-component-kind-view k)
+                                               (collect (market-component-kind-name k)))))))))
 
 (defun check-simulated-process (p)
   (check-input p stochastic-process "a stochastic process")

@@ -26,8 +26,7 @@ REFERENCE-DATE to the expiry DATE.
 
 (defclass flat-rates-vol (rates-vol-structure)
   ((vol :initarg :vol :reader rates-vol :type volatility))
-  (:documentation "One volatility for every expiry (QuantLib's constant
-optionlet and swaption volatilities).
+  (:documentation "One volatility for every expiry.
 
   (make-instance 'flat-rates-vol :vol 0.25d0)"))
 
@@ -44,7 +43,7 @@ optionlet and swaption volatilities).
    (vols :initarg :vols :reader rates-vol-vols))
   (:documentation "Volatilities by expiry date: total variance is linear in
 time between the knots and from zero at the reference date, and the vol is
-flat beyond the last date (QuantLib's CapletVarianceCurve).
+flat beyond the last date.
 
   (make-instance 'expiry-rates-vol :dates (list #D\"2027-03-24\" #D\"2027-09-24\")
                                    :vols '(0.32d0 0.28d0))"))
@@ -67,16 +66,28 @@ flat beyond the last date (QuantLib's CapletVarianceCurve).
         0d0
         (let* ((variance
                  (if (<= time (a:lastcar times))
-                     ;; QuantLib's LinearInterpolation: the segment starting
-                     ;; at or before TIME, the slope taken first.
+                     ;; Linear in variance: the segment starting at or
+                     ;; before TIME, the slope taken first.
                      (iter (for (t0 t1 . more) on (cons 0d0 times))
                            (for (v0 v1) on (cons 0d0 variances))
                            (when (or (< time t1) (null more))
                              (return (max 0d0 (+ v0 (* (- time t0) (/ (- v1 v0) (- t1 t0))))))))
                      (/ (* (a:lastcar variances) time) (a:lastcar times))))
-               ;; Read back through the vol, as QuantLib does.
+               ;; Read back through the vol, so the variance is vol^2 time.
                (vol (sqrt (/ variance time))))
           (* vol vol time)))))
+
+(defmethod bump-structure ((s flat-rates-vol) shift)
+  "S with its vol moved by SHIFT, in the units of the vol: lognormal for a
+Black engine, normal (rate units) for a Bachelier one."
+  (make-instance 'flat-rates-vol :vol (apply-shift (rates-vol s) shift)
+                                 :day-counter (rates-vol-day-counter s)))
+
+(defmethod bump-structure ((s expiry-rates-vol) shift)
+  "S with every vol moved by SHIFT, in the units of the vols."
+  (make-instance 'expiry-rates-vol :dates (rates-vol-dates s)
+                                   :vols (mapcar (lambda (v) (apply-shift v shift)) (rates-vol-vols s))
+                                   :day-counter (rates-vol-day-counter s)))
 
 (defun ensure-rates-vol (volatility)
   "VOLATILITY as a rates vol structure: a structure, or a real for a flat one."

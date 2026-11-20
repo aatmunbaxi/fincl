@@ -1,12 +1,14 @@
 ;;;; time/schedule.lisp --- coupon and exercise schedules
 ;;;;
-;;;; MAKE-SCHEDULE follows QuantLib's Schedule constructor (ql/time/
-;;;; schedule.cpp, 1.43) step for step: generation backward or forward from
-;;;; a seed in whole multiples of the tenor, skipping dates that adjust onto
-;;;; their neighbour, stubs at the ends, end-of-month alignment, then the
+;;;; MAKE-SCHEDULE generates dates backward or forward from a seed in whole
+;;;; multiples of the tenor, skipping dates that adjust onto their neighbour,
+;;;; with stubs at the ends and end-of-month alignment, then applies the
 ;;;; business-day adjustment and the two safety checks that merge a period
-;;;; collapsed by adjustment. tests/fixtures/schedules.sexp, generated from
-;;;; QuantLib, is the reference.
+;;;; collapsed by adjustment.
+;;;;
+;;;; Provenance: follows QuantLib 1.43's Schedule constructor
+;;;; (ql/time/schedule.cpp) step for step; tests/fixtures/schedules.sexp,
+;;;; generated from QuantLib, is the reference.
 
 (in-package #:fincl)
 
@@ -44,8 +46,7 @@ and year tenors)."
                            (convention :modified-following)
                            (termination-convention convention)
                            (rule :backward) end-of-month first-date next-to-last-date)
-  "The schedule from EFFECTIVE to TERMINATION every TENOR, as QuantLib's
-Schedule. RULE is :BACKWARD (dates counted back from TERMINATION, any stub at
+  "The schedule from EFFECTIVE to TERMINATION every TENOR. RULE is :BACKWARD (dates counted back from TERMINATION, any stub at
 the front), :FORWARD (from EFFECTIVE, stub at the back), :ZERO (the two
 dates only; also any zero TENOR) or :TWENTIETH (forward on the 20th of the
 month). Dates are adjusted onto CALENDAR's business days by CONVENTION, the

@@ -144,4 +144,10 @@ market) advancing one step from the spot, on the grid TIMES."
         (declare (function fill start))
         (let ((vec (make-array 4 :element-type 'double-float)))
           (funcall start 0)
-          (check-allocation "counter rng, Box-Muller" 0 nil (lambda () (funcall fill vec))))))))
+          (check-allocation "counter rng, Box-Muller" 0 nil (lambda () (funcall fill vec))))))
+    (format t "~&Market copies~%")
+    ;; Not a closure: simulation copies a market per path and date.
+    (let ((m (make-bs-market :valuation-date *today* :spot 100 :rate 0.05d0 :vol 0.2d0)))
+      (check-allocation "copy-composite-market, one underlying" 4608
+                        "the instance and eight hash tables; 4170 bytes in a fresh image, 4440 after the fast suites"
+                        (lambda () (fincl::copy-composite-market m))))))

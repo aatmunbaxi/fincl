@@ -6,8 +6,9 @@
 ;;;; to its parents, so a leg sees the swap's calendar unless it sets its own.
 ;;;;
 ;;;; Every entry records a priority. A higher priority replaces a lower one
-;;;; whatever the clause order; two settings at the same priority conflict
-;;;; (except defaults, which the language sets once):
+;;;; whatever the clause order, and a lower never replaces a higher; two
+;;;; settings at the same priority conflict (except defaults, where the last
+;;;; one wins):
 ;;;;
 ;;;;   :DEFAULT    language defaults
 ;;;;   :CONVENTION clauses applied from a convention bundle
@@ -77,16 +78,20 @@ a fact each part's clause publishes.
         (when (eq entry-fact fact) (collect scope))))
 
 (defun record-fact (fact value priority provenance)
-  "Store VALUE for FACT in the current scope, resolving priorities."
+  "Store VALUE for FACT in the current scope, resolving priorities: a higher
+priority replaces a lower one and a lower never replaces a higher; a default
+replaces an earlier default of equal rank; other equal priorities conflict."
   (let* ((key (cons *scope* fact))
          (entries (fact-table-entries *fact-table*))
          (old (gethash key entries))
          (new (make-fact-entry value priority provenance)))
-    (cond ((or (null old)
-               (> (priority-rank priority) (priority-rank (fact-entry-priority old)))
-               (eq priority :default))
+    (cond ((null old)
+           (setf (gethash key entries) new))
+          ((> (priority-rank priority) (priority-rank (fact-entry-priority old)))
            (setf (gethash key entries) new))
           ((< (priority-rank priority) (priority-rank (fact-entry-priority old))))
+          ((eq priority :default)
+           (setf (gethash key entries) new))
           (t (error 'conflicting-clauses :fact fact :scope *scope*
                                          :earlier (fact-entry-provenance old)
                                          :later provenance)))

@@ -24,7 +24,7 @@
 ;;; --------------------------------------------------------------------
 
 (defun date-list-p (x) (and (listp x) x (every #'datep x)))
-(defun sorted-dates (x) (if (date-list-p x) (-> x copy-list (sort #'date<)) x))
+(defun sorted-dates (x) (if (date-list-p x) (sort (copy-list x) #'date<) x))
 (defun payoff-class-name-p (x)
   (and (symbolp x) (find-class x nil) (subtypep x 'payoff)))
 

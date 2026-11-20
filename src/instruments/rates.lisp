@@ -3,10 +3,12 @@
 ;;;; Interest-rate instruments are terms only, like options. They are priced
 ;;;; on a composite market's curves (no underlying, so no market view): a
 ;;;; floating coupon is forecast on its index's curve, and every cash flow is
-;;;; discounted on the curve of its currency unless a curve is named. The
-;;;; bond analytics follow QuantLib's BondFunctions and CashFlows, the swaps
-;;;; its VanillaSwap, OvernightIndexedSwap and DiscountingSwapEngine, and the
-;;;; FRA its ForwardRateAgreement (tests/fixtures/bonds-swaps.sexp).
+;;;; discounted on the curve of its currency unless a curve is named.
+;;;;
+;;;; Provenance: the bond analytics follow QuantLib's BondFunctions and
+;;;; CashFlows, the swaps its VanillaSwap, OvernightIndexedSwap and
+;;;; DiscountingSwapEngine, and the FRA its ForwardRateAgreement;
+;;;; tests/fixtures/bonds-swaps.sexp is the reference.
 
 (in-package #:fincl)
 
@@ -23,8 +25,8 @@ CURRENCY on."
   (or discount-curve (discount-curve-id market currency)))
 
 (defun occurred-p (cashflow date)
-  "Whether CASHFLOW has been paid by DATE: paying on or before it (QuantLib's
-hasOccurred with reference-date flows excluded)."
+  "Whether CASHFLOW has been paid by DATE: paying on or before it (a flow on
+the reference date is excluded)."
   (date<= (payment-date cashflow) date))
 
 ;;; --------------------------------------------------------------------
@@ -142,7 +144,7 @@ curve or curve id; default the curve of BOND's currency).
 (defun bond-bps (bond market &key discount-curve settlement)
   "Value of one basis point of coupon at SETTLEMENT, per 100 of face: 1e-4
 times the sum of each later coupon's nominal, accrual period and discount
-factor (QuantLib's BondFunctions::bps on a curve)."
+factor."
   (let* ((settlement (bond-market-settlement bond market settlement))
          (curve (rates-discount-curve market (instrument-currency bond) discount-curve)))
     (per-100 bond
@@ -155,11 +157,11 @@ factor (QuantLib's BondFunctions::bps on a curve)."
 
 ;;; Yield analytics. A yield discounts each cash flow over its own period,
 ;;; measured from the previous flow under the yield's day counter with the
-;;; coupon's reference period (QuantLib's getStepwiseDiscountTime).
+;;; coupon's reference period.
 
 (defun stepwise-time (cashflow day-counter npv-date last-date)
-  "Years from LAST-DATE to CASHFLOW's payment under DAY-COUNTER, as QuantLib
-measures them when discounting at a yield."
+  "Years from LAST-DATE to CASHFLOW's payment under DAY-COUNTER, as measured
+when discounting at a yield."
   (let ((date (payment-date cashflow)))
     (if (typep cashflow 'coupon)
         (let ((ref-start (coupon-ref-start cashflow))
@@ -189,7 +191,7 @@ period and the cumulative time to it, under RATE's day counter."
 
 (defun yield-npv (bond rate settlement)
   "Value at SETTLEMENT of BOND's later flows discounted at RATE, period by
-period (QuantLib's CashFlows::npv at a yield)."
+period."
   (let ((npv 0d0) (discount 1d0))
     (map-yield-flows (lambda (amount step time)
                        (declare (ignore time))
@@ -311,8 +313,7 @@ and FREQUENCY, or an INTEREST-RATE)."
     (if (zerop p) 0d0 (/ d2p p))))
 
 ;;; Z-spread: the spread over the curve's zero rates (quoted with the given
-;;; compounding and frequency) that reprices the bond (QuantLib's
-;;; ZeroSpreadedTermStructure).
+;;; compounding and frequency) that reprices the bond.
 
 (defun spreaded-discount (market curve spread compounding frequency date)
   "Discount factor to DATE on MARKET's CURVE with SPREAD added to its zero
@@ -418,13 +419,13 @@ same nominal. A payer swap pays the fixed leg."))
 
 (defclass vanilla-swap (fixed-vs-floating-swap) ()
   (:metaclass component-class)
-  (:documentation "Fixed against Ibor coupons (QuantLib's VanillaSwap). Build
+  (:documentation "Fixed against Ibor coupons. Build
 with MAKE-SWAP and an Ibor index (or MAKE-VANILLA-SWAP)."))
 
 (defclass ois-swap (fixed-vs-floating-swap) ()
   (:metaclass component-class)
   (:documentation "Fixed against daily compounded overnight coupons on one
-schedule (QuantLib's OvernightIndexedSwap). Build with MAKE-SWAP and an
+schedule. Build with MAKE-SWAP and an
 overnight index (or MAKE-OIS-SWAP)."))
 
 (defun swap-signs-for (type)
@@ -492,8 +493,7 @@ overnight index (or MAKE-OIS-SWAP)."))
             :documentation "T: the rate is the index fixing; NIL: the forward from
 the value date to the maturity date."))
   (:metaclass component-class)
-  (:documentation "A forward rate agreement (QuantLib's
-ForwardRateAgreement): on the value date the long side receives
+  (:documentation "A forward rate agreement: on the value date the long side receives
 notional (F - K) T / (1 + F T), F the rate for the period and T its length
 under the index's day counter. Build with MAKE-FORWARD-RATE-AGREEMENT."))
 
@@ -534,14 +534,14 @@ under the index's day counter. Build with MAKE-FORWARD-RATE-AGREEMENT."))
    (floor-rates :initarg :floor-rates :reader floor-rates
                 :documentation "One floor rate per coupon, or NIL for a cap."))
   (:metaclass component-class)
-  (:documentation "A strip of caplets or floorlets on a leg of Ibor coupons
-(QuantLib's CapFloor). A caplet pays max(rate - cap, 0), a floorlet
+  (:documentation "A strip of caplets or floorlets on a leg of Ibor coupons.
+A caplet pays max(rate - cap, 0), a floorlet
 max(floor - rate, 0), on the coupon's nominal and accrual; a collar is long
 the cap and short the floor. Build with MAKE-CAP-FLOOR."))
 
 (defun caplet-forward (coupon market)
   "The rate COUPON's optionlet is struck on: its fixing net of spread and
-gearing (QuantLib's adjustedFixing)."
+gearing."
   (/ (- (coupon-rate coupon market) (coupon-spread coupon)) (coupon-gearing coupon)))
 
 ;;; --------------------------------------------------------------------
@@ -558,7 +558,7 @@ gearing (QuantLib's adjustedFixing)."
 payer swaption enters a payer swap) on an exercise date: European, or
 Bermudan for lattice engines. SETTLEMENT :PHYSICAL enters the swap;
 :CASH-ANNUITY pays its value with the fixed leg discounted at the swap rate
-(QuantLib's par yield curve method). Build with MAKE-SWAPTION."))
+(the par yield curve method). Build with MAKE-SWAPTION."))
 
 ;;; --------------------------------------------------------------------
 ;;; Callable bonds
@@ -570,12 +570,12 @@ Bermudan for lattice engines. SETTLEMENT :PHYSICAL enters the swap;
 issuer may redeem at the price) or :PUT (the holder may), by date."))
   (:metaclass component-class)
   (:documentation "A fixed-rate bond with call or put dates: on each, the
-bond may be redeemed at a clean price per 100 of face plus accrued interest
-(QuantLib's CallableFixedRateBond). Build with
+bond may be redeemed at a clean price per 100 of face plus accrued interest.
+Build with
 MAKE-CALLABLE-FIXED-RATE-BOND; price with a lattice engine."))
 
 ;;; --------------------------------------------------------------------
-;;; Fixing dates (task 32)
+;;; Fixing dates
 ;;; --------------------------------------------------------------------
 
 (defgeneric cashflow-fixing-dates (cashflow)

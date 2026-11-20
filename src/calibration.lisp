@@ -469,7 +469,7 @@ order) and :PARAMETERS (name value ...).
                                      (appending `(,(a:make-keyword name) ,value)))))))))
 
 ;;; --------------------------------------------------------------------
-;;; Quotes read off a market's surface (task 32)
+;;; Quotes read off a market's surface
 ;;; --------------------------------------------------------------------
 
 (declaim (ftype (function (t t t &key (:weight real)) (values quote-set &optional)) surface-quotes))

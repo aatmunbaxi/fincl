@@ -2,7 +2,7 @@
 ;;;; eigendecomposition on typed arrays
 ;;;;
 ;;;; Typed (SIMPLE-ARRAY DOUBLE-FLOAT (*)) throughout, in Lisp: fincl uses no
-;;;; BLAS or LAPACK (task 22 removed magicl).
+;;;; BLAS or LAPACK.
 ;;;;
 ;;;; Least squares is solved by QR, never by the normal equations X'X b =
 ;;;; X'y, which square the condition number. Rows are folded into an upper
@@ -141,7 +141,7 @@ is below TOLERANCE times |R[0,0]|."
 ;;; = d[i]: A, B, C and D all have length n, A[0] and C[n-1] are unused, or,
 ;;; for a cyclic system, are the corner elements (row 0's coefficient of
 ;;; x[n-1] and row n-1's of x[0]). Typed Lisp rather than LAPACK's dgtsv:
-;;; the same speed at n = 200 and 2000 (task 03), and magicl's generated
+;;; the same speed at n = 200 and 2000, and magicl's generated
 ;;; %dgtsv drops LAPACK's INFO, so a singular system would go unnoticed.
 
 (declaim (inline %thomas!))
@@ -305,7 +305,7 @@ length n; neither is modified. Signals RANK-DEFICIENT on a pivot below
     x))
 
 ;;; --------------------------------------------------------------------
-;;; Symmetric eigendecomposition (task 22)
+;;; Symmetric eigendecomposition
 ;;; --------------------------------------------------------------------
 
 (defun jacobi-rotate! (a v n p q c s)

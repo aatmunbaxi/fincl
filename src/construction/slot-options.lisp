@@ -14,17 +14,31 @@
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defvar *slot-options* '()
-    "Keywords registered by DEFINE-SLOT-OPTION."))
+    "Keywords registered by DEFINE-SLOT-OPTION.")
+
+  (defvar *slot-option-documentation* (make-hash-table :test 'eq)
+    "Slot option keyword -> its documentation string.")
+
+  (defun register-slot-option (keyword documentation)
+    (pushnew keyword *slot-options*)
+    (setf (gethash keyword *slot-option-documentation*) documentation)
+    keyword))
 
 (defmacro define-slot-option (keyword &optional documentation)
   "Register KEYWORD as a slot option that ANNOTATED-CLASS slots accept and
-inherit.
+inherit. DOCUMENTATION is shown by DESCRIBE for a slot that carries the
+option. A slot of an ANNOTATED-CLASS given any other option than a registered
+one or a standard one (:INITARG, :READER, :TYPE, ...) signals
+INVALID-ARGUMENT, so define an option before the first class that uses it.
 
   (define-slot-option :fact \"The construction fact that fills the slot.\")"
-  (declare (ignore documentation))
   `(eval-when (:compile-toplevel :load-toplevel :execute)
-     (pushnew ,keyword *slot-options*)
-     ,keyword))
+     (register-slot-option ,keyword ,documentation)))
+
+(declaim (ftype (function (t) (values (or null string) &optional)) slot-option-documentation))
+(defun slot-option-documentation (keyword)
+  "The documentation DEFINE-SLOT-OPTION gave KEYWORD, or NIL."
+  (values (gethash keyword *slot-option-documentation*)))
 
 (defclass annotated-class (standard-class) ()
   (:documentation "Metaclass whose slots accept registered slot options (see
@@ -47,15 +61,52 @@ DEFINE-SLOT-OPTION) and inherit them option by option."))
 (defclass annotated-effective-slot-definition
     (annotated-slot-definition c2mop:standard-effective-slot-definition) ())
 
-;;; &ALLOW-OTHER-KEYS makes every slot option a valid initarg; only the
-;;; registered ones are kept.
+;;; The options a plain slot accepts are the initargs of a standard direct slot
+;;; definition (:INITARGS, :READERS, :TYPE, ...: DEFCLASS turns :INITARG and
+;;; :READER into these), read from the MOP so that they follow the implementation.
+(defvar *standard-slot-initargs* nil
+  "The initargs STANDARD-DIRECT-SLOT-DEFINITION accepts, once computed.")
+
+(defun standard-slot-initargs ()
+  "The initargs a standard direct slot definition accepts, found through the
+MOP over its class precedence list."
+  (or *standard-slot-initargs*
+      (setf *standard-slot-initargs*
+            (let ((class (find-class 'c2mop:standard-direct-slot-definition)))
+              (c2mop:ensure-finalized class)
+              (remove-duplicates
+               (iter (for super in (c2mop:class-precedence-list class))
+                     (appending (iter (for slot in (c2mop:class-direct-slots super))
+                                      (appending (c2mop:slot-definition-initargs slot))))))))))
+
+(defun check-slot-options (slot-name initargs)
+  "Signal INVALID-ARGUMENT unless every key of the slot initargs INITARGS
+(a plist) is a registered slot option or an initarg of a standard slot."
+  (iter (for (key nil) in-plist initargs)
+        (unless (or (member key *slot-options*) (member key (standard-slot-initargs)))
+          (signal-invalid-argument
+           (format nil "option ~S of slot ~(~A~)" key slot-name) key 'keyword
+           (format nil "a registered slot option (~{~S~^ ~}) or a standard one (~{~S~^ ~}; ~
+DEFCLASS's :INITARG, :READER and :WRITER arrive as :INITARGS, :READERS and :WRITERS). ~
+Register another with DEFINE-SLOT-OPTION before the class that uses it"
+                   (sort (copy-list *slot-options*) #'string<)
+                   (sort (remove :name (copy-list (standard-slot-initargs))) #'string<))))))
+
+;;; &ALLOW-OTHER-KEYS lets DEFCLASS pass every option on; CHECK-SLOT-OPTIONS
+;;; rejects the unknown ones and only the registered ones are kept.
 (defmethod shared-initialize :after ((slot annotated-direct-slot-definition) slot-names
-                                     &rest initargs &key &allow-other-keys)
+                                     &rest initargs &key name &allow-other-keys)
   (declare (ignore slot-names))
+  (check-slot-options name initargs)
   (setf (slot-annotations slot)
         (iter (for (key value) in-plist initargs)
               (when (member key *slot-options*)
                 (nconcing `(,key ,value))))))
+
+(defmethod describe-object :after ((slot annotated-slot-definition) stream)
+  (iter (for (option value) in-plist (slot-annotations slot))
+        (format stream "~&  Slot option ~S ~S~@[: ~A~]~%"
+                option value (slot-option-documentation option))))
 
 (defmethod c2mop:direct-slot-definition-class ((class annotated-class) &rest initargs)
   (declare (ignore initargs))

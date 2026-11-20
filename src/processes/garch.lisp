@@ -42,7 +42,7 @@ with sigma_ATM(T)^2 = w(T)/T from the ATM-forward Black variance to HORIZON
   "The stationary variance omega / (1 - persistence)."
   (/ (garch-omega process market horizon) (- 1d0 (garch-persistence process))))
 
-(define-process garch (stochastic-process) (:state-size 2)
+(define-process garch (stochastic-process) (:state-names (:spot :conditional-variance))
   ((period (/ 1d0 252d0) :parameter nil :type positive-double :bounds ((0) nil)
                          :doc "Length of one model period in years. Part of the
 model, not a numerical setting, but not calibrated either.")
@@ -61,7 +61,6 @@ ATM-forward Black vol to T.")
   (or (h0 process) (garch-default-h0 process market nil)))
 
 (defmethod process-regressors ((p garch)) '(0 1))    ; spot and conditional variance
-(defmethod process-state-names ((p garch)) '(:spot :conditional-variance))
 
 (defmethod initial-state ((p garch) market)
   (let ((state (make-array 2 :element-type 'double-float)))

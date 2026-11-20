@@ -171,7 +171,7 @@ simulation under GBM (mc-greeks.lisp).
           (for mean = (/ (reduce #'+ xs) batches))
           (for variance = (/ (iter (for x in xs) (sum (expt (- x mean) 2))) (1- batches)))
           (appending `(,key ,mean) into values)
-          (appending `(,key ,(-> variance (/ batches) sqrt)) into errors)
+          (appending `(,key ,(sqrt (/ variance batches))) into errors)
           (finally (return `(,@values :standard-errors ,errors))))))
 
 ;;; --------------------------------------------------------------------

@@ -14,8 +14,8 @@ data function turns back into an object equivalent to OBJECT.
 
 (defun clause-like-p (language value)
   (and (consp value) (keywordp (first value))
-       (gethash (clause-key (first value))
-                (construction-language-clauses (find-language language)))))
+       (registered-clause (find-language language) (clause-key (first value)))
+       t))
 
 (defun argument-source (language value)
   "A form that evaluates to VALUE: quoted unless it evaluates to itself."

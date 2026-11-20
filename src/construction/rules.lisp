@@ -40,10 +40,19 @@ inputs least likely to be derivable first.
 
 (defvar *deriving* '() "Facts whose rules are running, innermost first.")
 
+(defun find-fact-rule (language fact)
+  "The rule of LANGUAGE for FACT: its own, else one it shares, looked up now in
+the language it shares it from; NIL if there is none."
+  (or (gethash fact (construction-language-rules language))
+      (iter (for (source facts) in (construction-language-shared-rules language))
+            (when (member fact facts)
+              (return (a:when-let ((source-language (gethash source *construction-languages*)))
+                        (find-fact-rule source-language fact)))))))
+
 (defun derive-fact (fact)
   "Derive FACT by its rule in the current language and scope. Returns
 (values value t), or (values nil nil missing-inputs)."
-  (let ((rule (and *language* (gethash fact (construction-language-rules *language*)))))
+  (let ((rule (and *language* (find-fact-rule *language* fact))))
     (cond ((null rule) (values nil nil '()))
           ((member fact *deriving*)
            (setf *cycles* `(,@*cycles* ,@(subseq *deriving* 0 (1+ (position fact *deriving*)))))

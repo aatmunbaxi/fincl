@@ -554,7 +554,7 @@ the chunking."
                              (e monte-carlo-engine) market)
   (let ((tau (time-to-expiry x market)))
     (when (and (barrier-bridge e) (null (observation-dates f))
-               (null (bridge-variance (-> e process (resolve-process market tau)) market
+               (null (bridge-variance (resolve-process (process e) market tau) market
                                       (coerce `(0d0 ,(float tau 1d0)) 'double-vector))))
       (error 'model-domain-error
              :engine e
@@ -632,7 +632,7 @@ payment dates and the final amount to expiry. Sample i (the mean of a pair
 under antithetics) is written to slot i and the statistics are taken in index
 order, so the result does not depend on the chunking."
   (let* ((tau (time-to-expiry x market))
-         (process (-> e process (resolve-process market tau)))
+         (process (resolve-process (process e) market tau))
          (variates (resolve-control-variates x p f e market))
          (specs `((,p ,f) ,@(mapcar (lambda (v) (subseq v 0 2)) variates)))
          (grid (make-time-grid market
@@ -935,7 +935,7 @@ values a second, independent path set (another seed), a low-biased estimate."
                                                              market tau
                                                              :cum (typep x 'american-exercise)))
                                                  :n-steps (n-steps e))))
-         (process (-> e process (resolve-process market tau)))
+         (process (resolve-process (process e) market tau))
          (components (or (regressors e) (process-regressors process)))
          (mask (exercise-mask x market times))
          (fits (make-hash-table)))
@@ -962,7 +962,7 @@ result of the last fitting sweep (in-sample valuation)."
   (when (eq fit :reuse)
     (return-from lsm-sweep (values-list (gethash :in-sample fits))))
   (let* ((n-steps (1- (length times)))
-         (process (-> e process (resolve-process market tau)))
+         (process (resolve-process (process e) market tau))
          (matrices (simulate-state-paths e market tau components :times times))
          (n-paths (path-matrix-n-paths (first matrices)))
          (datas (map 'simple-vector #'path-matrix-data matrices))

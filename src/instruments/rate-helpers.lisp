@@ -5,11 +5,13 @@
 ;;;; curve. BOOTSTRAP-CURVE finds the curve on which every helper reprices
 ;;;; its quote: pillar by pillar with Brent's method, repeating whole passes
 ;;;; for interpolations that are not local (monotone-convex) until no node
-;;;; moves by more than the accuracy. Instruments and dates follow QuantLib's
-;;;; DepositRateHelper, FraRateHelper, FuturesRateHelper, OISRateHelper and
-;;;; SwapRateHelper (through MakeOIS and MakeVanillaSwap), and the traits
-;;;; and node at the reference date follow its PiecewiseYieldCurve, so the
-;;;; curves agree with QuantLib's (tests/fixtures/bootstrap.sexp).
+;;;; moves by more than the accuracy.
+;;;;
+;;;; Provenance: instruments and dates follow QuantLib's DepositRateHelper,
+;;;; FraRateHelper, FuturesRateHelper, OISRateHelper and SwapRateHelper
+;;;; (through MakeOIS and MakeVanillaSwap), and the traits and node at the
+;;;; reference date follow its PiecewiseYieldCurve, so the curves agree with
+;;;; QuantLib's (tests/fixtures/bootstrap.sexp).
 
 (in-package #:fincl)
 
@@ -108,7 +110,7 @@ months after spot; the quote is the index's forward rate."))
 (defun fra-helper (quote months-to-start index &key valuation-date)
   "An FRA starting MONTHS-TO-START months after spot on INDEX (a 3x9 on a 6M
 index has MONTHS-TO-START 3), quoting QUOTE. Its pillar is the index
-maturity from the start, QuantLib's default.
+maturity from the start.
 
   (fra-helper 0.0251d0 3 (euribor #T\"6M\") :valuation-date today)"
   (check-input quote real "a real rate")
@@ -336,7 +338,7 @@ through the nodes. Built by BOOTSTRAP-CURVE."))
             (curve-interpolation c))))
 
 (defparameter *bootstrap-max-rate* 1d0
-  "The bootstrap searches each node for forward rates within this (QuantLib's maxRate).")
+  "The bootstrap searches each node for forward rates within this.")
 
 (defun node-curve (interpolation dates data day-counter)
   "The interpolated curve through DATES and DATA: discount factors for
@@ -366,7 +368,7 @@ Ibor curve on it).
 
   (bootstrap-curve (list (ois-helper 0.037d0 #T\"1Y\" (sofr) :valuation-date today) ...))"
   (check-input helpers (and list (not null)) "a non-empty list of rate helpers")
-  (let* ((helpers (-> helpers copy-list (sort #'date< :key #'helper-pillar-date)))
+  (let* ((helpers (sort (copy-list helpers) #'date< :key #'helper-pillar-date))
          (today (helper-valuation-date (first helpers)))
          (dates (coerce (cons today (mapcar #'helper-pillar-date helpers)) 'simple-vector))
          (n (length helpers))

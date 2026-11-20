@@ -2,8 +2,10 @@
 ;;;;
 ;;;; A rate is a number plus the convention that turns it into growth: a day
 ;;;; counter (time between dates), a compounding rule and, for compounded
-;;;; rules, a frequency. The arithmetic follows QuantLib's InterestRate
-;;;; exactly (tests/fixtures/rates.sexp is generated from it).
+;;;; rules, a frequency.
+;;;;
+;;;; Provenance: the arithmetic follows QuantLib's InterestRate exactly
+;;;; (tests/fixtures/rates.sexp is generated from it).
 
 (in-package #:fincl)
 
@@ -18,7 +20,7 @@ compounded; :COMPOUNDED-THEN-SIMPLE the reverse."
   '((:no-frequency . -1) (:once . 0) (:annual . 1) (:semiannual . 2)
     (:every-fourth-month . 3) (:quarterly . 4) (:bimonthly . 6) (:monthly . 12)
     (:every-fourth-week . 13) (:biweekly . 26) (:weekly . 52) (:daily . 365))
-  "Frequency keywords and the number of periods per year (QuantLib's values)."))
+  "Frequency keywords and the number of periods per year."))
 
 (deftype frequency ()
   "Periods per year, named: :ANNUAL, :SEMIANNUAL, :QUARTERLY, :MONTHLY,

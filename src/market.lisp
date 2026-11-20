@@ -243,12 +243,17 @@ model."))
                        :type hash-table)
    (fixings :initarg :fixings :reader market-fixings :type hash-table
             :initform (make-hash-table :test 'equal)
-            :documentation "Index id -> EQUALP table of fixing date -> rate."))
+            :documentation "Index id -> EQUALP table of fixing date -> rate.")
+   (extra-components :initarg :extra-components :initform nil :reader market-extra-components
+                     :type (or null hash-table)
+                     :documentation "Kind -> EQUAL table of key -> value, for the kinds
+DEFINE-MARKET-COMPONENT stores outside the tables above; NIL when the market
+holds none."))
   (:documentation "Named term structures observed on one valuation date: a spot,
 dividend curve, vol structure and currency per underlying (and a
 DIVIDEND-SCHEDULE for those paying discrete dividends), yield curves by
-id, and the curve each currency discounts on. The tables are EQUAL hash
-tables keyed by keywords. They are copied when a market is derived or bumped
+id, the curve each currency discounts on, and any kind registered with
+DEFINE-MARKET-COMPONENT. The tables are EQUAL hash tables keyed by keywords. They are copied when a market is derived or bumped
 and never mutated after construction, so a market can be shared by parallel
 workers. Pricing an instrument narrows the market to a MARKET-VIEW of the
 instrument's underlying."))
@@ -273,11 +278,11 @@ is a list or a function of no arguments returning one, called only then."
       value
       (make-instance class initarg value)))
 
-(declaim (ftype (function (&key (:valuation-date t) (:day-counter t) (:underlyings list) (:curves list) (:discounting list) (:fixings list))
+(declaim (ftype (function (&key (:valuation-date t) (:day-counter t) (:underlyings list) (:curves list) (:discounting list) (:fixings list) (:components list))
                     (values composite-market &optional))
           make-market-from-specs))
 (defun make-market-from-specs (&key valuation-date (day-counter +actual-365-fixed+)
-                                    underlyings curves discounting fixings)
+                                    underlyings curves discounting fixings components)
   "A COMPOSITE-MARKET observed on VALUATION-DATE, from keyword arguments and
 nested lists: the call shape MAKE-MARKET accepts besides clauses. The
 arguments are lists:
@@ -298,6 +303,9 @@ arguments are lists:
                discounts on it.
   FIXINGS      ((index-id (date rate) ...) ...): past fixings of interest-rate
                indexes, DATE a date or a \"YYYY-MM-DD\" string.
+  COMPONENTS   ((kind (key value) ...) ...): entries of kinds registered with
+               DEFINE-MARKET-COMPONENT beyond those above, KEY a keyword and
+               VALUE what the kind's clause takes.
 
 Reals are coerced to double-float.
 
@@ -354,7 +362,8 @@ holds (~{~S~^, ~})" (mapcar #'car curve-alist)))))
                      :vol-structures (alist-table vols)
                      :underlying-currency (alist-table currencies)
                      :discount-curve-for (alist-table discounting)
-                     :fixings (fixings-table fixings)))))
+                     :fixings (fixings-table fixings)
+                     :extra-components (components-table components)))))
 
 (defun fixings-table (fixings)
   "An EQUAL table of index id -> EQUALP table of date -> rate, from
@@ -411,25 +420,20 @@ DIVIDEND-SCHEDULE adds discrete dividends, as in MAKE-MARKET-FROM-SPECS.
              :vol-structures ,(copy (market-vol-structures m))
              :underlying-currency ,(copy (market-underlying-currency m))
              :discount-curve-for ,(copy (market-discount-curve-for m))
-             :fixings ,(copy (market-fixings m))))))
+             :fixings ,(copy (market-fixings m))
+             :extra-components ,(a:when-let ((extra (market-extra-components m)))
+                                  (let ((new (make-hash-table :test 'equal)))
+                                    (maphash (lambda (kind table) (setf (gethash kind new) (copy table)))
+                                             extra)
+                                    new))))))
 
-(defun market-table (market table)
-  "MARKET's hash table named by the keyword TABLE: :SPOTS, :YIELD-CURVES,
-:DIVIDEND-CURVES, :DIVIDEND-SCHEDULES or :VOL-STRUCTURES."
-  (ecase table
-    (:spots (market-spots market))
-    (:yield-curves (market-yield-curves market))
-    (:dividend-curves (market-dividend-curves market))
-    (:dividend-schedules (market-dividend-schedules market))
-    (:vol-structures (market-vol-structures market))))
+(defun market-with (market kind key value)
+  "A copy of the composite MARKET whose component (KIND KEY) is VALUE, KIND a
+registered kind (see DEFINE-MARKET-COMPONENT); MARKET is unchanged.
 
-(defun market-with (market table key value)
-  "A copy of the composite MARKET whose TABLE (see MARKET-TABLE) maps KEY to
-VALUE; MARKET is unchanged.
-
-  (market-with m :vol-structures :spx (make-instance 'flat-black-vol :vol 0.2d0))"
+  (market-with m :vol :spx (make-instance 'flat-black-vol :vol 0.2d0))"
   (let ((new (copy-composite-market market)))
-    (setf (gethash key (market-table new table)) value)
+    (setf (gethash key (kind-table new (find-market-component-kind kind) t)) value)
     new))
 
 (defgeneric derive-market (market &key &allow-other-keys)
@@ -472,9 +476,10 @@ not modified. Move market data with BUMP.
 FACTOR is (:spot u), (:vol u), (:dividend u) (the continuous yield) or
 (:dividend-schedule u) (every discrete dividend amount) for underlying U,
 (:dividend-schedule u ex-date) for the dividends going ex on one date,
-(:curve id) for a yield curve, or (:quote id selector) for one input quote
+(:curve id) for a yield curve, (:quote id selector) for one input quote
 of a bootstrapped curve, chosen by its helper's tenor or index, the curve
-then rebootstrapped. SHIFT is (:relative x), multiplying by 1 + x, or
+then rebootstrapped, or (kind key) for any other kind DEFINE-MARKET-COMPONENT
+registered. SHIFT is (:relative x), multiplying by 1 + x, or
 (:absolute x), adding x: to the spot, the vol, the yield, the dividend
 amounts (floored at 0), the rate or the quoted rate.
 
@@ -483,98 +488,70 @@ amounts (floored at 0), the rate or the quoted rate.
   (bump m `(:quote :usd-sofr ,#T\"5Y\") '(:absolute 1/10000)) ; the 5Y quote up 1bp
   (bump m `(:dividend-schedule :aapl ,#D\"2027-02-10\") '(:absolute 1/100))"
   (check-input market composite-market "a composite market (bump the market a view was taken from)")
-  (check-input factor (or (cons (member :spot :vol :dividend :dividend-schedule :curve)
-                                (cons keyword null))
-                          (cons (eql :dividend-schedule) (cons keyword (cons date null)))
-                          (cons (eql :quote) (cons keyword (cons (or integer tenor) null))))
-               "(:spot u), (:vol u), (:dividend u), (:dividend-schedule u [ex-date]), (:curve id) or (:quote id tenor-or-index)")
+  (unless (bump-factor-p factor)
+    (signal-invalid-argument 'factor factor 'list
+                             (format nil "(kind key), kind one of ~{~S~^, ~}; (:dividend-schedule u ex-date) ~
+or (:quote id tenor-or-index)" (target-kinds))))
   (check-input shift shift "(:relative x) or (:absolute x)")
   (when (eq (first factor) :quote)
     (destructuring-bind (id selector) (rest factor)
       (return-from bump
-        (->> (bump-structure-quote (find-yield-curve market id) selector shift)
-             (market-with market :yield-curves id)))))
+        (market-with market :curve id
+                     (bump-structure-quote (find-yield-curve market id) selector shift)))))
   (when (and (eq (first factor) :dividend-schedule) (cddr factor))
     (destructuring-bind (underlying ex-date) (rest factor)
       (return-from bump
-        (-> (market-entry (market-dividend-schedules market) underlying "dividend schedule for"
-                          (sorted-keys (market-dividend-schedules market)))
-            (bump-dividend ex-date shift)
-            (->> (market-with market :dividend-schedules underlying))))))
+        (market-with market :dividend-schedule underlying
+                     (bump-dividend (market-entry (market-dividend-schedules market) underlying
+                                                  "dividend schedule for"
+                                                  (sorted-keys (market-dividend-schedules market)))
+                                    ex-date shift)))))
   (destructuring-bind (kind key) factor
-    (let ((table (component-table kind))
-          (old (market-component market factor)))
-      (->> (if (realp old) (apply-shift old shift) (bump-structure old shift))
-           (market-with market table key)))))
+    (let ((component (find-market-component-kind kind)))
+      (market-with market kind key (bump-value component (kind-entry market component key) shift)))))
 
 ;;; --------------------------------------------------------------------
-;;; Components by target (task 32)
+;;; Components by target
 ;;; --------------------------------------------------------------------
-
-(defparameter *target-kinds* '(:spot :vol :dividend :dividend-schedule :curve)
-  "The kinds of market component a target names, in BUMP's factor syntax.")
-
-(defun component-table (kind)
-  "The MARKET-TABLE keyword holding components of KIND."
-  (ecase kind
-    (:spot :spots)
-    (:vol :vol-structures)
-    (:dividend :dividend-curves)
-    (:dividend-schedule :dividend-schedules)
-    (:curve :yield-curves)))
-
-(defun component-type (kind)
-  "The type of a component of KIND, and its description."
-  (ecase kind
-    (:spot (values 'real "a real spot"))
-    (:vol (values 'black-vol-structure "a BLACK-VOL-STRUCTURE"))
-    (:dividend (values 'dividend-curve "a DIVIDEND-CURVE"))
-    (:dividend-schedule (values 'dividend-schedule "a DIVIDEND-SCHEDULE"))
-    (:curve (values 'yield-curve "a YIELD-CURVE"))))
 
 (defun normalize-target (target)
   "TARGET as (kind key): a keyword U is (:SPOT U); a list must be (kind key)
-with kind one of *TARGET-KINDS* and key a keyword."
+with kind one of TARGET-KINDS and key a keyword."
   (cond ((keywordp target) `(:spot ,target))
-        ((and (consp target) (= 2 (length target)) (member (first target) *target-kinds*)
-              (keywordp (second target)))
+        ((and (consp target) (consp (rest target)) (null (cddr target))
+              (member (first target) (target-kinds)) (keywordp (second target)))
          target)
         (t (signal-invalid-argument 'target target 'list
                                     (format nil "a target (kind key), kind one of ~{~S~^, ~}, or an underlying keyword"
-                                            *target-kinds*)))))
+                                            (target-kinds))))))
 
 (declaim (ftype (function (t t) (values t &optional)) market-component))
 (defun market-component (market target)
   "The component of the composite MARKET that TARGET names, in BUMP's factor
 syntax: (:spot u) the spot of underlying U (a bare keyword U means the same),
 (:vol u) its vol structure, (:dividend u) its continuous dividend curve,
-(:dividend-schedule u) its discrete dividends, (:curve id) the yield curve ID.
+(:dividend-schedule u) its discrete dividends, (:curve id) the yield curve ID,
+(kind key) an entry of any other kind DEFINE-MARKET-COMPONENT registered.
 A component the market lacks signals MISSING-MARKET-DATA listing what it has.
 
   (market-component m '(:curve :usd-ois))
   (market-component m :spx)   ; the SPX spot"
   (check-input market composite-market "a composite market")
   (destructuring-bind (kind key) (normalize-target target)
-    (let ((table (market-table market (component-table kind))))
-      (multiple-value-bind (what known)
-          (ecase kind
-            (:spot (values "underlying" (market-underlyings market)))
-            (:vol (values "vol structure for" (lambda () (sorted-keys table))))
-            (:dividend (values "dividend curve for" (market-underlyings market)))
-            (:dividend-schedule (values "dividend schedule for" (lambda () (sorted-keys table))))
-            (:curve (values "yield curve" (lambda () (sorted-keys table)))))
-        (market-entry table key what known)))))
+    (kind-entry market (find-market-component-kind kind) key)))
 
 (defun set-market-component (market target value date)
   "Set TARGET's component of MARKET, a fresh copy not yet shared, to VALUE,
 checked against the component's type; DATE names the market in the report."
   (destructuring-bind (kind key) target
-    (multiple-value-bind (type description) (component-type kind)
+    (let* ((component (find-market-component-kind kind))
+           (type (market-component-kind-type component)))
       (unless (typep value type)
         (signal-invalid-argument target value type
-                                 (format nil "~A for ~S on ~A" description target date)))
-      (setf (gethash key (market-table market (component-table kind)))
-            (if (eq kind :spot) (float value 1d0) value)))))
+                                 (format nil "~A for ~S on ~A" (market-component-kind-description component)
+                                         target date)))
+      (setf (gethash key (kind-table market component t))
+            (a:if-let ((coerce (market-component-kind-coerce component))) (funcall coerce value) value)))))
 
 ;;; --------------------------------------------------------------------
 ;;; Views

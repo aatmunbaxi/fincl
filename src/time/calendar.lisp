@@ -108,7 +108,7 @@ default tests each day; holiday calendars use per-year prefix counts.")
           business-days-between))
 (defun business-days-between (calendar from to &key (include-first t) include-last)
   "Business days of CALENDAR between FROM and TO, by default counting
-[FROM, TO). Negative when TO precedes FROM, as in QuantLib.
+[FROM, TO). Negative when TO precedes FROM.
 
   (business-days-between (make-instance 'weekends-only)
                          #D\"2027-06-14\" #D\"2027-06-21\") => 5"
@@ -134,7 +134,7 @@ default tests each day; holiday calendars use per-year prefix counts.")
                     (values date &optional))
           advance))
 (defun advance (calendar date tenor &key (convention :following) end-of-month)
-  "DATE moved by TENOR in CALENDAR, as QuantLib's Calendar::advance: days
+  "DATE moved by TENOR in CALENDAR: days
 count business days; weeks add calendar days, then adjust by CONVENTION;
 months and years add calendar months (the day clamped to the month's
 length), then adjust, except that with END-OF-MONTH a DATE at its month's

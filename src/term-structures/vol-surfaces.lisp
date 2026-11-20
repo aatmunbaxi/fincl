@@ -189,14 +189,13 @@ term (:OBLOJ). SABR-VOLATILITY also gives Hagan's normal vols."))
 
 (defun sabr-z-over-x (z rho)
   "z / x(z), x(z) = ln((sqrt(1 - 2 rho z + z^2) + z - rho)/(1 - rho)), with
-its series near z = 0 (as QuantLib)."
+its series near z = 0."
   (if (> (* z z) (* 10 double-float-epsilon))
       (/ z (log (/ (+ (sqrt (+ 1d0 (* -2d0 rho z) (* z z))) z (- rho)) (- 1d0 rho))))
       (- 1d0 (* 0.5d0 rho z) (/ (* (- (* 3d0 rho rho) 2d0) z z) 12d0))))
 
 (defun sabr-log-moneyness (forward strike)
-  "ln(F/K), by its second-order expansion when F and K are within a few ulps
-(QuantLib's close())."
+  "ln(F/K), by its second-order expansion when F and K are within a few ulps."
   (let ((epsilon (/ (- forward strike) strike)))
     (if (<= (abs (- forward strike)) (* 42 double-float-epsilon (min (abs forward) (abs strike))))
         (- epsilon (* 0.5d0 epsilon epsilon))
@@ -206,10 +205,9 @@ its series near z = 0 (as QuantLib)."
                     (values double-float &optional))
           sabr-volatility))
 (defun sabr-volatility (strike forward expiry alpha beta rho nu &optional (approximation :hagan))
-  "SABR implied vol at STRIKE: :HAGAN lognormal (QuantLib's
-unsafeSabrLogNormalVolatility), :OBLOJ lognormal with Obloj's leading term
-nu ln(F/K) / x(z), z = nu (F^(1-b) - K^(1-b)) / (alpha (1-b)), or :NORMAL
-(QuantLib's unsafeSabrNormalVolatility).
+  "SABR implied vol at STRIKE: Hagan's lognormal expansion (:HAGAN), :OBLOJ lognormal with Obloj's leading term
+nu ln(F/K) / x(z), z = nu (F^(1-b) - K^(1-b)) / (alpha (1-b)), or the normal
+expansion (:NORMAL).
 
   (sabr-volatility 0.03 0.03 1 0.02 0.5 -0.3 0.4)"
   (let* ((strike (float strike 1d0)) (forward (float forward 1d0)) (expiry (float expiry 1d0))
@@ -539,7 +537,7 @@ or (:relative x)), as BUMP-STRUCTURE makes it."))
                     (+ (expt (+ sigma x) 2) (* ratio (- wt (* sigma sigma))))))))))
 
 ;;; --------------------------------------------------------------------
-;;; Rescaled surfaces: a new ATM level on a surface's shape (task 32)
+;;; Rescaled surfaces: a new ATM level on a surface's shape
 ;;; --------------------------------------------------------------------
 
 (defclass rescaled-surface (moneyness-vol-structure)

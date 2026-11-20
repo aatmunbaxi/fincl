@@ -1,4 +1,4 @@
-;;;; risk.lisp --- scenarios, VaR, ladders, P&L explain (task 22)
+;;;; risk.lisp --- scenarios, VaR, ladders, P&L explain
 ;;;;
 ;;;; A scenario is a set of risk-factor bumps (BUMP) and an optional aging:
 ;;;; applied to a market it gives another market, so revaluation is pricing

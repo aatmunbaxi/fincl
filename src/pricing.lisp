@@ -51,4 +51,4 @@ composite, else MARKET itself."
 (defun market-with-flat-vol (market underlying vol)
   "A copy of the composite MARKET with UNDERLYING's vol structure replaced by
 a flat VOL."
-  (market-with market :vol-structures underlying (make-instance 'flat-black-vol :vol vol)))
+  (market-with market :vol underlying (make-instance 'flat-black-vol :vol vol)))

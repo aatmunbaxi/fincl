@@ -75,6 +75,7 @@
                              (:file "rates-vol")
                              (:file "vol-surfaces")))
                (:file "market")
+               (:file "market-components")
                (:file "market-language")
                (:module "instruments"
                 :serial t
@@ -183,6 +184,7 @@
                (:file "simulation-components")
                (:file "simulation-validation")
                (:file "simulation-books")
+               (:file "market-components")
                (:file "measure")
                (:file "platform")
                (:file "types")

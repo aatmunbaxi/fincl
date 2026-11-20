@@ -9,6 +9,10 @@
 ;;;; Every cubic is stored as per-segment coefficients of
 ;;;; y_i + c1 t + c2 t^2 + c3 t^3, t = x - x_i, so natural and monotone cubics
 ;;;; differ only in how the coefficients are built.
+;;;;
+;;;; Provenance: the monotone-convex forwards port QuantLib's ConvexMonotone
+;;;; (ql/math/interpolations/convexmonotoneinterpolation.hpp) section by
+;;;; section, so that bootstrapped curves agree with QuantLib's.
 
 (in-package #:fincl)
 
@@ -414,10 +418,7 @@ EXTRAPOLATION is :flat (clamp to the knot rectangle) or :error.
 ;;; --------------------------------------------------------------------
 ;;;
 ;;; P. Hagan and G. West, "Interpolation methods for curve construction",
-;;; Applied Mathematical Finance 13 (2006), as implemented by QuantLib's
-;;; ConvexMonotone (ql/math/interpolations/convexmonotoneinterpolation.hpp),
-;;; which this ports section by section so that bootstrapped curves agree
-;;; with QuantLib's. The inputs are period-average forwards: YS[i] for i >= 1
+;;; Applied Mathematical Finance 13 (2006). The inputs are period-average forwards: YS[i] for i >= 1
 ;;; is the average over (XS[i-1], XS[i]] and YS[0] is ignored. The result is
 ;;; an instantaneous forward and its integral from XS[0]; beyond the last
 ;;; knot the forward is held at its value there.
@@ -528,8 +529,8 @@ integral from XS[0], and the forward at the period's right end."
      (+ f-average g-next))))
 
 (defun convex-monotone-4-section (x-prev x-next g-prev g-next f-average eta primitive force-positive)
-  "QuantLib's ConvexMonotone4Helper, or with FORCE-POSITIVE its Min variant,
-which splits the period around a zero forward when the minimum would be
+  "One section of the monotone-convex forward, or with FORCE-POSITIVE its
+minimum variant, which splits the period around a zero forward when the minimum would be
 negative."
   (declare (double-float x-prev x-next g-prev g-next f-average eta primitive))
   (let* ((scale (- x-next x-prev))
@@ -591,7 +592,7 @@ instantaneous forward through the period averages YS (YS[0] ignored) at
 knots XS, and its integral from XS[0]. QUADRATICITY blends Hagan-West's
 monotone-convex sections with quadratics; MONOTONICITY bounds the sections'
 shape parameters; FORCE-POSITIVE keeps forwards non-negative. Defaults are
-QuantLib's.
+those of the reference implementation.
 
   (make-monotone-convex '(0 1 2 3) '(0.03 0.03 0.035 0.04))"
   (let* ((xs (as-double-vector xs)) (ys (as-double-vector ys))

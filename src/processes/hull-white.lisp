@@ -5,13 +5,15 @@
 ;;;; theta(t) fits the initial curve exactly, so the model's zero-coupon bonds
 ;;;; reprice the curve. The model takes its curve from the market at pricing
 ;;;; time (an id, by default the instrument currency's discount curve): one
-;;;; curve both forecasts and discounts. The formulas follow QuantLib's
-;;;; HullWhite (A, B, discount bonds and bond options), operation for
-;;;; operation (tests/fixtures/hull-white.sexp).
+;;;; curve both forecasts and discounts.
+;;;;
+;;;; Provenance: the formulas follow QuantLib's HullWhite (A, B, discount
+;;;; bonds and bond options), operation for operation
+;;;; (tests/fixtures/hull-white.sexp).
 
 (in-package #:fincl)
 
-(define-process hull-white (stochastic-process) (:state-size 2 :factors 2)
+(define-process hull-white (stochastic-process) (:state-names (:short-rate :integral) :factors 2)
   ((a 0.05d0 :measure-dependent t :type non-negative-double :bounds (0 nil) :reader hull-white-a
              :doc "Mean-reversion speed of the short rate.")
    (sigma 0.01d0 :type volatility :bounds (0 nil) :doc "Normal volatility of the short rate."))
@@ -38,14 +40,13 @@ not drive an equity spot. In SIMULATE it drives a yield curve, ((:curve id)
   (curve-discount (rate-curve-curve curve) (float time 1d0)))
 
 (defun rate-curve-forward (curve time)
-  "The instantaneous continuous forward at TIME over *RATE-DT* (QuantLib's
-forwardRate(t, t, Continuous))."
+  "The instantaneous continuous forward at TIME over *RATE-DT*."
   (let* ((t1 (max (- time (/ *rate-dt* 2d0)) 0d0))
          (t2 (+ t1 *rate-dt*)))
     (/ (log (/ (rate-curve-discount curve t1) (rate-curve-discount curve t2))) (- t2 t1))))
 
 (defun rate-curve-short-rate (curve)
-  "The continuous zero rate over the first *RATE-DT* (QuantLib's zeroRate(0))."
+  "The continuous zero rate over the first *RATE-DT*."
   (/ (log (/ 1d0 (rate-curve-discount curve *rate-dt*))) *rate-dt*))
 
 (defun hull-white-b (a t0 t1)
@@ -98,7 +99,7 @@ RATE-CURVE (times in its market's time).
 (defun hull-white-bond-option (process curve phi strike maturity bond-start bond-maturity)
   "A call (PHI 1) or put (PHI -1) expiring at MATURITY on the bond paying 1
 at BOND-MATURITY, per unit of the bond starting at BOND-START, struck at
-STRIKE (QuantLib's HullWhite::discountBondOption)."
+STRIKE."
   (let* ((a (hull-white-a process))
          (sigma (sigma process))
          (v (if (< a (sqrt double-float-epsilon))
@@ -115,7 +116,7 @@ STRIKE (QuantLib's HullWhite::discountBondOption)."
     (black-price phi k f v 1d0)))
 
 (defun black-price (phi strike forward std-dev discount)
-  "Black's formula from a standard deviation, as QuantLib's blackFormula:
+  "Black's formula from a standard deviation:
 the discounted intrinsic value when STD-DEV is 0."
   (if (zerop std-dev)
       (* (max (* (- forward strike) phi) 0d0) discount)
@@ -124,7 +125,7 @@ the discounted intrinsic value when STD-DEV is 0."
         (* discount phi (- (* forward (norm-cdf (* phi d1))) (* strike (norm-cdf (* phi d2))))))))
 
 ;;; --------------------------------------------------------------------
-;;; Simulation: Hull-White drives a yield curve (task 32)
+;;; Simulation: Hull-White drives a yield curve
 ;;; --------------------------------------------------------------------
 ;;;
 ;;; With x = r - alpha(t), alpha(t) = f(0,t) + sigma^2 B(t)^2 / 2 and
@@ -158,7 +159,6 @@ of market time, or NIL for none. Set by a change of measure."))
 SIMULATE resolves a Hull-White leg."))
 
 (defmethod process-targets ((p hull-white)) '(:curve))
-(defmethod process-state-names ((p hull-white)) '(:short-rate :integral))
 (defmethod steppable-p ((p hull-white)) t)
 
 (defmethod resolve-process ((p hull-white) (market curve-view) horizon)

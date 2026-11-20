@@ -1,4 +1,4 @@
-;;;; snapshot.lisp --- markets and portfolios as readable forms (task 22)
+;;;; snapshot.lisp --- markets and portfolios as readable forms
 ;;;;
 ;;;; A snapshot is the constructor form that rebuilds an object: MAKE-MARKET
 ;;;; with its curves, surfaces and dividends, MAKE-PORTFOLIO with its
@@ -122,10 +122,36 @@ objects."
                            (t (snapshot-form arg))))
                    (rest clause))))
 
+(defmethod snapshot-form ((s flat-rates-vol))
+  `(make-instance 'flat-rates-vol :vol ,(rates-vol s)
+                                  :day-counter ,(snapshot-form (rates-vol-day-counter s))))
+
+(defmethod snapshot-form ((s expiry-rates-vol))
+  `(make-instance 'expiry-rates-vol :dates (quote ,(rates-vol-dates s)) :vols (quote ,(rates-vol-vols s))
+                                    :day-counter ,(snapshot-form (rates-vol-day-counter s))))
+
+(defun kind-snapshot-form (language clause kinds)
+  "CLAUSE's snapshot form, for a market clause giving entries of KINDS:
+signals INVALID-ARGUMENT naming the kind when a value has no snapshot form
+or calls a function or class the kind did not register."
+  (flet ((refuse (what)
+           (signal-invalid-argument 'market clause 'list
+                                    (format nil "a market whose entries have snapshot forms: an entry of ~
+~{~S~^ or ~} ~A; give its kind a SNAPSHOT-FORM method and list what the form calls in ~
+:SNAPSHOT-CONSTRUCTORS or :SNAPSHOT-CLASSES"
+                                            (mapcar #'market-component-kind-name kinds) what))))
+    (let ((form (handler-case (clause-snapshot-form language clause)
+                  (invalid-argument () (refuse "has no snapshot form")))))
+      (a:when-let ((head (snapshot-form-problem form)))
+        (refuse (format nil "calls ~S, which a snapshot may not call" head)))
+      form)))
+
 (defmethod snapshot-form ((m composite-market))
   `(make-market-from-clauses
     (list ,@(mapcar (lambda (clause) (clause-snapshot-form 'market clause))
-                    (object-clauses 'market m)))))
+                    (market-date-clauses m))
+          ,@(mapcar (lambda (entry) (kind-snapshot-form 'market (first entry) (rest entry)))
+                    (market-clauses-of-kinds m)))))
 
 ;;; Printing readably is printing the snapshot form.
 (defmethod print-object :around ((m composite-market) stream)
@@ -145,6 +171,10 @@ back.
 
   (with-open-file (s \"book.sexp\" :direction :output) (write-snapshot book s))"
   (let ((form (snapshot-form object)))
+    (a:when-let ((head (snapshot-form-problem form)))
+      (signal-invalid-argument 'object object 'snapshot-form
+                               (format nil "an object whose snapshot form calls only the snapshot ~
+constructors; its form calls ~S" head)))
     (with-standard-io-syntax
       (let ((*package* (find-package '#:fincl))
             (*readtable* (named-readtables:find-readtable 'syntax))
@@ -158,12 +188,43 @@ back.
     make-smile-surface make-ssvi-surface make-option-from-clauses make-holding make-position
     make-portfolio make-cash-account make-engine make-gbm make-heston make-cev make-local-vol make-merton-jump
     make-kou-jump make-variance-gamma make-nig make-bates make-garch change-measure)
-  "The functions a snapshot may call.")
+  "The functions a snapshot may call, besides those market component kinds register.")
 
 (defparameter *snapshot-classes*
   '(interpolated-discount-curve interpolated-zero-curve interpolated-forward-curve
     actual-360 actual-365-fixed actual-actual-isda smile-surface grid-vol-surface svi-surface)
-  "The classes MAKE-INSTANCE may make in a snapshot.")
+  "The classes MAKE-INSTANCE may make in a snapshot, besides those market
+component kinds register.")
+
+(defun snapshot-constructor-p (name)
+  "True if a snapshot may call the function NAME."
+  (or (member name *snapshot-constructors*)
+      (some (lambda (kind) (member name (market-component-kind-snapshot-constructors kind)))
+            (market-component-kinds))))
+
+(defun snapshot-class-p (name)
+  "True if a snapshot may make an instance of the class NAME."
+  (or (member name *snapshot-classes*)
+      (some (lambda (kind) (member name (market-component-kind-snapshot-classes kind)))
+            (market-component-kinds))))
+
+(defun snapshot-form-problem (form)
+  "The first function or (make-instance 'class) FORM calls that SNAPSHOT-EVAL
+refuses, or NIL."
+  (cond ((consp form)
+         (destructuring-bind (head &rest args) form
+           (case head
+             (quote nil)
+             (list (some #'snapshot-form-problem args))
+             (t (cond ((not (snapshot-constructor-p head)) head)
+                      ((and (eq head 'make-instance)
+                            (not (and (typep (first args) '(cons (eql quote) (cons symbol null)))
+                                      (snapshot-class-p (second (first args))))))
+                       `(make-instance ,(first args)))
+                      (t (some #'snapshot-form-problem args)))))))
+        ((and (symbolp form) (not (keywordp form)) (not (member form '(t nil)))
+              (not (member form *snapshot-day-counters*)))
+         form)))
 
 (defun snapshot-eval (form)
   "FORM evaluated as a snapshot: literals as themselves, QUOTE, LIST, the
@@ -178,9 +239,9 @@ INVALID-ARGUMENT."
              (case head
                (quote (first args))
                (list (mapcar #'snapshot-eval args))
-               (t (unless (member head *snapshot-constructors*) (refuse head))
+               (t (unless (snapshot-constructor-p head) (refuse head))
                 (let ((args (mapcar #'snapshot-eval args)))
-                  (when (and (eq head 'make-instance) (not (member (first args) *snapshot-classes*)))
+                  (when (and (eq head 'make-instance) (not (snapshot-class-p (first args))))
                     (refuse `(make-instance ',(first args))))
                   ;; Snapshots written before markets had clauses call MAKE-MARKET with keywords.
                   (apply (if (eq head 'make-market) 'make-market-from-specs head) args))))))

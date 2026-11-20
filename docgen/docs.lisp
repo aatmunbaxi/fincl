@@ -1291,6 +1291,7 @@ Start with
   (@define-payoff section)
   (@define-path-payoff section)
   (@define-clause section)
+  (@define-market-component section)
   (@dice-example section))
 
 (defsection @define-currency (:title "define-currency")
@@ -1468,6 +1469,37 @@ A clause lists the facts it may set in `(:publishes ...)`."
   (fincl:with-scope macro)
   (fincl:make-from-facts function)
   (fincl:fact function))
+
+(defsection @define-market-component (:title "define-market-component")
+  "A composite market holds kinds of data under keyword keys: spots, vol
+structures and dividends by underlying, yield curves by id, rates vols by id.
+`define-market-component` adds a kind in one form: its value type, its
+`make-market` clause, and its place in `market-component`, `bump`, printing
+and snapshots. The casino quotes chips in dollars:
+
+```cl
+(define-market-component :fx
+  :type (real (0)) :description \"a positive FX rate\"
+  :clause (fx (pair rate))
+  :documentation \"The FX rate of PAIR: units of the quote currency per unit of the base.\")
+
+(defparameter *casino*
+  (make-market (valued-on #D\"2026-10-01\") (curve :chip (rate 0)) (fx :chipusd 0.25d0)))
+(market-component *casino* '(:fx :chipusd))                ; => 0.25d0
+(bump *casino* '(:fx :chipusd) '(:relative 1/100))          ; chips 1% dearer
+```
+
+`:within (underlying name (value))` makes the clause a sub-clause of
+`underlying`, keyed by the underlying. A value that is not a real is moved by
+its `bump-structure` method, and its `snapshot-form` may call only the
+functions and classes listed in `:snapshot-constructors` and
+`:snapshot-classes`. `:view` names the market a process steps on when a
+simulation drives the kind; without it the kind is not simulated. Redefining
+a kind from another package signals the warning
+`market-component-redefined`; the kinds fincl defines cannot be redefined."
+  (fincl:define-market-component macro)
+  (fincl:market-component function)
+  (fincl:market-component-redefined condition))
 
 (defsection @dice-example (:title "A dice game")
   "Putting the pieces together. Let us simulate our games played

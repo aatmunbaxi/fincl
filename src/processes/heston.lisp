@@ -32,7 +32,7 @@ HORIZON = T."
   "V0, so that variance starts at its long-run level."
   (or (v0 process) (heston-default-v0 process market horizon)))
 
-(define-process heston (stochastic-process) (:state-size 2 :factors 2)
+(define-process heston (stochastic-process) (:state-names (:spot :variance) :factors 2)
   ((v0 nil :type (or null non-negative-double) :bounds (0 nil) :market-default heston-default-v0
            :doc "Initial variance. NIL resolves to sigma_ATM(T)^2 = w(T)/T, T the
 expiry, w the market's ATM-forward Black variance.")
@@ -65,7 +65,6 @@ expiry first; the one-year fallback serves direct callers such as plots."
     v))
 
 (defmethod process-regressors ((p heston)) '(0 1))
-(defmethod process-state-names ((p heston)) '(:spot :variance))   ; spot and variance
 
 (defmethod initial-state ((p heston) market)
   (let ((state (make-array 2 :element-type 'double-float)))

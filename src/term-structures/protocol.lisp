@@ -46,14 +46,13 @@ time), or a date for a curve with a reference date.
 
 (defparameter *rate-dt* 1d-4
   "The short time over which a zero rate at the reference date, or an
-instantaneous forward, is measured (QuantLib's dt).")
+instantaneous forward, is measured.")
 
 (defgeneric curve-zero-rate (curve x &optional compounding frequency day-counter)
   (:documentation "The zero rate to X (a horizon or, for a dated curve, a
 date) quoted with COMPOUNDING (default :CONTINUOUS) and FREQUENCY (default
 :ANNUAL), time measured by DAY-COUNTER (default the curve's) from the
-reference date to a date X. A double-float, as QuantLib's
-YieldTermStructure::zeroRate.
+reference date to a date X. A double-float.
 
   (curve-zero-rate curve #D\"2031-06-15\" :compounded :annual +actual-365-fixed+)"))
 
@@ -83,7 +82,7 @@ YieldTermStructure::zeroRate.
 dated curve) quoted with COMPOUNDING (default :CONTINUOUS) and FREQUENCY
 (default :ANNUAL) over DAY-COUNTER's fraction between the dates (default the
 curve's). Equal X1 and X2 give the instantaneous forward, measured over
-*RATE-DT*. As QuantLib's YieldTermStructure::forwardRate."))
+*RATE-DT*."))
 
 (defmethod curve-forward-rate ((c yield-curve) x1 x2 &optional (compounding :continuous)
                                                        (frequency :annual) day-counter)
@@ -174,10 +173,17 @@ structure rebuilt. Only bootstrapped curves have quotes.")
     (signal-invalid-argument 'structure structure 'piecewise-yield-curve
                              "a bootstrapped curve, whose input quotes can move")))
 
+(define-condition no-bump-structure (invalid-argument) ()
+  (:documentation "BUMP-STRUCTURE was called on an object with no method."))
+
 (defgeneric bump-structure (structure shift)
   (:documentation "A new structure with its level moved by SHIFT ((:relative
 x) or (:absolute x)): rates for curves, the vol for vol structures.
-STRUCTURE is unchanged.
+STRUCTURE is unchanged. An object with no method signals INVALID-ARGUMENT.
 
   (bump-structure (make-instance 'flat-black-vol :vol 0.2d0) '(:absolute 0.01d0))
-  => a flat 21% vol"))
+  => a flat 21% vol")
+  (:method (structure shift)
+    (declare (ignore shift))
+    (error 'no-bump-structure :place 'structure :datum structure :expected-type 'term-structure
+                              :expected "a structure with a BUMP-STRUCTURE method")))

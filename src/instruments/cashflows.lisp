@@ -2,10 +2,9 @@
 ;;;;
 ;;;; A leg is a list of cash flows. Fixed coupons know their amount; floating
 ;;;; coupons read fixings and forecast curves from a market. Leg builders
-;;;; follow QuantLib's FixedRateLeg, IborLeg and OvernightLeg period by
-;;;; period (reference periods for stubs, payment lags, par Ibor coupons,
-;;;; daily compounded overnight coupons), and tests/fixtures/legs.sexp is
-;;;; generated from them.
+;;;; work period by period (reference periods for stubs, payment lags, par
+;;;; Ibor coupons, daily compounded overnight coupons), and
+;;;; tests/fixtures/legs.sexp holds reference legs.
 
 (in-package #:fincl)
 
@@ -116,11 +115,11 @@ rate's compound factor over the accrual period, less one."))
    (fixing-value-date :reader fixing-value-date :type date)
    (fixing-end-date :reader fixing-end-date :type date
                     :documentation "End of the forecast period: the next coupon's
-fixing value date (QuantLib's par coupon), at least a day after the value
+fixing value date (the par coupon), at least a day after the value
 date."))
   (:documentation "A coupon on an Ibor index fixed FIXING-DAYS before its
 accrual start. The rate is forecast over the coupon's own accrual (from this
-fixing's value date to the next fixing's), QuantLib's default \"par\" Ibor
+fixing's value date to the next fixing's), the \"par\" Ibor
 coupon, rather than over the index tenor."))
 
 (defmethod initialize-instance :after ((c ibor-coupon) &key)
@@ -187,7 +186,7 @@ lockout and observation shift are not modelled."))
                                                   (svref interest (1+ i)))))))))
 
 (defmethod coupon-rate ((c overnight-indexed-coupon) market)
-  ;; QuantLib's CompoundingOvernightIndexedCouponPricer, without lookback.
+  ;; Daily compounding in arrears, without lookback.
   (let* ((index (coupon-index c))
          (today (valuation-date market))
          (fixings (overnight-fixing-dates c))
@@ -268,7 +267,7 @@ or MONEY) at RATE (a real quoted with DAY-COUNTER, COMPOUNDING and FREQUENCY,
 or an INTEREST-RATE). Coupons pay PAYMENT-LAG business days after each
 period end, adjusted by PAYMENT-CONVENTION on PAYMENT-CALENDAR (default the
 schedule's). A short or long first or last period accrues against a notional
-regular period, as QuantLib's FixedRateLeg.
+regular period.
 
   (fixed-leg schedule (make-money 1d6 :usd) 0.04d0 (make-instance 'thirty-360 :variant :bond-basis))"
   (check-input schedule schedule "a SCHEDULE")
@@ -356,7 +355,7 @@ DAY-COUNTER defaults to the index's. Payment dates as in FIXED-LEG.
 ;;; --------------------------------------------------------------------
 
 (defun leg-currency (leg)
-  (let ((currencies (->> leg (mapcar #'cashflow-currency) remove-duplicates)))
+  (let ((currencies (remove-duplicates (mapcar #'cashflow-currency leg))))
     (when (rest currencies)
       (error 'currency-mismatch :currencies currencies :operation "valuing a leg"))
     (first currencies)))
@@ -386,7 +385,7 @@ curve the market discounts the leg's currency on.
 (defun leg-bps (leg market &key discount-curve)
   "The value of one basis point on the notional of LEG's live coupons, as
 MONEY: 1e-4 times the sum of nominal times accrual period times discount
-factor (QuantLib's CashFlows::bps)."
+factor."
   (check-input market composite-market "a composite market")
   (let ((curve (market-discount-curve market (leg-discount-curve leg market discount-curve))))
     (make-money (* 1d-4
@@ -399,7 +398,7 @@ factor (QuantLib's CashFlows::bps)."
 (declaim (ftype (function (list t &optional t) (values money &optional)) accrued-amount))
 (defun accrued-amount (leg date &optional market)
   "Interest accrued by DATE on the coupons of LEG paying on its next payment
-date after DATE, as MONEY (QuantLib's CashFlows::accruedAmount). Floating
+date after DATE, as MONEY. Floating
 coupons need MARKET for their rates.
 
   (accrued-amount leg #D\"2027-01-15\")"

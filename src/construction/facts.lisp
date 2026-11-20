@@ -24,7 +24,7 @@ thing in every language, so define a fact once and share it.
 
   (define-fact :strike double-float \"The option's strike.\"
     :coerce (lambda (x) (float x 1d0)))"
-  (check-type name keyword)
+  (check-input name keyword "a keyword naming the fact")
   `(progn
      (setf (gethash ,name *facts*)
            (make-fact-definition ,name ',type ,documentation ,coerce))
@@ -185,6 +185,21 @@ shape."))
 ~:[none~;~:*~{~S~^, ~}~]."
                      (construction-name c) (construction-language-of c)
                      (known-conventions c)))))
+
+(define-condition clause-redefined (warning)
+  ((name :initarg :name :reader construction-name)
+   (language :initarg :language :reader construction-language-of)
+   (old-package :initarg :old-package :reader clause-old-package)
+   (new-package :initarg :new-package :reader clause-new-package))
+  (:report (lambda (c s)
+             (format s "The clause ~(~A~) of the ~(~A~) language, defined in package ~A, is ~
+replaced by a definition in package ~A. Clauses are matched by symbol name, so every ~
+use of the name now means the new one. To replace it on purpose, muffle this warning ~
+with HANDLER-BIND."
+                     (construction-name c) (construction-language-of c)
+                     (clause-old-package c) (clause-new-package c))))
+  (:documentation "A clause was defined under a name another package already
+defined in the same language."))
 
 (define-condition unused-fact (style-warning)
   ((fact :initarg :fact :reader construction-fact)

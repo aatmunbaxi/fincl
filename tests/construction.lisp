@@ -237,6 +237,237 @@
                 (and warned (search "(frequency :quarterly)" (princ-to-string warned))))))
 
 ;;; --------------------------------------------------------------------
+;;; Hygiene: arity, redefinition, slot options, priorities, sharing
+;;; --------------------------------------------------------------------
+
+(define-fact :hygiene-x integer "A number.")
+(define-fact :hygiene-y integer "A number derived from :HYGIENE-X.")
+
+(defclass hygiene-object ()
+  ((x :initarg :x :reader hygiene-x)
+   (y :initarg :y :initform nil :reader hygiene-y)))
+
+(defun assemble-hygiene ()
+  (make-instance 'hygiene-object :x (require-fact :hygiene-x) :y (values (fact :hygiene-y))))
+
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun resolve-hygiene (name)
+    "The clause (resolved x), made on demand."
+    (when (string= name "RESOLVED")
+      (fincl::make-clause-definition "RESOLVED" '(x) 1 nil '(:hygiene-x) "A resolver's clause."
+                                     (lambda (x) (publish :hygiene-x x))))))
+
+(define-construction-language hygiene
+  (:documentation "A small language for the clause hygiene checks.")
+  (:macro make-hygiene)
+  (:function make-hygiene-from-clauses)
+  (:assemble assemble-hygiene)
+  (:resolver resolve-hygiene (:hygiene-x) "(resolved x)"))
+
+(define-clause hygiene value (x)
+  (:publishes :hygiene-x)
+  "The number X."
+  (publish :hygiene-x x))
+(define-clause hygiene optional-value (x &optional scale)
+  (:publishes :hygiene-x)
+  (publish :hygiene-x (* x (or scale 1))))
+(define-clause hygiene keyed-value (x &key scale)
+  (:publishes :hygiene-x)
+  (publish :hygiene-x (* x (or scale 1))))
+(define-clause hygiene nested (side &clauses clauses)
+  (:publishes)
+  (with-scope (side) (apply-clauses clauses)))
+
+;;; A language that shares VALUE from HYGIENE, and a rule defined after sharing.
+(define-construction-language hygiene-sharer
+  (:documentation "Shares a clause and a rule of the hygiene language.")
+  (:macro make-hygiene-sharer)
+  (:function make-hygiene-sharer-from-clauses)
+  (:assemble assemble-hygiene))
+(define-clause hygiene-sharer extra (x)
+  (:publishes :hygiene-x)
+  (publish :hygiene-x x))
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (fincl::share-clauses 'hygiene 'hygiene-sharer '("VALUE")))
+(fincl::share-fact-rules 'hygiene 'hygiene-sharer '(:hygiene-y))
+(define-fact-rule hygiene :hygiene-y ((x :hygiene-x)) (* 2 x))
+
+;;; A hand-written intermediate class, visible while this file compiles.
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defclass hygiene-mid (strike-payoff) ()))
+(define-payoff hygiene-sub (hygiene-mid) () (s)
+  (max 0d0 (* phi (- s strike))))
+
+(define-process hygiene-pair (stochastic-process) (:state-names (:spot :level)) ((a 1d0)))
+
+(define-slot-option :hygiene-option "A slot option registered by a test.")
+(defclass hygiene-annotated ()
+  ((s :initarg :s :reader hygiene-s :hygiene-option 3))
+  (:metaclass annotated-class))
+
+(defun hygiene-message (thunk)
+  (let ((c (condition-of thunk))) (and c (princ-to-string c))))
+
+(defun construction-arity-checks ()
+  (format t "~&Construction hygiene: arity~%")
+  (flet ((expansion (form) (hygiene-message (lambda () (macroexpand-1 form)))))
+    (let ((text (expansion '(make-hygiene (value)))))
+      (check-that "too few arguments at expansion name the form, the clause and the count"
+                  (and text (search "(value)" text) (search "(value x)" text)
+                       (search "exactly 1" text))))
+    (check-error "too many arguments at expansion" (macroexpand-1 '(make-hygiene (value 1 2)))
+                 clause-argument-error)
+    (check-error "too few for a clause with an optional"
+                 (macroexpand-1 '(make-hygiene (optional-value))) clause-argument-error)
+    (check-error "too many for a clause with an optional"
+                 (macroexpand-1 '(make-hygiene (optional-value 1 2 3))) clause-argument-error)
+    (check-that "an optional argument may be given or left out"
+                (and (null (expansion '(make-hygiene (optional-value 1))))
+                     (null (expansion '(make-hygiene (optional-value 1 2))))))
+    (check-that "a clause with &key is checked for its required part only"
+                (and (null (expansion '(make-hygiene (keyed-value 1 :scale 2))))
+                     (expansion '(make-hygiene (keyed-value)))))
+    (check-that "a clause with &clauses needs its required part only, and nested forms are checked"
+                (and (null (expansion '(make-hygiene (nested :a (value 1)))))
+                     (expansion '(make-hygiene (nested)))
+                     (expansion '(make-hygiene (nested :a (value)))))))
+  (check-error "the data function checks too, at run time"
+               (make-hygiene-from-clauses '((:value))) clause-argument-error)
+  (check-that "a valid call still builds"
+              (= 3 (hygiene-x (make-hygiene (value 3)))))
+  (check-that "a clause the resolver makes is skipped at expansion and checked when it runs"
+              (and (null (hygiene-message (lambda () (macroexpand-1 '(make-hygiene (resolved))))))
+                   (typep (condition-of (lambda () (make-hygiene (resolved)))) 'clause-argument-error)
+                   (= 4 (hygiene-x (make-hygiene (resolved 4)))))))
+
+(defun construction-redefinition-checks ()
+  (format t "~&Construction hygiene: redefinition~%")
+  (let ((other (or (find-package '#:fincl-tests-other) (make-package '#:fincl-tests-other :use '())))
+        (warnings '()))
+    (flet ((redefine (symbol factor)
+             (handler-bind ((clause-redefined (lambda (w) (push w warnings) (muffle-warning w))))
+               (eval `(define-clause hygiene ,symbol (x)
+                        (:publishes :hygiene-x)
+                        (publish :hygiene-x (* ,factor x)))))))
+      (redefine 'value 1)
+      (check-that "redefining a clause from its own package is silent" (null warnings))
+      (redefine (intern "VALUE" other) 10)
+      (check-that "redefining it from another package warns, naming both packages"
+                  (and (= 1 (length warnings))
+                       (let ((text (princ-to-string (first warnings))))
+                         (and (search "FINCL/TESTS" text) (search "FINCL-TESTS-OTHER" text)
+                              (search "value" text) (search "hygiene" text)))))
+      (check-that "the new definition replaces the old" (= 30 (hygiene-x (make-hygiene (value 3)))))
+      (setf warnings '())
+      (redefine 'value 1)
+      (check-that "restoring it from the first package warns once more, and works"
+                  (and (= 1 (length warnings)) (= 3 (hygiene-x (make-hygiene (value 3)))))))))
+
+(defun construction-slot-option-checks ()
+  (format t "~&Construction hygiene: slot options~%")
+  (let ((text (hygiene-message
+               (lambda ()
+                 (eval '(defclass hygiene-misspelled ()
+                         ((x :initarg :x :fakt :strike))
+                         (:metaclass component-class)))))))
+    (check-that "a misspelled slot option signals invalid-argument listing the recognised ones"
+                (and text (search ":FAKT" text) (search ":FACT" text) (search ":INITARGS" text)
+                     (search ":TYPE" text))))
+  (check-error "an unknown option on an annotated class"
+               (eval '(defclass hygiene-misspelled-2 () ((x :nonsense 1)) (:metaclass annotated-class)))
+               invalid-argument)
+  (check-that "standard options and registered ones are accepted"
+              (let ((slot (first (c2mop:class-direct-slots (find-class 'hygiene-annotated)))))
+                (and (eql 3 (fincl::slot-annotation slot :hygiene-option))
+                     (equal '(:s) (c2mop:slot-definition-initargs slot)))))
+  (check-that "the documentation of a slot option is stored and shown by describe"
+              (and (equal "The construction fact that fills the slot."
+                          (fincl::slot-option-documentation :fact))
+                   (let* ((class (find-class 'toy-leg))
+                          (slot (find 'rate (c2mop:class-slots (progn (c2mop:ensure-finalized class) class))
+                                      :key #'c2mop:slot-definition-name)))
+                     (search "The construction fact that fills the slot."
+                             (with-output-to-string (out) (describe slot out))))))
+  (check-error "define-fact takes a keyword" (macroexpand-1 '(define-fact "x" integer "A fact."))
+               invalid-argument)
+  (check-error "define-currency takes a keyword" (macroexpand-1 '(define-currency "usd"))
+               invalid-argument))
+
+(defun construction-priority-checks ()
+  (format t "~&Construction hygiene: priorities and sharing~%")
+  (with-toy-table
+    (as-clause ((label "mine")) (publish :toy-label "mine"))
+    (as-clause ((default) :default) (publish :toy-label "default"))
+    (check-equal "a default never replaces an explicit setting" "mine" (fact :toy-label)))
+  (with-toy-table
+    (as-clause ((default) :default)
+      (publish :toy-label "first")
+      (publish :toy-label "second"))
+    (check-equal "the last of two defaults wins, silently" "second" (fact :toy-label)))
+  (with-toy-table
+    (as-clause ((convention) :convention)
+      (publish :toy-label "first")
+      (check-error "two conventions still conflict" (publish :toy-label "second")
+                   conflicting-clauses)))
+  (check-that "a shared clause works in the sharing language, and the listing has it after the language's own"
+              (and (= 5 (hygiene-x (make-hygiene-sharer (value 5))))
+                   (equal '("CONVENTION" "EXTRA" "VALUE") (mapcar (lambda (c) (getf c :name))
+                                                    (language-clauses 'hygiene-sharer)))))
+  (check-that "a clause redefined in the source reaches the sharing language"
+              (unwind-protect
+                   (progn
+                     (eval '(define-clause hygiene value (x) (:publishes :hygiene-x)
+                             (publish :hygiene-x (+ 100 x))))
+                     (= 105 (hygiene-x (make-hygiene-sharer (value 5)))))
+                (eval '(define-clause hygiene value (x) (:publishes :hygiene-x)
+                        "The number X."
+                        (publish :hygiene-x x)))))
+  (check-that "a clause the sharing language defines itself wins over a shared one"
+              (unwind-protect
+                   (progn
+                     (eval '(define-clause hygiene-sharer value (x) (:publishes :hygiene-x)
+                             (publish :hygiene-x (- x))))
+                     (and (= -5 (hygiene-x (make-hygiene-sharer (value 5))))
+                          (equal '("CONVENTION" "EXTRA" "VALUE")
+                                 (mapcar (lambda (c) (getf c :name))
+                                         (language-clauses 'hygiene-sharer)))))
+                (remhash "VALUE" (fincl::construction-language-clauses
+                                  (fincl::find-language 'hygiene-sharer)))))
+  (check-that "a rule defined in the source after sharing is used by the sharing language"
+              (= 10 (hygiene-y (make-hygiene-sharer (value 5)))))
+  (check-that "sharing a clause the source does not have signals unknown-clause"
+              (typep (condition-of (lambda () (fincl::share-clauses 'hygiene 'hygiene-sharer '("NO-SUCH"))))
+                     'unknown-clause)))
+
+(defun construction-component-checks ()
+  (format t "~&Construction hygiene: processes and payoffs~%")
+  (check-that "define-process :state-names gives the names and the size"
+              (and (equal '(:spot :level) (process-state-names (make-hygiene-pair)))
+                   (= 2 (process-state-size (make-hygiene-pair)))))
+  (check-that "heston, garch and hull-white keep their state names"
+              (and (equal '(:spot :variance) (process-state-names (make-heston)))
+                   (equal '(:spot :conditional-variance) (process-state-names (make-garch)))
+                   (equal '(:short-rate :integral) (process-state-names (make-hull-white)))
+                   (= 2 (process-state-size (make-heston)) (process-state-size (make-garch))
+                      (process-state-size (make-hull-white)))))
+  (check-error "a state size that disagrees with the names"
+               (macroexpand-1 '(define-process hygiene-bad (stochastic-process)
+                                (:state-size 3 :state-names (:spot :level)) ((a 1d0))))
+               invalid-argument)
+  (check-error "state names that are not distinct keywords"
+               (macroexpand-1 '(define-process hygiene-bad (stochastic-process)
+                                (:state-names (:spot :spot)) ((a 1d0))))
+               invalid-argument)
+  (check-that "a payoff built on a hand-written intermediate class sees phi and strike"
+              (and (= 20d0 (payoff-value (make-instance 'hygiene-sub :kind :call :strike 100) 120d0))
+                   (= 0d0 (payoff-value (make-instance 'hygiene-sub :kind :put :strike 100) 120d0))))
+  (let ((text (hygiene-message
+               (lambda () (macroexpand-1 '(define-payoff hygiene-orphan (hygiene-no-such-class)
+                                           () (s) s))))))
+    (check-that "an undefined superclass is named, with the fix"
+                (and text (search "HYGIENE-NO-SUCH-CLASS" text) (search "EVAL-WHEN" text)))))
+
+;;; --------------------------------------------------------------------
 ;;; Phase 3: printing and round trip
 ;;; --------------------------------------------------------------------
 
@@ -258,4 +489,9 @@
 (define-checks construction-checks
   (construction-table-checks)
   (construction-language-checks)
+  (construction-arity-checks)
+  (construction-redefinition-checks)
+  (construction-slot-option-checks)
+  (construction-priority-checks)
+  (construction-component-checks)
   (construction-printing-checks))

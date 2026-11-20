@@ -119,11 +119,14 @@ DEFINE-PROCESS superclasses, for constructor lambda lists.")
   (defun constructor-name (class)
     (intern (format nil "MAKE-~A" (symbol-name class)) (symbol-package class))))
 
-(defmacro define-process (name superclasses (&key state-size factors) slots
+(defmacro define-process (name superclasses (&key state-size factors state-names) slots
                           &rest class-options)
   "Define the process class NAME and its constructor MAKE-NAME. SUPERCLASSES
 defaults to (STOCHASTIC-PROCESS). STATE-SIZE and FACTORS, when given, define
-PROCESS-STATE-SIZE and PROCESS-FACTORS (both default to 1). Each of SLOTS is
+PROCESS-STATE-SIZE and PROCESS-FACTORS (both default to 1). STATE-NAMES, a list
+of distinct keywords, one per state component, defines PROCESS-STATE-NAMES and
+gives the state size by its length; with STATE-SIZE too, the two must agree.
+Each of SLOTS is
 
   (slot-name default &key bounds market-default (parameter t) measure-dependent
                           doc reader type)
@@ -150,12 +153,20 @@ CONSTRUCTOR-COLLISION at load time if MAKE-NAME is already a function it
 did not define for NAME. Steppers, characteristic functions and samplers
 stay ordinary DEFMETHODs.
 
-  (define-process heston (stochastic-process) (:state-size 2 :factors 2)
+  (define-process heston (stochastic-process) (:state-names (:spot :variance) :factors 2)
     ((v0 nil :market-default heston-default-v0 :bounds (0 nil) :doc \"Initial variance.\")
      (kappa 2d0 :bounds ((0) nil) :doc \"Mean-reversion speed.\"))
     (:documentation \"Heston stochastic volatility.\"))
 
   (make-heston :kappa 1.5d0)"
+  (when state-names
+    (unless (and (listp state-names) (every #'keywordp state-names)
+                 (= (length state-names) (length (remove-duplicates state-names))))
+      (signal-invalid-argument 'state-names state-names 'list "a list of distinct keywords"))
+    (when (and state-size (/= state-size (length state-names)))
+      (signal-invalid-argument 'state-size state-size `(eql ,(length state-names))
+                               (format nil "~D, the number of :STATE-NAMES ~S"
+                                       (length state-names) state-names))))
   (flet ((slot-form (spec)
            (destructuring-bind (slot default &key (bounds nil bounds-p)
                                                (market-default nil market-default-p)
@@ -189,8 +200,11 @@ stay ordinary DEFMETHODs.
            ,(mapcar #'slot-form slots)
            (:metaclass parameterized-class)
            ,@class-options)
-         ,@(when state-size
-             `((defmethod process-state-size ((p ,name)) ,state-size)))
+         ,@(when (or state-size state-names)
+             `((defmethod process-state-size ((p ,name))
+                 ,(or state-size (length state-names)))))
+         ,@(when state-names
+             `((defmethod process-state-names ((p ,name)) ',state-names)))
          ,@(when factors
              `((defmethod process-factors ((p ,name)) ,factors)))
          ,@(when constructor
@@ -265,7 +279,7 @@ method's concern: an :AROUND method applies them to the closure it returns
 resolved at the last grid time."))
 
 ;;; --------------------------------------------------------------------
-;;; Discrete dividends (task 21)
+;;; Discrete dividends
 ;;; --------------------------------------------------------------------
 
 (defgeneric dividend-model (process)
@@ -414,7 +428,7 @@ then steps the full path.")
     (call-next-method)))
 
 ;;; --------------------------------------------------------------------
-;;; Named state components and pathwise discounting (task 19)
+;;; Named state components and pathwise discounting
 ;;; --------------------------------------------------------------------
 
 (defgeneric process-state-names (process)
@@ -442,7 +456,7 @@ b_j (SIMULATE's :CORRELATION). The default puts it all on factor 0.
       v)))
 
 ;;; --------------------------------------------------------------------
-;;; Market components driven by a process (task 32)
+;;; Market components driven by a process
 ;;; --------------------------------------------------------------------
 
 (defgeneric process-targets (process)
@@ -493,8 +507,7 @@ options under but that can be stepped (a short-rate model) returns T.")
 (declaim (ftype (function (t t) (values (or index null) &optional)) state-index))
 (defun state-index (process designator)
   "The state-vector index of the component DESIGNATOR names: a keyword from
-PROCESS-STATE-NAMES, or a list whose first element is one (task 23 adds the
-underlying after it). Resolve names once, outside inner loops.
+PROCESS-STATE-NAMES, or a list of just that keyword. Resolve names once, outside inner loops.
 
   (state-index (make-heston) :variance) => 1"
   (let* ((names (process-state-names process))

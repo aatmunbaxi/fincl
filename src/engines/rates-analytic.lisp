@@ -4,16 +4,21 @@
 ;;;; paid on the discounted accrual; a European swaption is an option on the
 ;;;; forward swap rate, paid on the annuity. Both engines read a rates vol
 ;;;; structure at the option's expiry: BLACK-RATES-ENGINE as a (shifted)
-;;;; lognormal vol, BACHELIER-RATES-ENGINE as a normal vol. They follow
-;;;; QuantLib's BlackCapFloorEngine, BachelierCapFloorEngine and
-;;;; BlackStyleSwaptionEngine (tests/fixtures/caps-swaptions.sexp).
+;;;; lognormal vol, BACHELIER-RATES-ENGINE as a normal vol.
+;;;;
+;;;; Provenance: they follow QuantLib's BlackCapFloorEngine,
+;;;; BachelierCapFloorEngine and BlackStyleSwaptionEngine
+;;;; (tests/fixtures/caps-swaptions.sexp).
 
 (in-package #:fincl)
 
 (defclass volatility-rates-engine (rates-engine)
   ((volatility :initarg :volatility :reader engine-volatility
                :initform (a:required-argument :volatility)
-               :documentation "A rates vol structure, or a real for a flat vol.")
+               :documentation "The vol: a keyword, the id of a rates vol in the
+market, read when pricing, so bumps and scenarios move it; or a rates vol
+structure or a real for a flat vol, held by the engine, which no market
+bump reaches.")
    (discount-curve :initarg :discount-curve :initform nil :reader engine-discount-curve
                    :type (or null keyword)
                    :documentation "The id of the curve to discount on; NIL: the
@@ -23,7 +28,19 @@ curve of the instrument's currency."))
 option's expiry."))
 
 (defmethod initialize-instance :after ((e volatility-rates-engine) &key)
-  (setf (slot-value e 'volatility) (ensure-rates-vol (slot-value e 'volatility))))
+  (let ((volatility (slot-value e 'volatility)))
+    (check-input volatility (or keyword real rates-vol-structure)
+                 "a rates vol id (a keyword), a rates vol structure or a real")
+    (unless (keywordp volatility)
+      (setf (slot-value e 'volatility) (ensure-rates-vol volatility)))))
+
+(defun engine-rates-vol (engine market)
+  "The rates vol structure ENGINE reads on MARKET: the market's entry for an
+id, else the engine's own."
+  (let ((volatility (engine-volatility engine)))
+    (if (keywordp volatility)
+        (market-component market `(:rates-vol ,volatility))
+        volatility)))
 
 (defclass black-rates-engine (volatility-rates-engine)
   ((displacement :initarg :displacement :initform 0d0 :reader engine-displacement
@@ -36,6 +53,7 @@ rate + displacement."))
 collars and European swaptions.
 
   (price cap (make-engine :black-rates :volatility 0.25d0) market)
+  (price cap (make-engine :black-rates :volatility :usd-cap) market) ; the market's (rates-vol :usd-cap ...)
   (price swaption (make-engine :black-rates :volatility 0.12d0 :displacement 0.02d0) market)"))
 
 (defmethod initialize-instance :after ((e black-rates-engine) &key)
@@ -54,7 +72,7 @@ collars and European swaptions.
   (:documentation "The value of a call (PHI 1) or put (PHI -1) on a rate with
 FORWARD at STRIKE, total standard deviation STD-DEV, paid on ANNUITY.")
   (:method ((e black-rates-engine) phi strike forward std-dev annuity)
-    ;; QuantLib's blackFormula, operation for operation.
+    ;; Black's formula, with the operations in the reference order.
     (if (zerop std-dev)
         (* (max (* (- forward strike) phi) 0d0) annuity)
         (let ((f (+ forward (engine-displacement e)))
@@ -74,7 +92,7 @@ FORWARD at STRIKE, total standard deviation STD-DEV, paid on ANNUITY.")
 valuation date."
   (let ((today (valuation-date market)))
     (if (date< today date)
-        (sqrt (rates-vol-variance (engine-volatility engine) today date))
+        (sqrt (rates-vol-variance (engine-rates-vol engine market) today date))
         0d0)))
 
 ;;; --------------------------------------------------------------------

@@ -57,7 +57,7 @@ relative precision far out of the money.
   (values (black-scholes (phi p) m (strike p) (expiry x)) nil))
 
 ;;; --------------------------------------------------------------------
-;;; Discrete dividends (task 21)
+;;; Discrete dividends
 ;;; --------------------------------------------------------------------
 
 ;;; Under the escrowed model S minus the dividends to come is lognormal, so
@@ -112,7 +112,7 @@ M. Bos and S. Vandermark, \"Finessing fixed dividends\", Risk (January 2002)."
 
 (defun reiner-rubinstein (phi barrier-type s k h rebate tau df dividend-df variance)
   "Price of a continuously monitored single barrier option, (Haug's A-F
-terms, as QuantLib's AnalyticBarrierEngine): PHI 1 or -1, BARRIER-TYPE
+terms): PHI 1 or -1, BARRIER-TYPE
 :DOWN-AND-OUT etc., spot S, strike K, barrier H, REBATE (paid at the hit for
 knock-outs, at expiry for knock-ins), TAU in years, the discount factors to
 expiry and the total variance. The spot must not be past the barrier."
@@ -174,7 +174,7 @@ expiry and the total variance. The spot must not be past the barrier."
               (:up-and-out (if above (+ (- (b -1) (d -1 -1)) (f -1)) (+ (- (a -1) (c -1 -1)) (f -1))))))))))
 
 ;;; Rates, dividends and vol enter as their averages to expiry (zero rates
-;;; and the Black vol at the strike), as in QuantLib: exact on flat markets.
+;;; and the Black vol at the strike): exact on flat markets.
 ;;; Discrete monitoring shifts the barrier away from the spot by
 ;;; exp(0.5826 sigma sqrt(dt)), dt the mean spacing of the monitoring dates
 ;;; (Broadie, Glasserman and Kou 1997; accurate for evenly spaced dates).
@@ -321,7 +321,7 @@ monitoring; price with Monte Carlo." s h)))
                     nil)))))))
 
 ;;; --------------------------------------------------------------------
-;;; Roll-Geske-Whaley: an American call with one cash dividend (task 21)
+;;; Roll-Geske-Whaley: an American call with one cash dividend
 ;;; --------------------------------------------------------------------
 
 ;;; Under the escrowed model with no continuous yield and rates >= 0, an
@@ -430,7 +430,7 @@ with known dividends\", J. Financial Economics 9 (1981)."
                            (m market))
   (let* ((date (expiry x))
          (tau (time-to-expiry x m))
-         (process (-> e process (resolve-process m tau)))
+         (process (resolve-process (process e) m tau))
          (lambda-t (* (intensity process) tau))
          (s2 (expt (jump-vol process) 2))
          (k (- (exp (+ (jump-mean process) (* 0.5d0 s2))) 1d0))
@@ -502,7 +502,7 @@ by Monte Carlo." beta (* 2d0 (max x y)))))
                            (m market))
   (let* ((date (expiry x))
          (tau (time-to-expiry x m))
-         (process (-> e process (resolve-process m tau)))
+         (process (resolve-process (process e) m tau))
          (beta (beta process))
          (sigma (sigma process))
          (growth (forward-factor m date))

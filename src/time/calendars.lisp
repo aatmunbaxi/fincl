@@ -1,10 +1,10 @@
 ;;;; time/calendars.lisp --- country and exchange calendars
 ;;;;
-;;;; Ported from QuantLib 1.43 (ql/time/calendars/target.cpp, unitedstates.cpp,
-;;;; unitedkingdom.cpp). tests/fixtures/calendars.sexp, generated from
-;;;; QuantLib, lists every holiday of each calendar from 1990 to 2060 and is
-;;;; the reference; rules before 1990 follow QuantLib's code but are not
-;;;; checked against it.
+;;;; Provenance: ported from QuantLib 1.43 (ql/time/calendars/target.cpp,
+;;;; unitedstates.cpp, unitedkingdom.cpp). tests/fixtures/calendars.sexp,
+;;;; generated from QuantLib, lists every holiday of each calendar from 1990 to
+;;;; 2060 and is the reference; rules before 1990 follow the ported code but are
+;;;; not checked against it.
 
 (in-package #:fincl)
 

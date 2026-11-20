@@ -17,7 +17,7 @@
 ;;;; come from EXERCISE-MASK: Ikonen-Toivanen splitting over consecutive
 ;;;; exercise times (American), a projection at isolated ones (Bermudan).
 ;;;;
-;;;; Discrete dividends (task 21): ex-dates are grid times. Under the spot
+;;;; Discrete dividends: ex-dates are grid times. Under the spot
 ;;;; model the value just before an ex-date is the value after it at the
 ;;;; price the dividend leaves, V(x, t-) = V(ln(e^x - D), t+), by a natural
 ;;;; cubic spline in x on the grid; exercise is then checked on the price
@@ -548,7 +548,7 @@ PROCESS.")
                                                    (f ,path) (process ,process))
                 '((,priority :fd)))))
   ;; Europeans under GBM, after Black-Scholes and COS: both decline
-  ;; spot-model cash dividends under automatic selection (task 21).
+  ;; spot-model cash dividends under automatic selection.
   (candidate european-exercise path-independent gbm 25)
   (candidate american-exercise path-independent gbm)
   (candidate bermudan-exercise path-independent gbm)

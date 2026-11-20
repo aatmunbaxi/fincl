@@ -51,7 +51,7 @@ engine E (GBM): a plist over WHICH with :STANDARD-ERRORS."
   (let* ((view (if (typep market 'composite-market) (instrument-view market o) market))
          (x (option-exercise o)) (p (option-payoff o)) (f (option-path o))
          (tau (time-to-expiry x view))
-         (process (-> e process (resolve-process view tau))))
+         (process (resolve-process (process e) view tau)))
     (unless (and (typep x 'european-exercise) (typep process 'gbm))
       (error 'unsupported-combination :exercise x :payoff p :path f :process process
                                       :engine e :market view))

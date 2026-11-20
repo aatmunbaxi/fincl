@@ -2,9 +2,8 @@
 ;;;;
 ;;;; A DATED-CURVE has a reference date and a day counter of its own, which
 ;;;; may differ from a market's. It answers dates, or reals in its own time
-;;;; (the year fraction from its reference date). The interpolated curves
-;;;; follow QuantLib's InterpolatedDiscountCurve, InterpolatedZeroCurve and
-;;;; InterpolatedForwardCurve: times are the day counter's fractions from the
+;;;; (the year fraction from its reference date). In the interpolated curves
+;;;; times are the day counter's fractions from the
 ;;;; first date, which is the reference date, and beyond the last date each
 ;;;; extrapolates with a flat instantaneous forward.
 ;;;;
@@ -13,6 +12,10 @@
 ;;;; market horizon to the curve's time and divides by the discount factor at
 ;;;; the valuation date, unless the curve already shares the market's
 ;;;; reference date and day counter.
+;;;;
+;;;; Provenance: the interpolated curves follow QuantLib's
+;;;; InterpolatedDiscountCurve, InterpolatedZeroCurve and
+;;;; InterpolatedForwardCurve.
 
 (in-package #:fincl)
 
@@ -150,7 +153,7 @@ piecewise-flat forwards).
   (:documentation "Zero rates at dates, interpolated by INTERPOLATION
 (default :LINEAR). Rates quoted with another COMPOUNDING and FREQUENCY are
 converted to continuous compounding at construction, the first over one
-day, as QuantLib does.
+day.
 
   (make-instance 'interpolated-zero-curve :dates dates :zero-rates zs
                                           :compounding :compounded :frequency :annual)"))
@@ -203,8 +206,8 @@ day, as QuantLib does.
   (:default-initargs :interpolation :backward-flat)
   (:documentation "Instantaneous forward rates at dates. INTERPOLATION is
 :BACKWARD-FLAT (default: the rate at a date holds over the period ending
-there), :LINEAR, or :MONOTONE-CONVEX (Hagan-West, as QuantLib's
-ConvexMonotone: the value at a date is the average forward over the period
+there), :LINEAR, or :MONOTONE-CONVEX (Hagan-West:
+the value at a date is the average forward over the period
 ending there, the first is ignored). The discount factor is exp(-integral
 of the forward); beyond the last date the forward is the last value.
 
@@ -263,7 +266,7 @@ of the forward); beyond the last date the forward is the last value.
 (defmethod curve-discount ((c interpolated-forward-curve) (x real))
   (let ((time (float x 1d0)))
     (check-curve-time c time)
-    ;; Through the zero rate, integral / t, as QuantLib does: the same bits.
+    ;; Through the zero rate, integral / t: the same bits as the reference.
     (if (zerop time) 1d0 (exp (- (* (/ (forward-integral c time) time) time))))))
 
 (defmethod bump-structure ((c interpolated-forward-curve) shift)

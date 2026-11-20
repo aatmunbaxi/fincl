@@ -5,7 +5,7 @@
 ;;;; forecasts it. Historical fixings are market data and live in the
 ;;;; composite market (MAKE-MARKET's :fixings); a fixing before the valuation
 ;;;; date that the market lacks signals MISSING-FIXING, with a USE-VALUE
-;;;; restart. The logic follows QuantLib's IborIndex and OvernightIndex.
+;;;; restart.
 
 (in-package #:fincl)
 

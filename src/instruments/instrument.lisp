@@ -101,7 +101,7 @@ moved onto a business day with CONVENTION (see ADJUST).
   (unless (and dates (listp dates))
     (error 'invalid-exercise :datum dates :reason :no-dates))
   (mapc #'check-expiry dates)
-  (let ((sorted (-> dates copy-list (sort #'date<))))
+  (let ((sorted (sort (copy-list dates) #'date<)))
     (apply #'call-next-method x :dates sorted :expiry (a:lastcar sorted) initargs)))
 
 (defgeneric exercise-allowed-p (exercise date)
@@ -238,12 +238,30 @@ CALL-PUT-PAYOFF or STRIKE-PAYOFF instead."
 a superclass. Engines with closed forms for that superclass would apply them
 to the subclass and return the superclass's price."))
 
+  (defun class-payoff-variables (name)
+    "The variables the class NAME makes available to a DEFINE-PAYOFF formula:
+those recorded for it, else those of its direct superclasses, found through
+FIND-CLASS (a class without a record, such as a hand-written intermediate
+class, is walked through). Signals INVALID-ARGUMENT for a class that is not
+defined."
+    (multiple-value-bind (recorded found) (gethash name *payoff-variables*)
+      (cond (found recorded)
+            (t (let ((class (find-class name nil)))
+                 (unless class
+                   (signal-invalid-argument
+                    'superclass name 'class
+                    (format nil "a defined class: ~S is not, so its payoff variables cannot be ~
+read. Define it before this payoff, or wrap its DEFCLASS in (EVAL-WHEN (:COMPILE-TOPLEVEL ~
+:LOAD-TOPLEVEL :EXECUTE) ...) when the file is compiled" name)))
+                 (iter (for super in (c2mop:class-direct-superclasses class))
+                       (appending (class-payoff-variables (class-name super)))))))))
+
   (defun inherited-payoff-variables (superclasses)
-    "The variables SUPERCLASSES declare, renamed into *PACKAGE*. Variables
-are matched by name, as LOOP keywords are, so a formula written in any
-package can say PHI without FINCL exporting it."
+    "The variables SUPERCLASSES and their ancestors declare, renamed into
+*PACKAGE*. Variables are matched by name, as LOOP keywords are, so a formula
+written in any package can say PHI without FINCL exporting it."
     (remove-duplicates (iter (for class in superclasses)
-                             (appending (iter (for (variable . rest) in (gethash class *payoff-variables*))
+                             (appending (iter (for (variable . rest) in (class-payoff-variables class))
                                               (collect (cons (intern (symbol-name variable))
                                                              rest)))))
                        :key #'first :from-end t))

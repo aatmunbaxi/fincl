@@ -24,19 +24,38 @@
   (resolver-description nil)
   (clauses (make-hash-table :test 'equal) :read-only t)
   (conventions (make-hash-table :test 'equal) :read-only t)
-  (rules (make-hash-table :test 'eq) :read-only t))
+  (rules (make-hash-table :test 'eq) :read-only t)
+  (shared-clauses '())                  ; ((source-language name...) ...), see SHARE-CLAUSES
+  (shared-rules '()))                   ; ((source-language fact...) ...), see SHARE-FACT-RULES
+
+(defun clause-maximum-arguments (lambda-list)
+  "The most arguments a clause with LAMBDA-LIST takes, or NIL where there is
+no limit (&REST, &KEY, &BODY or &CLAUSES). Markers are matched by name, as
+&CLAUSES is a symbol of any package."
+  (let ((count 0))
+    (dolist (parameter lambda-list count)
+      (let ((marker (and (symbolp parameter) (symbol-name parameter))))
+        (cond ((member marker '("&REST" "&KEY" "&BODY" "&CLAUSES") :test #'equal) (return nil))
+              ((equal marker "&AUX") (return count))
+              ((equal marker "&OPTIONAL"))
+              (t (incf count)))))))
 
 (defstruct (clause-definition (:constructor make-clause-definition
                                   (name lambda-list required subclauses publishes
-                                   documentation function &optional subclause-language)))
+                                   documentation function &optional subclause-language symbol
+                                   subclause-names
+                                   &aux (maximum (clause-maximum-arguments lambda-list)))))
   (name "" :type string :read-only t)
   (lambda-list nil :read-only t)
   (required 0 :type fixnum :read-only t)
+  (maximum nil :type (or null fixnum) :read-only t)
+  (symbol nil :type symbol :read-only t)
   (subclauses nil :read-only t)
   (publishes '() :read-only t)
   (documentation nil :read-only t)
   (function nil :read-only t)
   (subclause-language nil :read-only t)
+  (subclause-names nil :read-only t)    ; NIL, or a function of no arguments -> names allowed
   (serial 0 :type fixnum))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
@@ -101,10 +120,27 @@ full stop followed by a space or the end), or NIL for no string."
                              (finally (return taken)))))
         (format nil "~{~A~^ ~}" sentence))))
 
+  (defun registered-clause (language key)
+    "The definition of the clause with name KEY in LANGUAGE: its own, else
+one it shares, looked up now in the language it shares it from. NIL if there
+is none; the resolver is not asked."
+    (or (gethash key (construction-language-clauses language))
+        (iter (for (source names) in (construction-language-shared-clauses language))
+              (when (member key names :test #'string=)
+                (return (a:when-let ((source-language (gethash source *construction-languages*)))
+                          (registered-clause source-language key)))))))
+
   (defun clauses-in-definition-order (language)
-    (sort (iter (for (nil definition) in-hashtable (construction-language-clauses language))
-                (collect definition))
-          #'< :key #'clause-definition-serial))
+    "The definitions of LANGUAGE's clauses: its own in definition order, then
+those it shares, in the order they were shared."
+    (let* ((own (sort (iter (for (nil definition) in-hashtable (construction-language-clauses language))
+                            (collect definition))
+                      #'< :key #'clause-definition-serial))
+           (shared (iter (for (nil names) in (construction-language-shared-clauses language))
+                         (appending (iter (for name in names)
+                                          (for definition = (registered-clause language name))
+                                          (when definition (collect definition)))))))
+      (remove-duplicates `(,@own ,@shared) :from-end t)))
 
   (defun language-documentation-text (language)
     "The documentation of the language's macro and data function: its
@@ -139,13 +175,34 @@ its clauses and conventions; does nothing for a name not defined yet."
             (setf (documentation macro 'function)
                   (format nil "~A~%~%Clause arguments are evaluated." text)))))))
 
+  (defun package-name-of (symbol)
+    (a:when-let ((package (and symbol (symbol-package symbol))))
+      (package-name package)))
+
+  (defun check-clause-redefinition (language old new)
+    "Warn with CLAUSE-REDEFINED when NEW, a clause of LANGUAGE, replaces OLD
+and the two names are symbols of different packages."
+    (let ((old-symbol (clause-definition-symbol old))
+          (new-symbol (clause-definition-symbol new)))
+      (when (and old-symbol new-symbol
+                 (not (eq (symbol-package old-symbol) (symbol-package new-symbol))))
+        (warn 'clause-redefined :name (clause-definition-name new) :language language
+                                :old-package (package-name-of old-symbol)
+                                :new-package (package-name-of new-symbol)))))
+
   (defun register-clause (language definition)
     (let* ((table (construction-language-clauses (ensure-language language)))
            (old (gethash (clause-definition-name definition) table)))
+      (when old
+        (check-clause-redefinition language old definition))
       (setf (clause-definition-serial definition)
             (if old (clause-definition-serial old) (incf *clause-serial*))
             (gethash (clause-definition-name definition) table) definition))
-    (refresh-language-documentation language))
+    (refresh-language-documentation language)
+    ;; A language that shares clauses of this one lists the new definition.
+    (iter (for (other-name other) in-hashtable *construction-languages*)
+          (when (assoc language (construction-language-shared-clauses other))
+            (refresh-language-documentation other-name))))
 
   (defun find-language-by-name (name)
     "The language whose name has the symbol name of NAME (a symbol or string),
@@ -177,24 +234,59 @@ whatever package NAME is in; signals UNKNOWN-LANGUAGE."
                   nil))))
 
   (defun clause-names (language)
-    (sorted-keys (construction-language-clauses language)))
+    "The names (strings) of LANGUAGE's clauses, its own and shared, sorted."
+    (sort (mapcar #'clause-definition-name (clauses-in-definition-order language))
+          #'string<))
 
   (defun find-clause (language-name head)
     "The clause definition for HEAD in the language, trying the language's
 resolver for clauses it creates on demand; signals UNKNOWN-CLAUSE."
     (let* ((language (find-language language-name))
            (key (clause-key head)))
-      (or (gethash key (construction-language-clauses language))
+      (or (registered-clause language key)
           (let ((resolver (construction-language-resolver language)))
             (and resolver (fboundp resolver) (funcall resolver key)))
           (error 'unknown-clause
                  :name key :language language-name :known (clause-names language)
                  :also (construction-language-resolver-description language)))))
 
+  (defun arity-text (minimum maximum)
+    (cond ((eql minimum maximum) (format nil "exactly ~D" minimum))
+          ((null maximum) (format nil "at least ~D" minimum))
+          (t (format nil "~D to ~D" minimum maximum))))
+
+  (defun check-clause-arity (definition form)
+    "Signal CLAUSE-ARGUMENT-ERROR unless the number of arguments of the clause
+FORM, (head . arguments), is one DEFINITION's lambda list takes. For a clause
+with &REST, &KEY or &CLAUSES only the required arguments are counted."
+    (let ((given (length (rest form)))
+          (minimum (clause-definition-required definition))
+          (maximum (clause-definition-maximum definition)))
+      (unless (and (>= given minimum) (or (null maximum) (<= given maximum)))
+        (error 'clause-argument-error
+               :format-control "~A gives ~D argument~:P, but the clause is ~A, which takes ~A."
+               :format-arguments `(,(describe-clause form) ,given ,(clause-signature definition)
+                                   ,(arity-text minimum maximum))))))
+
+  (defun check-subclause-names (definition form subclauses)
+    "Signal CLAUSE-ARGUMENT-ERROR if a form in SUBCLAUSES, the sub-clauses of
+the clause FORM, is not one DEFINITION allows (when it limits them)."
+    (a:when-let ((names (clause-definition-subclause-names definition)))
+      (let ((allowed (funcall names)))
+        (dolist (sub subclauses)
+          (unless (and (consp sub) (symbolp (first sub))
+                       (member (clause-key (first sub)) allowed :test #'string=))
+            (error 'clause-argument-error
+                   :format-control "~A in ~A is not a sub-clause of ~A, which takes ~{(~(~A~))~^, ~}."
+                   :format-arguments `(,(if (consp sub) (describe-clause sub) sub)
+                                       ,(describe-clause form) ,(clause-signature definition)
+                                       ,allowed)))))))
+
   (defun expand-clause-form (language-name form)
     "The form that evaluates to clause FORM as data: its head checked now (at
-macroexpansion), its arguments evaluated at run time, its sub-clauses
-expanded in turn."
+macroexpansion), and its argument count too when the clause is registered
+(a clause made by the language's resolver is checked when it runs), its
+arguments evaluated at run time, its sub-clauses expanded in turn."
     (unless (and (consp form) (symbolp (first form)))
       (error 'malformed-clause :form form :expected "a list starting with the clause name"))
     ;; (m '((head ...) ...)): clauses passed as data to the macro.
@@ -208,8 +300,11 @@ for clauses as data use ~(~A~)"
     (let* ((definition (find-clause language-name (first form)))
            (head (a:make-keyword (clause-key (first form))))
            (args (rest form)))
+      (when (registered-clause (find-language language-name) (clause-key (first form)))
+        (check-clause-arity definition form))
       (if (clause-definition-subclauses definition)
           (let ((n (clause-definition-required definition)))
+            (check-subclause-names definition form (nthcdr n args))
             `(list ',head ,@(subseq args 0 (min n (length args)))
                    ,@(mapcar (lambda (sub)
                                (expand-clause-form (or (clause-definition-subclause-language definition)
@@ -225,13 +320,16 @@ parameters only), the remaining forms are sub-clauses, bound to VAR as data,
 for the body to run with APPLY-CLAUSES, usually inside WITH-SCOPE. BODY may
 start with a docstring, a (:PUBLISHES fact...) form declaring every fact it
 may set, and a (:CLAUSES-OF language) form saying the sub-clauses are those of
-another language, which the body builds with that language's data function.
+another language, which the body builds with that language's data function,
+and a (:SUBCLAUSE-NAMES function) form, FUNCTION returning the names (strings)
+of the sub-clauses allowed, called when a form is expanded or run.
 
   (define-clause option expires (when &key from calendar)
     (:publishes :expiry)
     \"The expiry: a date, or a tenor resolved from FROM.\"
     (publish :expiry (resolve-expiry when :from from :calendar calendar)))"
-  (let ((publishes '()) (documentation nil) (subclause-language nil) (forms body))
+  (let ((publishes '()) (documentation nil) (subclause-language nil) (subclause-names nil)
+        (forms body))
     (iter (while forms)
           (cond ((and (stringp (first forms)) (rest forms) (null documentation))
                  (setf documentation (pop forms)))
@@ -239,6 +337,8 @@ another language, which the body builds with that language's data function.
                  (setf publishes (rest (pop forms))))
                 ((and (consp (first forms)) (eq (first (first forms)) :clauses-of))
                  (setf subclause-language (second (pop forms))))
+                ((and (consp (first forms)) (eq (first (first forms)) :subclause-names))
+                 (setf subclause-names (second (pop forms))))
                 (t (return))))
     (multiple-value-bind (function-lambda-list required subclauses)
         (parse-clause-lambda-list lambda-list)
@@ -247,7 +347,8 @@ another language, which the body builds with that language's data function.
                           (make-clause-definition ,(clause-key name) ',lambda-list ,required
                                                   ,subclauses ',publishes ,documentation
                                                   (lambda ,function-lambda-list ,@forms)
-                                                  ',subclause-language))
+                                                  ',subclause-language ',name
+                                                  ,subclause-names))
          ',name))))
 
 (defun apply-clause (form)
@@ -259,8 +360,10 @@ another language, which the body builds with that language's data function.
                                                       ,@(provenance-enclosing *provenance*)))))
            (*publishable* (clause-definition-publishes definition))
            (function (clause-definition-function definition)))
+      (check-clause-arity definition form)
       (if (clause-definition-subclauses definition)
           (let ((n (clause-definition-required definition)))
+            (check-subclause-names definition form (nthcdr n args))
             (apply function `(,@(subseq args 0 (min n (length args))) ,(nthcdr n args))))
           (apply function args)))))
 
@@ -275,7 +378,7 @@ another language, which the body builds with that language's data function.
 can publish FACT."
   (when *language*
     (let ((suppliers
-            (iter (for (nil definition) in-hashtable (construction-language-clauses *language*))
+            (iter (for definition in (clauses-in-definition-order *language*))
                   (when (member fact (clause-definition-publishes definition))
                     (collect (format nil "(~(~A~))" (clause-definition-name definition)))))))
       (when (and (member fact (construction-language-resolver-publishes *language*))
@@ -302,16 +405,29 @@ resolver makes on demand are not listed.
 
 (defun share-clauses (from to names)
   "Give the language TO the clauses NAMES (strings) of the language FROM, so
-the two languages mean the same by them."
-  (let ((source (find-language from)))
+the two languages mean the same by them. The clauses are looked up in FROM
+whenever TO needs one, so a later redefinition reaches TO; a clause TO
+defines itself wins over a shared one."
+  (let ((source (find-language from))
+        (language (ensure-language to)))
     (dolist (name names)
-      (register-clause to (copy-clause-definition
-                           (or (gethash name (construction-language-clauses source))
-                               (error 'unknown-clause :name name :language from
-                                                      :known (clause-names source))))))))
+      (unless (registered-clause source (clause-key name))
+        (error 'unknown-clause :name name :language from :known (clause-names source))))
+    (let ((shared (construction-language-shared-clauses language)))
+      (setf (construction-language-shared-clauses language)
+            `(,@(remove from shared :key #'first)
+              (,from ,(remove-duplicates `(,@(second (assoc from shared)) ,@(mapcar #'clause-key names))
+                                         :test #'string= :from-end t)))))
+    (refresh-language-documentation to)
+    (values)))
 
 (defun share-fact-rules (from to facts)
-  "Give the language TO the rules of the language FROM for FACTS."
-  (dolist (fact facts)
-    (setf (gethash fact (construction-language-rules (ensure-language to)))
-          (gethash fact (construction-language-rules (find-language from))))))
+  "Give the language TO the rules of the language FROM for FACTS, looked up in
+FROM whenever TO derives one of them; a rule TO defines itself wins."
+  (find-language from)
+  (let* ((language (ensure-language to))
+         (shared (construction-language-shared-rules language)))
+    (setf (construction-language-shared-rules language)
+          `(,@(remove from shared :key #'first)
+            (,from ,(remove-duplicates `(,@(second (assoc from shared)) ,@facts) :from-end t))))
+    (values)))

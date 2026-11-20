@@ -31,7 +31,7 @@ compared or valued together."))
 FRACTION-DIGITS amounts are shown with.
 
   (define-currency :usd :name \"US Dollar\" :fraction-digits 2)"
-  (check-type code keyword)
+  (check-input code keyword "a keyword naming the currency")
   `(progn (setf (gethash ,code *currencies*) (make-currency-info ,code ,name ,fraction-digits))
           ,code))
 
@@ -90,7 +90,7 @@ FRACTION-DIGITS amounts are shown with.
                 (money-amount m) (money-currency m)))))
 
 (defun check-same-currency (operation amounts)
-  (let ((currencies (->> amounts (mapcar #'money-currency) remove-duplicates)))
+  (let ((currencies (remove-duplicates (mapcar #'money-currency amounts))))
     (when (rest currencies)
       (error 'currency-mismatch :currencies currencies :operation operation))
     (first currencies)))
