@@ -1,17 +1,12 @@
 ;;;; engines/hull-white.lisp --- Hull-White engines: Jamshidian and the tree
 ;;;;
-;;;; JAMSHIDIAN-SWAPTION-ENGINE prices a European swaption as a portfolio of
-;;;; zero-coupon bond options (Jamshidian 1989). HULL-WHITE-TREE-ENGINE builds
-;;;; Hull and White's (1994) trinomial tree for x = r - phi(t) on a grid that
-;;;; contains every cash-flow and exercise time, fits phi(t) by forward
-;;;; induction so the tree reprices the curve's discount factors, and rolls
-;;;; Bermudan swaptions and callable bonds back. Both price on one curve: the
-;;;; model's, which both forecasts and discounts.
-;;;;
-;;;; Provenance: both follow QuantLib (JamshidianSwaptionEngine,
-;;;; TrinomialTree, HullWhite::tree, TreeSwaptionEngine,
-;;;; TreeCallableFixedRateBondEngine, TimeGrid, DiscretizedSwap,
-;;;; DiscretizedCallableFixedRateBond).
+;;;; JAMSHIDIAN-SWAPTION-ENGINE prices a European swaption as a portfolio of zero-coupon
+;;;; bond options (Jamshidian 1989). HULL-WHITE-TREE-ENGINE builds the trinomial tree of
+;;;; Hull and White (1994) for x = r - phi(t). The grid contains every cash-flow time and
+;;;; exercise time. The engine fits phi(t) by forward induction, so the tree reprices the
+;;;; discount factors of the curve. Then it rolls Bermudan swaptions and callable bonds
+;;;; back. Both engines price on one curve: the curve of the model, which both forecasts
+;;;; and discounts.
 
 (in-package #:fincl)
 
@@ -35,8 +30,8 @@ instrument's currency."))
 (defclass jamshidian-swaption-engine (hull-white-engine) ()
   (:metaclass engine-class)
   (:designator :jamshidian)
-  (:documentation "Hull-White European swaptions by Jamshidian's
-decomposition into bond options. Physical settlement, no floating spread.
+  (:documentation "Hull-White European swaptions, by the decomposition of Jamshidian into bond options.
+The settlement is physical. The floating leg has no spread.
 
   (price swaption (make-engine :jamshidian :process (make-hull-white :a 0.05d0 :sigma 0.01d0)) m)"))
 
@@ -46,9 +41,8 @@ decomposition into bond options. Physical settlement, no floating spread.
 mandatory times."))
   (:metaclass engine-class)
   (:designator :hull-white-tree)
-  (:documentation "Hull-White trinomial tree for European and Bermudan
-swaptions and callable fixed-rate bonds. Exercise and call dates are grid
-times.
+  (:documentation "The Hull-White trinomial tree for European and Bermudan swaptions and callable
+fixed-rate bonds. Exercise dates and call dates are grid times.
 
   (price bermudan (make-engine :hull-white-tree :process hw :time-steps 400) m)"))
 
@@ -533,12 +527,12 @@ paying after it."
 (defun calibrate-hull-white (process market swaptions
                              &key (method :levenberg-marquardt) fix-a curve (vol-type :black)
                                   (displacement 0d0) (tolerance 1d-12))
-  "A Hull-White process fitted to SWAPTIONS, a list of (swaption vol): each
-European swaption's price under the model (Jamshidian) matches its price at
-VOL, a Black vol with DISPLACEMENT (VOL-TYPE :BLACK) or a normal vol
-(:NORMAL). Fits a and sigma, or sigma alone if FIX-A, starting from PROCESS,
-by MINIMIZE's METHOD on the relative price errors. CURVE is the id of the
-model curve (default the swaptions' currency's). Returns (values process
+  "Return a Hull-White process fitted to SWAPTIONS, a list of (swaption vol). The model
+price of each European swaption (Jamshidian) matches its price at VOL. VOL is a Black
+vol with DISPLACEMENT (VOL-TYPE :BLACK) or a normal vol (:NORMAL). The function fits
+a and sigma, or sigma alone if FIX-A is true. The start is PROCESS. The fit uses the
+METHOD of MINIMIZE on the relative price errors. CURVE is the id of the model curve.
+The default is the curve of the currency of the swaptions. Return (values process
 relative-errors iterations).
 
   (calibrate-hull-white (make-hull-white) m `((,s1 0.21d0) (,s2 0.205d0)) :fix-a t)"

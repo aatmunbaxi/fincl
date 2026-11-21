@@ -26,8 +26,8 @@ Use an engine that has one, e.g. through USE-ENGINE."
    (lambda (c s)
      (format s "~A does not apply here: ~A"
              (class-name (class-of (error-engine c))) (error-reason c))))
-  (:documentation "The engine has a method for the instrument, but its
-approximation does not hold in this market regime."))
+  (:documentation "The engine has a method for the instrument, but its approximation does not hold in
+this market regime."))
 
 (define-condition option-expired (pricing-error)
   ((option :initarg :option :reader error-option)
@@ -77,10 +77,9 @@ without it is an ordinary engine with no designator of its own."))
 
 (defclass analytic-engine (engine) ()
   (:metaclass engine-class)
-  (:documentation "Closed forms. An analytic engine's model is fixed by its
-class: there is no process slot, because a closed form exists only for the
-dynamics it was derived under. Adding Heston's characteristic-function
-solution means adding an engine class and a method, not a parameter."))
+  (:documentation "Closed forms. The class of an analytic engine fixes its model. It has no process
+slot, because a closed form exists only for the dynamics that it was derived under.
+To add a closed form for Heston, add an engine class and a method, not a parameter."))
 
 (defclass black-scholes-engine (analytic-engine)
   ((dividend-model :initarg :dividend-model :initform :spot :reader dividend-model
@@ -98,7 +97,7 @@ process when automatic selection makes the engine for a GBM."))
   (:metaclass engine-class)
   (:designator :baw)
   (:models gbm)
-  (:documentation "Quadratic approximation for American vanillas."))
+  (:documentation "The quadratic approximation for American vanillas."))
 
 (defclass roll-geske-whaley-engine (analytic-engine)
   ((dividend-model :initarg :dividend-model :initform :escrowed :reader dividend-model
@@ -109,9 +108,8 @@ the engine decline."))
   (:metaclass engine-class)
   (:designator :rgw)
   (:models gbm)
-  (:documentation "Roll, Geske and Whaley's closed form for an American call
-with one discrete cash dividend under the escrowed model, with no continuous
-dividend yield.
+  (:documentation "The closed form of Roll, Geske and Whaley for an American call with one discrete cash
+dividend, under the escrowed model and with no continuous dividend yield.
 
   (make-engine :rgw)"))
 
@@ -123,9 +121,8 @@ series uses."))
   (:metaclass engine-class)
   (:designator :merton-series)
   (:models merton-jump)
-  (:documentation "Merton's (1976) series for European vanillas under a jump
-diffusion: Black prices conditional on the number of jumps, weighted by
-their Poisson probabilities.
+  (:documentation "The series of Merton (1976) for European vanillas under a jump diffusion. It sums
+Black prices for each number of jumps, weighted by the Poisson probabilities.
 
   (make-instance 'merton-series-engine :process (make-instance 'merton-jump :intensity 1))"))
 
@@ -136,8 +133,8 @@ their Poisson probabilities.
   (:metaclass engine-class)
   (:designator :cev)
   (:models cev)
-  (:documentation "Schroder's (1989) noncentral chi-square formula for
-European vanillas under CEV with absorption at zero, beta <= 1.
+  (:documentation "The noncentral chi-square formula of Schroder (1989) for European vanillas under
+CEV, with absorption at zero and beta <= 1.
 
   (make-instance 'cev-engine :process (make-instance 'cev :beta 0.5d0))"))
 
@@ -217,7 +214,7 @@ cancels the O(1/N) error of the tree. Reliable only with SMOOTH."))
   (:metaclass engine-class)
   (:designator :binomial)
   (:models gbm)
-  (:documentation "Cox-Ross-Rubinstein binomial tree.
+  (:documentation "The Cox-Ross-Rubinstein binomial tree.
 
   (make-instance 'binomial-engine :n-steps 5000)"))
 
@@ -237,11 +234,10 @@ Bermudan in the American extrapolation, which uses M, 2M, 4M and 8M."))
   (:metaclass engine-class)
   (:designator :cos)
   (:models stochastic-process)
-  (:documentation "Fang and Oosterlee's Fourier-cosine (COS) method.
-Europeans need only a characteristic function; Bermudans and Americans use
-the backward recursion of their 2009 paper, which needs a process whose
-log-increments are independent of the state (the INDEPENDENT-INCREMENTS
-mixin; GBM).
+  (:documentation "The Fourier-cosine (COS) method of Fang and Oosterlee. A European option needs only
+a characteristic function. A Bermudan or American option uses the backward recursion
+of their 2009 paper. It needs a process whose log-increments are independent of the
+state (the INDEPENDENT-INCREMENTS mixin, for example GBM).
 
   (make-instance 'cos-engine :process (make-instance 'heston) :n-terms 160)"))
 
@@ -273,10 +269,9 @@ ln S_T around the spot."))
   (:metaclass engine-class)
   (:designator :fd)
   (:models stochastic-process)
-  (:documentation "Finite differences in log-spot: a theta-scheme with
-Rannacher start-up on a sinh-concentrated grid, Ikonen-Toivanen splitting
-for American exercise, continuous barriers as boundary conditions; Heston by
-Hundsdorfer-Verwer ADI.
+  (:documentation "Finite differences in log-spot. It uses a theta-scheme with Rannacher start-up on a
+sinh-concentrated grid, Ikonen-Toivanen splitting for American exercise, and
+continuous barriers as boundary conditions. Heston uses Hundsdorfer-Verwer ADI.
 
   (make-engine :fd :process (make-local-vol) :n-space 400 :n-time 400)"))
 
@@ -287,32 +282,31 @@ Hundsdorfer-Verwer ADI.
 (defgeneric price (instrument engine market)
   ;; The market first: see src/pricing.lisp.
   (:argument-precedence-order market instrument engine)
-  (:documentation "Returns (values npv standard-error engine). The second
-value is NIL for deterministic engines; the third is the engine that priced.
-ENGINE may be an engine designator (src/engines/selection.lisp): a keyword
-such as :binomial, a list (:cos :n-terms 512) as data, a process to price
-under with an automatically chosen engine, or :auto for GBM.
+  (:documentation "Return (values npv standard-error engine). The second value is NIL for
+deterministic engines. The third value is the engine that priced the instrument.
+ENGINE can be an engine designator (src/engines/selection.lisp): a keyword such as
+:binomial, a list (:cos :n-terms 512) as data, a process (priced with an engine that
+automatic selection chooses), or :auto for GBM.
 
   (price opt (make-engine :binomial :n-steps 4000) m)
   (price opt (make-heston :xi 0.5d0) m)"))
 
 (defgeneric engine-candidates (designator exercise payoff path process)
   (:method-combination append)
-  (:documentation "((priority designator) ...): how automatic selection may
-use the engine DESIGNATOR (a keyword) for EXERCISE x PAYOFF x PATH under
-PROCESS, tried in increasing priority across engines (10 a closed form, 20
-a Fourier or lattice method, 30 an approximation, 90 or more a slow
-fallback). Each engine file adds APPEND methods on (eql its-designator) next
-to its pricing methods: the designator keeps two engines with the same
-specializers from replacing each other's method.")
+  (:documentation "Return ((priority designator) ...), a list that shows how automatic selection can
+use the engine DESIGNATOR (a keyword) for EXERCISE x PAYOFF x PATH under PROCESS.
+Selection tries the candidates in order of increasing priority across engines: 10
+for a closed form, 20 for a Fourier or lattice method, 30 for an approximation, 90
+or more for a slow fallback. Each engine file adds APPEND methods on (eql
+its-designator) next to its pricing methods. The designator stops two engines with
+the same specializers from replacing the method of each other.")
   (:method append (designator exercise payoff path process)
     (declare (ignore designator exercise payoff path process))
     '()))
 
 (defgeneric validate-pricing-inputs (instrument engine market)
-  (:documentation "Signal an error if INSTRUMENT cannot be priced by ENGINE
-in MARKET. PRICE calls it once, before dispatching to the engine; the
-default accepts everything.")
+  (:documentation "Signal an error if ENGINE cannot price INSTRUMENT in MARKET. PRICE calls it once,
+before it dispatches to the engine. The default method accepts everything.")
   (:method (instrument engine market)
     (declare (ignore instrument engine market))
     nil))
@@ -476,8 +470,8 @@ condition is given."
 
 (declaim (ftype (function (t &rest t) (values t &optional)) derive-engine))
 (defun derive-engine (engine &rest initargs)
-  "A new engine of ENGINE's class with INITARGS replacing the matching
-settings and every other setting copied. ENGINE is unchanged: engines are
+  "Make a new engine of the class of ENGINE. INITARGS replace the matching settings.
+The new engine copies every other setting. ENGINE does not change: engines are
 immutable, like markets.
 
   (derive-engine (make-instance 'binomial-engine :n-steps 500) :n-steps 4000)"
@@ -491,36 +485,36 @@ immutable, like markets.
 
 (declaim (ftype (function (t &optional t) (values t &optional)) use-engine))
 (defun use-engine (engine &optional condition)
-  "Invoke the USE-ENGINE restart for CONDITION, if there is one, so the
-instrument is priced with ENGINE; otherwise return NIL. PRICE offers it for
+  "Invoke the USE-ENGINE restart for CONDITION, if it exists. Then the instrument is
+priced with ENGINE. Otherwise return NIL. PRICE offers the restart for
 UNSUPPORTED-COMBINATION."
   (let ((restart (find-restart 'use-engine condition)))
     (when restart (invoke-restart restart engine))))
 
 (declaim (ftype (function (t &optional t) (values t &optional)) increase-steps))
 (defun increase-steps (n-steps &optional condition)
-  "Invoke the INCREASE-STEPS restart for CONDITION, if there is one, so the
-instrument is re-priced with N-STEPS steps; otherwise return NIL. The
-binomial engine offers it for INVALID-TREE."
+  "Invoke the INCREASE-STEPS restart for CONDITION, if it exists. Then the engine
+prices the instrument again with N-STEPS steps. Otherwise return NIL. The binomial
+engine offers the restart for INVALID-TREE."
   (let ((restart (find-restart 'increase-steps condition)))
     (when restart (invoke-restart restart n-steps))))
 
 (declaim (ftype (function (&optional t) (values t &optional)) use-process-period))
 (defun use-process-period (&optional condition)
-  "Invoke the USE-PROCESS-PERIOD restart for CONDITION, if there is one, so
-the instrument is re-priced with one step per model period; otherwise return
-NIL. The Monte Carlo engine offers it for INCOMPATIBLE-TIME-STEP when the
+  "Invoke the USE-PROCESS-PERIOD restart for CONDITION, if it exists. Then the engine
+prices the instrument again with one step for each model period. Otherwise return
+NIL. The Monte Carlo engine offers the restart for INCOMPATIBLE-TIME-STEP when the
 expiry is a whole number of periods."
   (let ((restart (find-restart 'use-process-period condition)))
     (when restart (invoke-restart restart))))
 
 (defmacro with-pricing-policy (clauses &body body)
-  "Run BODY with a recovery policy. Each clause is (condition-type
-(restart-function argument...)): when a condition of that type is signalled,
-(restart-function argument... condition) is called, with the arguments
-evaluated then. Restart functions follow CL:USE-VALUE's protocol: they invoke
-their restart if it is available for the condition and otherwise return NIL,
-so the condition propagates.
+  "Run BODY with a recovery policy. Each clause is (condition-type (restart-function
+argument...)). When a condition of that type is signalled, the macro calls
+(restart-function argument... condition). It evaluates the arguments at that time.
+The restart functions follow the protocol of CL:USE-VALUE. They invoke their
+restart if the condition offers it. Otherwise they return NIL, and the condition
+propagates.
 
   (with-pricing-policy ((unsupported-combination (use-engine *mc*))
                         (invalid-tree (increase-steps 4000))

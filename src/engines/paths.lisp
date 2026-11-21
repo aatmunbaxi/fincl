@@ -1,13 +1,12 @@
 ;;;; engines/paths.lisp --- time grids and the path-kernel protocol
 ;;;;
-;;;; A path simulation steps a process over a TIME-GRID that contains every
-;;;; date the contract depends on (MAKE-TIME-GRID), and shows each state to a
-;;;; payoff's PATH-KERNEL: three typed closures over a per-path accumulator,
-;;;; INIT, STEP (which can record cash flows and stop the path) and FINAL.
-;;;; PAYOFF-REQUIREMENTS tells the engine what a payoff needs, so a payoff
-;;;; that needs only the terminal observable keeps the terminal-sampler fast
-;;;; path. Every payoff has a path kernel: the default for path-independent
-;;;; payoffs wraps PAYOFF-KERNEL.
+;;;; A path simulation steps a process over a TIME-GRID that contains every date on which
+;;;; the contract depends (MAKE-TIME-GRID). It shows each state to the PATH-KERNEL of a
+;;;; payoff. The kernel is three typed closures over a per-path accumulator: INIT, STEP
+;;;; (which can record cash flows and stop the path) and FINAL. PAYOFF-REQUIREMENTS tells
+;;;; the engine what a payoff needs. Thus a payoff that needs only the terminal
+;;;; observable keeps the fast path of the terminal sampler. Every payoff has a path
+;;;; kernel. The default for path-independent payoffs wraps PAYOFF-KERNEL.
 
 (in-package #:fincl)
 
@@ -87,39 +86,39 @@ the date in DATES: (values mask positions)."
 ;;; --------------------------------------------------------------------
 
 (defgeneric payoff-requirements (payoff path-feature)
-  (:documentation "What PAYOFF under PATH-FEATURE needs from a simulation, a
-list of keywords: :TERMINAL (the observable at expiry only), :PATH
-(observations on grid dates), :STATE (latent state components), :CASHFLOWS
-(pays before expiry, or stops early). An engine uses the terminal sampler
-only for (:TERMINAL).")
+  (:documentation "Return a list of keywords that shows what PAYOFF under PATH-FEATURE needs from a
+simulation. :TERMINAL means the observable at expiry only. :PATH means observations
+on grid dates. :STATE means latent state components. :CASHFLOWS means payments
+before expiry, or an early stop. An engine uses the terminal sampler only for
+(:TERMINAL).")
   (:method ((p payoff) (f path-independent)) '(:terminal)))
 
 (defgeneric path-accumulator-size (payoff path-feature)
-  (:documentation "Length of the per-path accumulator PATH-KERNEL's closures
-share.")
+  (:documentation "The length of the per-path accumulator that the closures of PATH-KERNEL share.")
   (:method ((p payoff) (f path-feature)) 0))
 
 (defgeneric path-payment-dates (payoff path-feature)
-  (:documentation "The dates on which a path kernel's PAY records cash flows,
-in the order of PAY's payment index, or :GRID: the payment index is a grid
-index and the cash flow is paid at that grid time (a rebate paid at a barrier
-hit). The engine discounts each to its date.")
+  (:documentation "Return the dates on which PAY of a path kernel records cash flows, in the order of the
+payment index of PAY. Or return :GRID. Then the payment index is a grid index, and
+the cash flow is paid at that grid time (for example, a rebate that is paid at a
+barrier hit). The engine discounts each cash flow to its date.")
   (:method ((p payoff) (f path-feature)) '()))
 
 (defgeneric path-kernel (payoff path-feature process grid)
-  (:documentation "(values init step final): typed closures over a per-path
-accumulator ACC, a (SIMPLE-ARRAY DOUBLE-FLOAT (*)) of PATH-ACCUMULATOR-SIZE.
+  (:documentation "Return (values init step final), typed closures over a per-path accumulator ACC. ACC
+is a (SIMPLE-ARRAY DOUBLE-FLOAT (*)) of PATH-ACCUMULATOR-SIZE.
 
-  (init acc)                resets ACC at the start of a path;
-  (step acc j state pay)    sees the full STATE at grid index J (0 included)
-                            and returns true to continue, NIL to stop the
-                            path; (funcall pay amount k) records AMOUNT paid
-                            on payment date K (PATH-PAYMENT-DATES);
-  (final acc state)         the amount paid at expiry, if not stopped.
+  (init acc)                Reset ACC at the start of a path.
+  (step acc j state pay)    Read the full STATE at grid index J (0 included).
+                            Return true to continue or NIL to stop the path.
+                            (funcall pay amount k) records AMOUNT, paid on
+                            payment date K (PATH-PAYMENT-DATES).
+  (final acc state)         The amount that is paid at expiry, if the path did
+                            not stop.
 
-PROCESS is resolved; read latent components through STATE-INDEX here, once.
-GRID is the simulation's TIME-GRID. The default for path-independent payoffs
-wraps PAYOFF-KERNEL: STEP does nothing and FINAL reads the observable.")
+PROCESS is resolved. Read latent components through STATE-INDEX here, once. GRID is
+the TIME-GRID of the simulation. The default for path-independent payoffs wraps
+PAYOFF-KERNEL: STEP does nothing and FINAL reads the observable.")
   (:method ((p payoff) (f path-independent) process grid)
     (declare (ignore process grid))
     (let ((kernel (payoff-kernel p)))

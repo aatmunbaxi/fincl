@@ -1,20 +1,21 @@
 ;;;; engines/fd-heston.lisp --- Heston by alternating-direction implicit FD
 ;;;;
-;;;; V(t, x, v), x = ln S, solves V_t + A V = 0 with A = A0 + A1 + A2:
+;;;; V(t, x, v), with x = ln S, solves V_t + A V = 0 with A = A0 + A1 + A2:
 ;;;;
 ;;;;   A0 V = rho xi v V_xv                                     (mixed, explicit)
 ;;;;   A1 V = 1/2 v V_xx + (g - v/2) V_x - r/2 V                (x, implicit)
 ;;;;   A2 V = 1/2 xi^2 v V_vv + kappa (theta - v) V_v - r/2 V   (v, implicit)
 ;;;;
-;;;; g the forward's log-growth rate and r the short rate over the step.
-;;;; Hundsdorfer-Verwer's scheme (In 't Hout and Foulon 2010), theta = 1/2 +
-;;;; sqrt(3)/6, after RANNACHER-STEPS Douglas (theta = 1) substeps at the
-;;;; payoff and each Bermudan date; American exercise by Ikonen-Toivanen
-;;;; splitting. Boundaries: V linear in S at both x ends; at v = 0 the PDE
-;;;; with its diffusion gone (a second-order one-sided V_v); V_v = 0 at the
-;;;; largest v. The
-;;;; variance grid is In 't Hout and Foulon's, v_j = d sinh(j h), dense near
-;;;; 0, up to max(5, 10 max(v0, theta)).
+;;;; Here g is the log-growth rate of the forward and r is the short rate over the step.
+;;;; The scheme is the scheme of Hundsdorfer and Verwer (In 't Hout and Foulon 2010) with
+;;;; theta = 1/2 + sqrt(3)/6. At the payoff and at each Bermudan date, RANNACHER-STEPS
+;;;; Douglas substeps (theta = 1) come first. American exercise uses Ikonen-Toivanen
+;;;; splitting. The boundary conditions are:
+;;;; - V is linear in S at both x ends.
+;;;; - At v = 0, the PDE has no diffusion (a second-order one-sided V_v).
+;;;; - V_v = 0 at the largest v.
+;;;; The variance grid is the grid of In 't Hout and Foulon, v_j = d sinh(j h). It is
+;;;; dense near 0 and goes up to max(5, 10 max(v0, theta)).
 
 (in-package #:fincl)
 

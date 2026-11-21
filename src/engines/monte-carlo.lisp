@@ -1,8 +1,8 @@
 ;;;; engines/monte-carlo.lisp --- parallel Monte Carlo and Longstaff-Schwartz
 ;;;;
-;;;; The engine contains no model. It asks the process for a terminal sampler
-;;;; (and uses it if one exists) or for a stepper, and otherwise only knows
-;;;; about chunking, RNG streams, statistics and regression.
+;;;; The engine contains no model. It asks the process for a terminal sampler (and uses
+;;;; it if one exists) or for a stepper. Otherwise it knows only chunking, RNG streams,
+;;;; statistics and regression.
 
 (in-package #:fincl)
 
@@ -36,9 +36,9 @@ WITH-PRICING-KERNEL makes no kernel, so no nested parallel work starts.")
       (apply #'lp:pmapc function lists)))
 
 (defmacro with-pricing-kernel ((&key workers) &body body)
-  "Run BODY with an lparallel kernel, creating a temporary one if none is
-active (and none under *SERIAL-PRICING*, where BODY runs serially). A
-long-running session should make one kernel and keep it."
+  "Run BODY with an lparallel kernel. If no kernel is active, the macro creates a
+temporary one. Under *SERIAL-PRICING* it creates none and BODY runs in serial. A
+long session must make one kernel and keep it."
   (a:with-gensyms (w)
     `(if (or lp:*kernel* *serial-pricing*)
          (progn ,@body)

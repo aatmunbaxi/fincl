@@ -1,10 +1,9 @@
 ;;;; currency.lisp --- currencies and amounts of money
 ;;;;
-;;;; A currency is a keyword registered with DEFINE-CURRENCY; the CURRENCY
-;;;; type checks registration. MONEY is an amount in a currency, returned at
-;;;; API boundaries (leg and bond values); engines work in raw doubles.
-;;;; Arithmetic on amounts in different currencies signals CURRENCY-MISMATCH:
-;;;; fincl has no FX conversion.
+;;;; A currency is a keyword that DEFINE-CURRENCY registers. The CURRENCY type checks the
+;;;; registration. MONEY is an amount in a currency. Functions return it at API
+;;;; boundaries (leg and bond values). Engines work in raw doubles. Arithmetic on amounts
+;;;; in different currencies signals CURRENCY-MISMATCH. fincl has no FX conversion.
 
 (in-package #:fincl)
 
@@ -14,8 +13,8 @@
   (:report (lambda (c s)
              (format s "~@[~A: ~]amounts in ~{~S~^ and ~} cannot be combined without an FX rate."
                      (error-operation c) (error-currencies c))))
-  (:documentation "Amounts or cash flows in different currencies were added,
-compared or valued together."))
+  (:documentation "Amounts or cash flows in different currencies were added, compared or valued
+together."))
 
 (defstruct (currency-info (:constructor make-currency-info (code name fraction-digits)))
   "What DEFINE-CURRENCY records about a currency."
@@ -28,7 +27,7 @@ compared or valued together."))
 
 (defmacro define-currency (code &key name (fraction-digits 2))
   "Register the currency CODE, a keyword, with its NAME and the number of
-FRACTION-DIGITS amounts are shown with.
+FRACTION-DIGITS that is used to show amounts.
 
   (define-currency :usd :name \"US Dollar\" :fraction-digits 2)"
   (check-input code keyword "a keyword naming the currency")
@@ -69,13 +68,13 @@ FRACTION-DIGITS amounts are shown with.
 ;;; --------------------------------------------------------------------
 
 (defstruct (money (:constructor %make-money (amount currency)))
-  "AMOUNT units of CURRENCY. Read-only."
+  "AMOUNT units of CURRENCY. It is read-only."
   (amount 0d0 :type double-float :read-only t)
   (currency nil :type keyword :read-only t))
 
 (declaim (ftype (function (t t) (values money &optional)) make-money))
 (defun make-money (amount currency)
-  "AMOUNT (a real, coerced to double-float) in CURRENCY.
+  "Make AMOUNT (a real, coerced to double-float) in CURRENCY.
 
   (make-money 1000000 :usd)"
   (check-input amount real "a real amount")
@@ -97,8 +96,8 @@ FRACTION-DIGITS amounts are shown with.
 
 (declaim (ftype (function (t &rest t) (values money &optional)) money+))
 (defun money+ (amount &rest more)
-  "The sum of amounts of money in one currency; signals CURRENCY-MISMATCH
-otherwise.
+  "The sum of amounts of money in one currency. In other cases the function signals
+CURRENCY-MISMATCH.
 
   (money+ (make-money 1 :usd) (make-money 2 :usd)) => 3.00 USD"
   (let ((all (cons amount more)))
@@ -108,8 +107,8 @@ otherwise.
 
 (declaim (ftype (function (t &rest t) (values money &optional)) money-))
 (defun money- (amount &rest more)
-  "AMOUNT less the MORE amounts, or AMOUNT negated when MORE is empty; one
-currency only (else CURRENCY-MISMATCH)."
+  "AMOUNT less the MORE amounts. When MORE is empty, AMOUNT negated. The amounts must
+have one currency. Otherwise the function signals CURRENCY-MISMATCH."
   (let ((all (cons amount more)))
     (dolist (m all) (check-input m money "an amount of MONEY"))
     (let ((currency (check-same-currency "money-" all)))

@@ -1,28 +1,27 @@
 ;;;; engines/cos.lisp --- the Fourier-cosine (COS) method
 ;;;;
-;;;; F. Fang and C. W. Oosterlee, "A novel pricing method for European
-;;;; options based on Fourier-cosine series expansions", SIAM J. Sci. Comput.
-;;;; 31 (2008); and "Pricing early-exercise and discrete barrier options by
-;;;; Fourier-cosine series expansions", Numer. Math. 114 (2009).
+;;;; F. Fang and C. W. Oosterlee, "A novel pricing method for European options based on
+;;;; Fourier-cosine series expansions", SIAM J. Sci. Comput. 31 (2008). Also "Pricing
+;;;; early-exercise and discrete barrier options by Fourier-cosine series expansions",
+;;;; Numer. Math. 114 (2009).
 ;;;;
-;;;; Work in x = ln(S/K). The transition density is expanded in a cosine
-;;;; series on a truncation range [a, b], whose coefficients come straight
-;;;; from the characteristic function; the payoff's cosine coefficients are
-;;;; closed forms. A European is one inner product of the two. A Bermudan is
-;;;; the same step taken backwards between exercise dates, with the early
-;;;; exercise boundary found by a root search at each date. An American is
-;;;; the Richardson extrapolation of Bermudans with 1, 2, 4 and 8 times as
-;;;; many dates.
+;;;; Work in x = ln(S/K). The method expands the transition density in a cosine series on
+;;;; a truncation range [a, b]. The coefficients come directly from the characteristic
+;;;; function. The cosine coefficients of the payoff are closed forms. A European price is
+;;;; one inner product of the two. A Bermudan price is the same step, taken backward
+;;;; between exercise dates. A root search finds the early exercise boundary at each date.
+;;;; An American price is the Richardson extrapolation of Bermudan prices with 1, 2, 4 and
+;;;; 8 times as many dates.
 ;;;;
-;;;; Europeans only need CHARACTERISTIC-FUNCTION and LOG-CUMULANTS from the
-;;;; process. The backward recursion also needs the log-increment between
-;;;; consecutive dates to be independent of the state, so early exercise is
-;;;; specialized on the INDEPENDENT-INCREMENTS mixin (GBM here; not Heston,
-;;;; whose variance is a second state variable). Each step uses
-;;;; INCREMENT-CHARACTERISTIC-FUNCTION over [now, next], so forward rates and
-;;;; forward variances between dates are exact under term structure. Calls
-;;;; are priced as puts throughout (parity for Europeans, McDonald-Schroder
-;;;; symmetry for early exercise), because a put's payoff is bounded.
+;;;; A European price needs only CHARACTERISTIC-FUNCTION and LOG-CUMULANTS from the
+;;;; process. The backward recursion also needs the log-increment between consecutive
+;;;; dates to be independent of the state. Thus early exercise is specialized on the
+;;;; INDEPENDENT-INCREMENTS mixin (GBM here, but not Heston, whose variance is a second
+;;;; state variable). Each step uses INCREMENT-CHARACTERISTIC-FUNCTION over [now, next].
+;;;; Thus forward rates and forward variances between dates are exact under a term
+;;;; structure. The engine prices calls as puts throughout (parity for Europeans,
+;;;; McDonald-Schroder symmetry for early exercise), because the payoff of a put is
+;;;; bounded.
 
 (in-package #:fincl)
 

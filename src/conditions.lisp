@@ -4,26 +4,26 @@
 ;;;;   ├── invalid-input   bad arguments at construction time
 ;;;;   └── pricing-error   failures while pricing
 ;;;;
-;;;; Every error fincl signals is a FINCL-ERROR, so a caller (a portfolio
-;;;; pricer, a REPL session) can handle all of them with one clause and
-;;;; never sees a bare SIMPLE-ERROR. Concrete conditions live with the code
-;;;; that signals them.
+;;;; Every error that fincl signals is a FINCL-ERROR. A caller (a portfolio pricer or
+;;;; a REPL session) can handle all of them with one clause. The caller never sees a
+;;;; bare SIMPLE-ERROR. Concrete conditions are defined with the code that signals
+;;;; them.
 
 (in-package #:fincl)
 
 (define-condition fincl-error (error) ()
-  (:documentation "Superclass of every error fincl signals, so a caller can
-handle all of them with one clause."))
+  (:documentation "The superclass of every error that fincl signals. A caller can handle all of them
+with one clause."))
 
 (define-condition invalid-input (fincl-error) ()
-  (:documentation "An argument that cannot describe a valid object: a
-malformed date, a parameter out of bounds, an expiry that is not a date.
-Signalled when the object is built, before any pricing."))
+  (:documentation "An argument that cannot describe a valid object, for example a malformed date, a
+parameter out of bounds, or an expiry that is not a date. The error is signalled
+when the object is built, before any pricing."))
 
 (define-condition pricing-error (fincl-error) ()
-  (:documentation "A failure while pricing valid inputs: an engine without a
-method for the instrument, a solver that does not converge, a market regime
-outside an approximation's domain."))
+  (:documentation "A failure while pricing valid inputs. Examples: an engine without a method for the
+instrument, a solver that does not converge, a market regime outside the domain of
+an approximation."))
 
 (define-condition invalid-argument (invalid-input type-error)
   ((place :initarg :place :reader invalid-argument-place)
@@ -32,13 +32,13 @@ outside an approximation's domain."))
              (format s "~(~A~) is ~S, but must be ~:[of type ~S~;~:*~A~]."
                      (invalid-argument-place c) (type-error-datum c)
                      (invalid-argument-expected c) (type-error-expected-type c))))
-  (:documentation "An argument of the wrong type or shape. Also a TYPE-ERROR,
-so handlers written for CHECK-TYPE keep working."))
+  (:documentation "An argument of the wrong type or shape. It is also a TYPE-ERROR, so handlers that
+are written for CHECK-TYPE keep working."))
 
 (defmacro check-input (place type &optional expected)
-  "Like CHECK-TYPE, but signals INVALID-ARGUMENT (an INVALID-INPUT) with a
-STORE-VALUE restart. EXPECTED, a string, describes valid values for the
-report; it defaults to the type.
+  "Check that PLACE has type TYPE. Like CHECK-TYPE, but it signals INVALID-ARGUMENT
+(an INVALID-INPUT) with a STORE-VALUE restart. EXPECTED is a string that
+describes the valid values in the report. It defaults to the type.
 
   (check-input n (integer 1) \"a positive integer\")"
   `(iter (until (typep ,place ',type))
@@ -54,8 +54,8 @@ report; it defaults to the type.
 
 (declaim (ftype (function (t t t &optional t) (values nil &optional)) signal-invalid-argument))
 (defun signal-invalid-argument (place datum expected-type &optional expected)
-  "Signal INVALID-ARGUMENT: PLACE (a symbol or form naming the argument) is
-DATUM, which is not of EXPECTED-TYPE; EXPECTED describes valid values.
+  "Signal INVALID-ARGUMENT. PLACE (a symbol or form that names the argument) has the
+value DATUM, which is not of EXPECTED-TYPE. EXPECTED describes the valid values.
 
   (signal-invalid-argument 'offsets offsets 'list \"distinct real offsets\")"
   (error 'invalid-argument :place place :datum datum :expected-type expected-type
@@ -84,10 +84,10 @@ Works where NIL is a valid value. Not exported.
                      (portability-fallback-feature c) (portability-fallback-kind c)
                      (lisp-implementation-type) (lisp-implementation-version)
                      (portability-fallback-reason c))))
-  (:documentation "A facility of the running Lisp or of an optional library is
-absent, and fincl uses a substitute that is slower or less accurate (KIND
-:degraded) or computes the same quantity another way (:real). Signalled once
-per image and feature."))
+  (:documentation "A facility of the running Lisp or of an optional library is absent. fincl uses a
+substitute. The substitute is slower or less accurate (KIND :degraded), or computes
+the same quantity in another way (:real). The condition is signalled once for each
+image and feature."))
 
 (define-condition seed-unsupported (invalid-input)
   ((designator :initarg :designator :reader seed-unsupported-designator)
@@ -98,8 +98,8 @@ per image and feature."))
                         :mersenne-twister-64 or (:pcg n), which are seedable everywhere."
                      (seed-unsupported-designator c) (lisp-implementation-type)
                      (seed-unsupported-seed c))))
-  (:documentation "A seed was given to the implementation's own generator, which
-Common Lisp cannot seed portably."))
+  (:documentation "A seed was given to the generator of the implementation. Common Lisp cannot seed
+that generator in a portable way."))
 
 (define-condition unsupported-on-this-implementation (pricing-error)
   ((feature :initarg :feature :reader unsupported-feature)

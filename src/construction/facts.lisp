@@ -1,9 +1,8 @@
 ;;;; construction/facts.lisp --- the fact registry and construction conditions
 ;;;;
-;;;; A fact is a named, typed piece of information that clauses publish and
-;;;; components read: :EXPIRY, :STRIKE, :CALENDAR. Facts are registered once,
-;;;; globally, so that a name means the same thing in every construction
-;;;; language.
+;;;; A fact is a named, typed piece of information. Clauses publish facts and components
+;;;; read them, for example :EXPIRY, :STRIKE and :CALENDAR. The library registers facts
+;;;; once, globally. Thus a name has the same meaning in every construction language.
 
 (in-package #:fincl)
 
@@ -18,9 +17,9 @@
     "Fact name -> FACT-DEFINITION."))
 
 (defmacro define-fact (name type documentation &key coerce)
-  "Register the fact NAME (a keyword) with values of TYPE. COERCE, a function
-designator, normalizes a value before the type check. A name means the same
-thing in every language, so define a fact once and share it.
+  "Register the fact NAME (a keyword) with values of TYPE. COERCE is a function
+designator. It normalizes a value before the type check. A fact name has one
+meaning in every language, so define a fact once and share it.
 
   (define-fact :strike double-float \"The option's strike.\"
     :coerce (lambda (x) (float x 1d0)))"
@@ -36,7 +35,7 @@ thing in every language, so define a fact once and share it.
 
 (declaim (ftype (function (t) (values t &optional)) real-to-double))
 (defun real-to-double (x)
-  "Coerce a real to double-float; leave anything else for the type check."
+  "Coerce a real to double-float. Leave any other value for the type check."
   (if (realp x) (float x 1d0) x))
 
 ;;; --------------------------------------------------------------------
@@ -76,11 +75,11 @@ ENCLOSING lists the clauses around it, innermost first."
 ;;; --------------------------------------------------------------------
 
 (define-condition construction-error (invalid-input) ()
-  (:documentation "Superclass of every error signalled while building an
-object from clauses."))
+  (:documentation "The superclass of every error that is signalled while an object is built from
+clauses."))
 
 (define-condition clause-argument-error (construction-error simple-error) ()
-  (:documentation "A clause was given arguments it cannot use."))
+  (:documentation "A clause received arguments that it cannot use."))
 
 (define-condition undeclared-fact (construction-error)
   ((fact :initarg :fact :reader construction-fact)
@@ -166,8 +165,7 @@ Rename one of them, or use the general clause with the full symbol."
    (expected :initarg :expected :reader malformed-expected))
   (:report (lambda (c s)
              (format s "~S is not valid: expected ~A." (malformed-form c) (malformed-expected c))))
-  (:documentation "A clause form, or a DEFINE-CLAUSE lambda list, of the wrong
-shape."))
+  (:documentation "A clause form, or a DEFINE-CLAUSE lambda list, of the wrong shape."))
 
 (define-condition unknown-language (construction-error)
   ((name :initarg :name :reader construction-name)
@@ -198,8 +196,8 @@ use of the name now means the new one. To replace it on purpose, muffle this war
 with HANDLER-BIND."
                      (construction-name c) (construction-language-of c)
                      (clause-old-package c) (clause-new-package c))))
-  (:documentation "A clause was defined under a name another package already
-defined in the same language."))
+  (:documentation "A clause was defined under a name that another package already defined in the same
+language."))
 
 (define-condition unused-fact (style-warning)
   ((fact :initarg :fact :reader construction-fact)

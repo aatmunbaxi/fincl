@@ -1,17 +1,17 @@
 ;;;; construction/languages.lisp --- DEFINE-CONSTRUCTION-LANGUAGE
 ;;;;
-;;;; A construction language is a vocabulary of clauses plus an assembly
-;;;; function. Every language builds the same way:
+;;;; A construction language is a vocabulary of clauses and an assembly function. Every
+;;;; language builds an object in these steps:
 ;;;;
-;;;;   1. a fresh fact table;
-;;;;   2. the language defaults, at :DEFAULT priority;
-;;;;   3. the clauses, in order, at :EXPLICIT priority;
-;;;;   4. the assembly function, which reads facts (REQUIRE-FACT,
-;;;;      MAKE-FROM-FACTS) and returns the object;
-;;;;   5. a style warning for every explicit or convention fact nothing read.
+;;;;   1. A new fact table.
+;;;;   2. The language defaults, at :DEFAULT priority.
+;;;;   3. The clauses, in order, at :EXPLICIT priority.
+;;;;   4. The assembly function. It reads facts (REQUIRE-FACT, MAKE-FROM-FACTS) and
+;;;;      returns the object.
+;;;;   5. A style warning for every explicit or convention fact that nothing read.
 ;;;;
-;;;; Clauses, conventions and rules are added to a language with
-;;;; DEFINE-CLAUSE, DEFINE-CONVENTION and DEFINE-FACT-RULE, from any file.
+;;;; DEFINE-CLAUSE, DEFINE-CONVENTION and DEFINE-FACT-RULE add clauses, conventions and
+;;;; rules to a language, from any file.
 
 (in-package #:fincl)
 
@@ -39,27 +39,28 @@ with every clause head checked now."
 (defmacro define-construction-language (name &body options)
   "Define the construction language NAME. OPTIONS:
 
-  (:macro m)           M is defined as (m clause...): clause heads checked at
-                       macroexpansion, arguments evaluated.
-  (:function f)        F is defined as (f clauses), CLAUSES as data: a list
-                       of (head . arguments).
-  (:assemble a)        A, a function of no arguments, builds the object from
-                       the fact table.
+  (:macro m)           Define M as (m clause...). The macro checks the clause
+                       heads at macroexpansion. It evaluates the arguments.
+  (:function f)        Define F as (f clauses). CLAUSES is data: a list of
+                       (head . arguments).
+  (:assemble a)        A is a function of no arguments. It builds the object
+                       from the fact table.
   (:defaults fact value ...)
-                       Facts published at :DEFAULT priority before the clauses.
+                       Facts that are published at :DEFAULT priority before the
+                       clauses.
   (:resolver r (fact ...) description)
-                       R, given an unknown clause name (a string), may return
-                       a clause definition built on demand (for vocabularies
-                       that grow with classes); the facts it publishes and a
-                       description are used in reports.
-  (:other-shape f)     F, a function of the macro's arguments defined before the
-                       language, returns the expansion of a call that is not
-                       written as clauses, or NIL for one that is. Lets a
-                       macro keep accepting the call shape of the function it
-                       replaced.
+                       R receives an unknown clause name (a string). It can
+                       return a clause definition that it builds on demand.
+                       Use it for vocabularies that grow with classes. The
+                       facts and the description are used in reports.
+  (:other-shape f)     F is a function of the arguments of the macro. It must
+                       be defined before the language. It returns the
+                       expansion of a call that is not written as clauses, or
+                       NIL for a call that is. It lets a macro accept the call
+                       shape of the function that it replaced.
   (:documentation string)
 
-Every language also gets the clause (convention name).
+Every language also has the clause (convention name).
 
   (define-construction-language option
     (:macro make-option) (:function make-option-from-clauses)

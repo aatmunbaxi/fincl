@@ -1,11 +1,10 @@
 ;;;; instruments/indexes.lisp --- interest-rate indexes and their fixings
 ;;;;
-;;;; An index is terms only: a tenor, a fixing calendar, fixing days, a day
-;;;; counter, a business-day convention and the id of the curve that
-;;;; forecasts it. Historical fixings are market data and live in the
-;;;; composite market (MAKE-MARKET's :fixings); a fixing before the valuation
-;;;; date that the market lacks signals MISSING-FIXING, with a USE-VALUE
-;;;; restart.
+;;;; An index is terms only: a tenor, a fixing calendar, fixing days, a day counter, a
+;;;; business-day convention and the id of the curve that forecasts it. Historical fixings
+;;;; are market data. They live in the composite market (:fixings of MAKE-MARKET). If the
+;;;; market lacks a fixing before the valuation date, the code signals MISSING-FIXING,
+;;;; with a USE-VALUE restart.
 
 (in-package #:fincl)
 
@@ -21,8 +20,8 @@ workers.")
              (format s "The market has no ~A fixing for ~A, a date before its valuation ~
 date. Add it to the market's :fixings, or supply a rate with USE-VALUE.~@[ ~A~]"
                      (index-name (error-index c)) (error-date c) (error-hint c))))
-  (:documentation "A past fixing an instrument needs is not in the market.
-USE-VALUE supplies the rate."))
+  (:documentation "A past fixing that an instrument needs is not in the market. USE-VALUE supplies the
+rate."))
 
 (defclass interest-rate-index ()
   ((name :initarg :name :reader index-name :type keyword
@@ -37,11 +36,11 @@ USE-VALUE supplies the rate."))
    (currency :initarg :currency :reader index-currency :type keyword)
    (forecast-curve :initarg :forecast-curve :reader index-forecast-curve :type keyword
                    :documentation "Id of the market curve that forecasts the index."))
-  (:documentation "A published interest rate: terms only."))
+  (:documentation "A published interest rate. It holds terms only."))
 
 (defclass ibor-index (interest-rate-index) ()
-  (:documentation "A term rate fixed FIXING-DAYS before its value date for a
-deposit of TENOR (EURIBOR, Term SOFR).
+  (:documentation "A term rate that fixes FIXING-DAYS before its value date, for a deposit of TENOR
+(EURIBOR, Term SOFR).
 
   (make-instance 'ibor-index :name :euribor-6m :family \"Euribor\" :tenor #T\"6M\"
                              :fixing-calendar +target+ :fixing-days 2 :day-counter +actual-360+
@@ -50,8 +49,7 @@ deposit of TENOR (EURIBOR, Term SOFR).
 
 (defclass overnight-index (ibor-index) ()
   (:default-initargs :tenor (make-tenor 1 :days) :convention :following)
-  (:documentation "An overnight rate (SOFR, ESTR, SONIA): an index whose
-deposit runs to the next business day."))
+  (:documentation "An overnight rate (SOFR, ESTR, SONIA). Its deposit runs to the next business day."))
 
 (defmethod print-object ((i interest-rate-index) stream)
   (print-unreadable-object (i stream :type t)
@@ -59,9 +57,10 @@ deposit runs to the next business day."))
 
 (declaim (ftype (function (t &key (:forecast-curve t)) (values ibor-index &optional)) euribor))
 (defun euribor (tenor &key (forecast-curve nil forecast-curve-p))
-  "EURIBOR for TENOR: TARGET, two fixing days, ACT/360, modified following
-and end of month for monthly tenors (following otherwise). Forecast by the
-curve FORECAST-CURVE, default the index's own id (:euribor-6m for 6M).
+  "Make the EURIBOR index for TENOR. It uses TARGET, two fixing days, ACT/360, and
+modified following with end of month for monthly tenors (following for other
+tenors). FORECAST-CURVE forecasts it. The default is the id of the index (:euribor-6m
+for 6M).
 
   (euribor #T\"6M\" :forecast-curve :eur-6m)"
   (let* ((monthly (member (tenor-unit tenor) '(:months :years)))
@@ -74,22 +73,22 @@ curve FORECAST-CURVE, default the index's own id (:euribor-6m for 6M).
 
 (declaim (ftype (function (&key (:forecast-curve t)) (values overnight-index &optional)) sofr))
 (defun sofr (&key (forecast-curve :sofr))
-  "SOFR: fixed with no lag on the SOFR calendar, ACT/360, in USD."
+  "Make the SOFR index: it fixes with no lag on the SOFR calendar, with ACT/360, in USD."
   (make-instance 'overnight-index :name :sofr :family "SOFR" :fixing-calendar +united-states-sofr+
                                   :fixing-days 0 :day-counter +actual-360+ :currency :usd
                                   :forecast-curve forecast-curve))
 
 (declaim (ftype (function (&key (:forecast-curve t)) (values overnight-index &optional)) estr))
 (defun estr (&key (forecast-curve :estr))
-  "ESTR: fixed with no lag on TARGET, ACT/360, in EUR."
+  "Make the ESTR index: it fixes with no lag on TARGET, with ACT/360, in EUR."
   (make-instance 'overnight-index :name :estr :family "ESTR" :fixing-calendar +target+
                                   :fixing-days 0 :day-counter +actual-360+ :currency :eur
                                   :forecast-curve forecast-curve))
 
 (declaim (ftype (function (&key (:forecast-curve t)) (values overnight-index &optional)) sonia))
 (defun sonia (&key (forecast-curve :sonia))
-  "SONIA: fixed with no lag on the London Stock Exchange calendar, ACT/365F,
-in GBP."
+  "Make the SONIA index: it fixes with no lag on the calendar of the London Stock
+Exchange, with ACT/365F, in GBP."
   (make-instance 'overnight-index :name :sonia :family "SONIA"
                                   :fixing-calendar +united-kingdom-exchange+ :fixing-days 0
                                   :day-counter +actual-365-fixed+ :currency :gbp
@@ -101,17 +100,17 @@ in GBP."
 
 (declaim (ftype (function (t t) (values date &optional)) index-value-date))
 (defun index-value-date (index fixing-date)
-  "The start of the deposit fixed on FIXING-DATE."
+  "The start of the deposit that fixes on FIXING-DATE."
   (advance (index-fixing-calendar index) fixing-date (make-tenor (index-fixing-days index) :days)))
 
 (declaim (ftype (function (t t) (values date &optional)) index-fixing-date))
 (defun index-fixing-date (index value-date)
-  "The fixing date of the deposit starting on VALUE-DATE."
+  "The fixing date of the deposit that starts on VALUE-DATE."
   (advance (index-fixing-calendar index) value-date (make-tenor (- (index-fixing-days index)) :days)))
 
 (declaim (ftype (function (t t) (values date &optional)) index-maturity-date))
 (defun index-maturity-date (index value-date)
-  "The end of the deposit starting on VALUE-DATE."
+  "The end of the deposit that starts on VALUE-DATE."
   (advance (index-fixing-calendar index) value-date (index-tenor index)
            :convention (index-convention index) :end-of-month (index-end-of-month index)))
 
@@ -126,8 +125,8 @@ MARKET's time: resolve it once to take many discount factors."
 
 (declaim (ftype (function (t t t) (values double-float &optional)) market-curve-discount))
 (defun market-curve-discount (market curve date)
-  "Discount factor from MARKET's valuation date to DATE on CURVE, a yield
-curve or the id of one in MARKET."
+  "The discount factor from the valuation date of MARKET to DATE on CURVE. CURVE is a
+yield curve or the id of one in MARKET."
   (curve-discount (market-discount-curve market curve) (market-time market date)))
 
 (defun index-forecast (index market start end &optional span)
@@ -150,9 +149,10 @@ END over SPAN (default the index day counter's fraction):
 
 (declaim (ftype (function (t t t) (values double-float &optional)) index-fixing))
 (defun index-fixing (index market fixing-date)
-  "INDEX's rate fixed on FIXING-DATE: a market fixing before the valuation
-date (MISSING-FIXING if absent, with USE-VALUE), the forecast after it, and
-on the valuation date the fixing if the market has it, else the forecast.
+  "Return the rate of INDEX that fixes on FIXING-DATE. Before the valuation date, it is a
+market fixing (the function signals MISSING-FIXING, with USE-VALUE, if there is none).
+After the valuation date, it is the forecast. On the valuation date, it is the fixing
+if the market has it, else the forecast.
 
   (index-fixing (euribor #T\"6M\") market #D\"2027-03-10\")"
   (check-input market composite-market "a composite market, which holds fixings and curves")

@@ -1,18 +1,17 @@
 ;;;; term-structures/vol-surfaces.lisp --- smiles and implied-vol surfaces
 ;;;;
-;;;; A smile is total Black variance w(k) at one expiry as a function of
-;;;; log-forward moneyness k = ln(K/F(T)), with its first two k-derivatives
-;;;; (SMILE-VARIANCE-DERIVATIVES). A moneyness surface is w(k, T) with the
-;;;; derivatives Dupire's formula needs (SURFACE-VARIANCE-DERIVATIVES). It
-;;;; answers the BLACK-VOL-STRUCTURE protocol for a strike given the forward,
-;;;; which the market view passes: the surface moves with the forward
-;;;; (sticky moneyness).
+;;;; A smile is the total Black variance w(k) at one expiry, as a function of log-forward
+;;;; moneyness k = ln(K/F(T)). It has its first two k-derivatives
+;;;; (SMILE-VARIANCE-DERIVATIVES). A moneyness surface is w(k, T) with the derivatives that
+;;;; the formula of Dupire needs (SURFACE-VARIANCE-DERIVATIVES). It answers the
+;;;; BLACK-VOL-STRUCTURE protocol for a strike, given the forward that the market view
+;;;; passes. The surface moves with the forward (sticky moneyness).
 ;;;;
-;;;;   smiles    interpolated-smile (cubic in k over knots), svi-slice (raw
-;;;;             SVI), sabr-smile (Hagan 2002, or Obloj's 2008 leading term)
-;;;;   surfaces  smile-surface (smiles at expiries, w linear in T at fixed
-;;;;             k), with grid-vol-surface and svi-surface as constructors;
-;;;;             ssvi-surface (Gatheral-Jacquier, power-law phi)
+;;;;   smiles    interpolated-smile (cubic in k over knots), svi-slice (raw SVI),
+;;;;             sabr-smile (Hagan 2002, or the leading term of Obloj 2008)
+;;;;   surfaces  smile-surface (smiles at expiries, w linear in T at fixed k), with
+;;;;             grid-vol-surface and svi-surface as constructors. ssvi-surface
+;;;;             (Gatheral-Jacquier, power-law phi)
 ;;;;
 ;;;; Times are market time, as for every structure without a reference date.
 
@@ -26,8 +25,7 @@
              (format s "~A has a negative density factor g(k) = ~,3E at k = ~,4F: the ~
 smile admits butterfly arbitrage."
                      (arbitrage-smile c) (arbitrage-density c) (arbitrage-k c))))
-  (:documentation "A smile whose implied density is negative somewhere
-(Gatheral's g(k) < 0)."))
+  (:documentation "A smile whose implied density is negative somewhere (g(k) < 0 of Gatheral)."))
 
 ;;; --------------------------------------------------------------------
 ;;; Smiles
@@ -36,8 +34,7 @@ smile admits butterfly arbitrage."
 (defclass smile ()
   ((expiry :initarg :expiry :reader smile-expiry :type market-time
            :initform (a:required-argument :expiry)))
-  (:documentation "Total Black variance at one expiry (market time) as a
-function of log-forward moneyness."))
+  (:documentation "The total Black variance at one expiry (market time) as a function of log-forward moneyness."))
 
 (defmethod initialize-instance :after ((s smile) &key)
   (check-input (slot-value s 'expiry) (real (0)) "a positive expiry in market time")
@@ -47,14 +44,14 @@ function of log-forward moneyness."))
   (:documentation "(values w dw/dk d2w/dk2) of SMILE at log-moneyness K."))
 
 (defgeneric smile-variance (smile k)
-  (:documentation "Total Black variance w(k) of SMILE at log-moneyness K.
+  (:documentation "Return the total Black variance w(k) of SMILE at log-moneyness K.
 
   (smile-variance (make-svi-slice 1 :a 0.04 :b 0.1 :rho -0.3 :m 0 :sigma 0.2) 0d0)")
   (:method ((s smile) k) (values (smile-variance-derivatives s k))))
 
 (declaim (ftype (function (t real) (values double-float &optional)) smile-vol))
 (defun smile-vol (smile k)
-  "Black implied vol of SMILE at log-moneyness K."
+  "Return the Black implied vol of SMILE at log-moneyness K."
   (sqrt (/ (smile-variance smile k) (smile-expiry smile))))
 
 (defun density-factor (w w1 w2 k)
@@ -73,9 +70,9 @@ butterfly arbitrage."
                     (values boolean t t &optional))
           butterfly-arbitrage-free-p))
 (defun butterfly-arbitrage-free-p (smile &key (points 2001) range)
-  "True if Gatheral's g(k) >= 0 at POINTS log-moneyness values evenly
-spread over [-RANGE, RANGE] (default six ATM standard deviations). Returns
-(values free-p k-worst g-worst)."
+  "True if g(k) >= 0 of Gatheral at POINTS log-moneyness values that are evenly spread over
+[-RANGE, RANGE] (default: six ATM standard deviations). Return (values free-p k-worst
+g-worst)."
   (let ((range (or range (smile-k-range smile))))
     (iter (for i below points)
           (for k = (- (* 2d0 range (/ i (1- points))) range))
@@ -98,9 +95,9 @@ cubic), flat beyond them."))
                                      (log-moneyness (required make-interpolated-smile :log-moneyness))
                                      (total-variances (required make-interpolated-smile :total-variances))
                                      (interpolation :natural-cubic))
-  "A smile at EXPIRY (years) through TOTAL-VARIANCES w(k) = vol^2 T at
-LOG-MONEYNESS k = ln(K/F), interpolated by INTERPOLATION (:NATURAL-CUBIC,
-:MONOTONE-CUBIC or :LINEAR) and flat beyond the knots.
+  "Make a smile at EXPIRY (years) through TOTAL-VARIANCES w(k) = vol^2 T at LOG-MONEYNESS k =
+ln(K/F). INTERPOLATION (:NATURAL-CUBIC, :MONOTONE-CUBIC or :LINEAR) interpolates it. The
+smile is flat beyond the knots.
 
   (make-interpolated-smile :expiry 1 :log-moneyness '(-0.2 0 0.2)
                            :total-variances '(0.05 0.04 0.042))"
@@ -125,15 +122,14 @@ LOG-MONEYNESS k = ln(K/F), interpolated by INTERPOLATION (:NATURAL-CUBIC,
    (rho :initarg :rho :reader svi-rho :type correlation)
    (m :initarg :m :reader svi-m :type double-float)
    (sigma :initarg :sigma :reader svi-sigma :type positive-double))
-  (:documentation "Gatheral's raw SVI: w(k) = a + b (rho (k - m) + sqrt((k -
-m)^2 + sigma^2))."))
+  (:documentation "The raw SVI of Gatheral: w(k) = a + b (rho (k - m) + sqrt((k - m)^2 + sigma^2))."))
 
 (declaim (ftype (function (real &key (:a real) (:b t) (:rho t) (:m real) (:sigma t))
                     (values svi-slice &optional))
           make-svi-slice))
 (defun make-svi-slice (expiry &key a b rho m sigma)
-  "A raw SVI smile at EXPIRY. Requires b >= 0, |rho| < 1, sigma > 0 and a
-non-negative minimum, a + b sigma sqrt(1 - rho^2) >= 0.
+  "Make a raw SVI smile at EXPIRY. It requires b >= 0, |rho| < 1, sigma > 0 and a non-negative
+minimum, a + b sigma sqrt(1 - rho^2) >= 0.
 
   (make-svi-slice 1 :a 0.04 :b 0.1 :rho -0.3 :m 0 :sigma 0.2)"
   (flet ((real-of (x name) (check-input x real (format nil "a real ~(~A~)" name)) (float x 1d0)))
@@ -169,16 +165,16 @@ non-negative minimum, a + b sigma sqrt(1 - rho^2) >= 0.
    (forward :initarg :forward :reader sabr-forward :type positive-double)
    (approximation :initarg :approximation :reader sabr-approximation
                   :type (member :obloj :hagan)))
-  (:documentation "The lognormal SABR smile at one expiry and forward, by
-Hagan et al.'s 2002 expansion (:HAGAN) or the same with Obloj's 2008 leading
-term (:OBLOJ). SABR-VOLATILITY also gives Hagan's normal vols."))
+  (:documentation "The lognormal SABR smile at one expiry and forward. It uses the expansion of Hagan et al. 2002
+(:HAGAN), or the same expansion with the leading term of Obloj 2008 (:OBLOJ).
+SABR-VOLATILITY also gives the normal vols of Hagan."))
 
 (declaim (ftype (function (real t &key (:alpha t) (:beta t) (:rho t) (:nu t) (:approximation t))
                     (values sabr-smile &optional))
           make-sabr-smile))
 (defun make-sabr-smile (expiry forward &key alpha beta rho nu (approximation :obloj))
-  "The SABR smile at EXPIRY for FORWARD with parameters ALPHA > 0, BETA in
-[0, 1], |RHO| < 1, NU >= 0.
+  "Make the SABR smile at EXPIRY for FORWARD. The parameters are ALPHA > 0, BETA in [0, 1], |RHO|
+< 1 and NU >= 0.
 
   (make-sabr-smile 1 0.03 :alpha 0.02 :beta 0.5 :rho -0.3 :nu 0.4)"
   (flet ((real-of (x name) (check-input x real (format nil "a real ~(~A~)" name)) (float x 1d0)))
@@ -211,9 +207,9 @@ its series near z = 0."
                     (values double-float &optional))
           sabr-volatility))
 (defun sabr-volatility (strike forward expiry alpha beta rho nu &optional (approximation :hagan))
-  "SABR implied vol at STRIKE: Hagan's lognormal expansion (:HAGAN), :OBLOJ lognormal with Obloj's leading term
-nu ln(F/K) / x(z), z = nu (F^(1-b) - K^(1-b)) / (alpha (1-b)), or the normal
-expansion (:NORMAL).
+  "Return the SABR implied vol at STRIKE. The method is the lognormal expansion of Hagan (:HAGAN),
+the lognormal expansion with the leading term of Obloj nu ln(F/K) / x(z), z = nu (F^(1-b) -
+K^(1-b)) / (alpha (1-b)) (:OBLOJ), or the normal expansion (:NORMAL).
 
   (sabr-volatility 0.03 0.03 1 0.02 0.5 -0.3 0.4)"
   (let* ((strike (float strike 1d0)) (forward (float forward 1d0)) (expiry (float expiry 1d0))
@@ -275,16 +271,15 @@ expansion (:NORMAL).
 ;;; --------------------------------------------------------------------
 
 (defclass moneyness-vol-structure (black-vol-structure) ()
-  (:documentation "A vol structure in log-forward moneyness: w(k, T). Read
-through a market, which supplies the forward; alone, through
-SURFACE-VARIANCE."))
+  (:documentation "A vol structure in log-forward moneyness: w(k, T). A market supplies the forward when the
+structure is read through it. Read it alone through SURFACE-VARIANCE."))
 
 (defgeneric surface-variance-derivatives (surface k horizon)
   (:documentation "(values w dw/dk d2w/dk2 dw/dT) of SURFACE at
 log-moneyness K and HORIZON (market time)."))
 
 (defgeneric surface-variance (surface k horizon)
-  (:documentation "Total Black variance w(k, T) of SURFACE.")
+  (:documentation "Return the total Black variance w(k, T) of SURFACE.")
   (:method ((s moneyness-vol-structure) k horizon)
     (values (surface-variance-derivatives s k horizon))))
 
@@ -302,13 +297,12 @@ or with SURFACE-VARIANCE in log-moneyness" horizon (class-name (class-of s)))))
 (defclass smile-surface (moneyness-vol-structure)
   ((expiries :initarg :expiries :reader surface-expiries :type double-vector)
    (smiles :initarg :smiles :reader surface-smiles :type simple-vector))
-  (:documentation "Smiles at expiries T_1 < ... < T_n: w is linear in T at
-fixed k between them, w(k, T_1) T / T_1 before the first and w(k, T_n) T /
-T_n after the last (constant vol)."))
+  (:documentation "Smiles at expiries T_1 < ... < T_n. Between expiries, w is linear in T at fixed k. Before the
+first expiry, w is w(k, T_1) T / T_1. After the last expiry, it is w(k, T_n) T / T_n (constant
+vol)."))
 
 (defclass grid-vol-surface (smile-surface) ()
-  (:documentation "A SMILE-SURFACE of cubic-interpolated smiles over a grid
-of expiries and log-moneyness."))
+  (:documentation "A SMILE-SURFACE of cubic-interpolated smiles over a grid of expiries and log-moneyness."))
 
 (defclass svi-surface (smile-surface) ()
   (:documentation "A SMILE-SURFACE of raw SVI slices."))
@@ -317,9 +311,9 @@ of expiries and log-moneyness."))
                     (values smile-surface &optional))
           make-smile-surface))
 (defun make-smile-surface (smiles &key (class 'smile-surface) (check-range nil))
-  "The surface through SMILES (at distinct expiries; sorted here). Signals
-CALENDAR-ARBITRAGE if w falls between consecutive expiries at some k in
-[-R, R], R = CHECK-RANGE or six ATM standard deviations of the last smile."
+  "Make the surface through SMILES (at distinct expiries. The function sorts them). It signals
+CALENDAR-ARBITRAGE if w falls between consecutive expiries at some k in [-R, R]. R is
+CHECK-RANGE, or six ATM standard deviations of the last smile."
   (check-input smiles (and list (not null)) "a non-empty list of smiles")
   (let* ((smiles (sort (copy-list smiles) #'< :key #'smile-expiry))
          (range (or check-range (smile-k-range (a:lastcar smiles)))))
@@ -368,11 +362,11 @@ CALENDAR-ARBITRAGE if w falls between consecutive expiries at some k in
                                    (log-moneyness (required make-grid-vol-surface :log-moneyness))
                                    (vols (required make-grid-vol-surface :vols))
                                    (interpolation :natural-cubic))
-  "A GRID-VOL-SURFACE: at each of EXPIRIES (market time), a cubic in
-log-moneyness through VOLS. LOG-MONEYNESS is one list of log-moneyness values
-for every expiry, or a list of lists, one per expiry; VOLS is a list of
-lists of Black vols, one list per expiry. Total variance is interpolated, so
-calendar arbitrage between expiries signals CALENDAR-ARBITRAGE.
+  "Make a GRID-VOL-SURFACE. At each of EXPIRIES (market time), the surface is a cubic in
+log-moneyness through VOLS. LOG-MONEYNESS is one list of log-moneyness values for every
+expiry, or a list of lists, one for each expiry. VOLS is a list of lists of Black vols, one
+list for each expiry. The function interpolates total variance. Calendar arbitrage between
+expiries signals CALENDAR-ARBITRAGE.
 
   (make-grid-vol-surface :expiries '(0.5 1) :log-moneyness '(-0.2 0 0.2)
                          :vols '((0.25 0.2 0.21) (0.24 0.2 0.205)))"
@@ -395,7 +389,7 @@ calendar arbitrage between expiries signals CALENDAR-ARBITRAGE.
 
 (declaim (ftype (function (t) (values svi-surface &optional)) make-svi-surface))
 (defun make-svi-surface (slices)
-  "An SVI-SURFACE through SLICES (SVI-SLICEs at distinct expiries)."
+  "Make an SVI-SURFACE through SLICES (SVI-SLICEs at distinct expiries)."
   (make-smile-surface slices :class 'svi-surface))
 
 ;;; SSVI.
@@ -406,19 +400,19 @@ calendar arbitrage between expiries signals CALENDAR-ARBITRAGE.
    (gamma :initarg :gamma :reader ssvi-gamma :type unit-interval)
    (times :initarg :times :reader ssvi-times :type double-vector)
    (thetas :initarg :thetas :reader ssvi-thetas :type double-vector))
-  (:documentation "Gatheral and Jacquier's SSVI: w(k, T) = theta/2 (1 + rho
-phi k + sqrt((phi k + rho)^2 + 1 - rho^2)), theta = theta(T) the ATM total
-variance (linear between knots, from 0 at T = 0, constant vol beyond the
-last), phi(theta) = eta / (theta^gamma (1 + theta)^(1 - gamma))."))
+  (:documentation "The SSVI of Gatheral and Jacquier: w(k, T) = theta/2 (1 + rho phi k + sqrt((phi k + rho)^2 + 1
+- rho^2)). Here theta = theta(T) is the ATM total variance (linear between knots, from 0 at T =
+0, constant vol beyond the last knot). phi(theta) = eta / (theta^gamma (1 + theta)^(1 -
+gamma))."))
 
 (declaim (ftype (function (t t &key (:rho t) (:eta t) (:gamma t))
                     (values ssvi-surface &optional))
           make-ssvi-surface))
 (defun make-ssvi-surface (times thetas &key rho eta gamma)
-  "An SSVI-SURFACE with ATM total variances THETAS at TIMES (increasing),
-and RHO, ETA, GAMMA. The power-law surface is free of static arbitrage when
-ETA (1 + |RHO|) <= 2 (Gatheral and Jacquier 2014, eq. 4.5) and 0 < GAMMA <=
-1/2 (their Corollary 4.1, condition 4, as theta -> 0); both are required.
+  "Make an SSVI-SURFACE with ATM total variances THETAS at TIMES (increasing), and RHO, ETA and
+GAMMA. The power-law surface is free of static arbitrage when ETA (1 + |RHO|) <= 2 (Gatheral
+and Jacquier 2014, eq. 4.5) and 0 < GAMMA <= 1/2 (their Corollary 4.1, condition 4, as theta
+-> 0). Both conditions are required.
 
   (make-ssvi-surface '(0.25 0.5 1 2) '(0.01 0.02 0.04 0.08) :rho -0.4 :eta 1 :gamma 0.4)"
   (let ((times (as-double-vector times))
@@ -479,7 +473,7 @@ ETA (1 + |RHO|) <= 2 (Gatheral and Jacquier 2014, eq. 4.5) and 0 < GAMMA <=
 
 (declaim (ftype (function (t real) (values t &optional)) surface-smile))
 (defun surface-smile (surface horizon)
-  "The smile of SURFACE at HORIZON: an object of the smile protocol."
+  "Return the smile of SURFACE at HORIZON: an object of the smile protocol."
   (make-instance 'surface-section :expiry horizon :surface surface))
 
 (defclass surface-section (smile)
@@ -495,10 +489,10 @@ ETA (1 + |RHO|) <= 2 (Gatheral and Jacquier 2014, eq. 4.5) and 0 < GAMMA <=
                     (values boolean list &optional))
           calendar-arbitrage-free-p))
 (defun calendar-arbitrage-free-p (surface &key times (points 201) range)
-  "True if w(k, T) does not fall in T between consecutive TIMES (default the
-surface's expiries plus 3 and 10 years) at POINTS log-moneyness values in
-[-RANGE, RANGE] (default six ATM standard deviations at the last time).
-Returns (values free-p (t0 t1 k) of the worst fall)."
+  "True if w(k, T) does not fall in T between consecutive TIMES (default: the expiries of the
+surface plus 3 and 10 years) at POINTS log-moneyness values in [-RANGE, RANGE] (default: six
+ATM standard deviations at the last time). Return (values free-p (t0 t1 k) of the worst
+fall)."
   (let* ((times (or times
                     (sort (remove-duplicates
                            `(,@(typecase surface
@@ -566,19 +560,17 @@ it with RESCALE-VOL-STRUCTURE."))
 
 (declaim (ftype (function (t (or function symbol)) (values t &optional)) rescale-vol-structure))
 (defun rescale-vol-structure (structure atm-variance)
-  "A vol structure with STRUCTURE's smile shape and the ATM level that
-ATM-VARIANCE gives. ATM-VARIANCE is a function of the time to maturity tau
-(market time from the valuation date of the market the result is read on)
-returning the total at-the-money-forward variance a(tau) wanted there. The
-result's total variance at log-moneyness k = ln(K/F) is
-w(k, tau) a(tau) / w(0, tau): at each maturity the at-the-money variance
-is a(tau) and every other strike keeps its ratio to it in STRUCTURE.
-STRUCTURE is a moneyness surface (SVI, SSVI, grid, smile) or a flat vol.
+  "Return a vol structure with the smile shape of STRUCTURE and the ATM level that ATM-VARIANCE
+gives. ATM-VARIANCE is a function of the time to maturity tau (market time from the valuation
+date of the market on which the result is read). It returns the total at-the-money-forward
+variance a(tau) that is wanted there. The total variance of the result at log-moneyness k =
+ln(K/F) is w(k, tau) a(tau) / w(0, tau). Thus at each maturity the at-the-money variance is
+a(tau). Every other strike keeps its ratio to it in STRUCTURE. STRUCTURE is a moneyness
+surface (SVI, SSVI, grid, smile) or a flat vol.
 
-When a(tau) / w(0, tau) changes quickly with tau the total variance can
-fall between maturities at some strikes (calendar arbitrage);
-CALENDAR-ARBITRAGE-FREE-P checks a result. For example, a simulated Heston
-variance v sets the level to the expected integrated variance:
+When a(tau) / w(0, tau) changes quickly with tau, the total variance can fall between
+maturities at some strikes (calendar arbitrage). CALENDAR-ARBITRAGE-FREE-P checks a result. For
+example, a simulated Heston variance v sets the level to the expected integrated variance:
 
   (rescale-vol-structure surface
                          (lambda (tau) (+ (* theta tau)

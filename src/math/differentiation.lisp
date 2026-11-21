@@ -1,26 +1,24 @@
 ;;;; math/differentiation.lisp --- finite-difference schemes as data
 ;;;;
-;;;; A finite-difference scheme is a set of weights on a set of offsets. The
-;;;; weights are computed once (FINITE-DIFFERENCE-WEIGHTS, exact in
-;;;; rationals) and applied separately (APPLY-STENCIL), because callers do
-;;;; not always evaluate a function at x + k h: bump-and-reprice Greeks
-;;;; price at bumped markets, and tree and PDE Greeks read values already on
-;;;; a grid. DIFFERENCE-QUOTIENT is the common case of a function of one
-;;;; real, and DERIVATIVE is Ridders' extrapolated derivative for smooth,
+;;;; A finite-difference scheme is a set of weights on a set of offsets. The code computes
+;;;; the weights once (FINITE-DIFFERENCE-WEIGHTS, exact in rationals). It applies them
+;;;; separately (APPLY-STENCIL), because callers do not always evaluate a function at x + k
+;;;; h. Bump-and-reprice Greeks price at bumped markets. Tree and PDE Greeks read values
+;;;; that are already on a grid. DIFFERENCE-QUOTIENT is the common case of a function of
+;;;; one real. DERIVATIVE is the extrapolated derivative of Ridders, for smooth,
 ;;;; deterministic functions.
 ;;;;
-;;;; Ridders' 1982 differentiation scheme is unrelated to his 1979 root
-;;;; finder; roots are SOLVE-BRENT's job.
+;;;; The differentiation scheme of Ridders (1982) is unrelated to his root finder of 1979.
+;;;; SOLVE-BRENT finds roots.
 
 (in-package #:fincl)
 
 (declaim (ftype (function (sequence t) (values simple-vector &optional)) finite-difference-weights))
 (defun finite-difference-weights (offsets order)
-  "Weights w_i such that sum w_i f(x + OFFSETS_i h) / h^ORDER approximates
-the ORDER-th derivative of f at x, by Fornberg's algorithm (Math. Comp. 51,
-1988). OFFSETS are in units of h, in any order and not necessarily evenly
-spaced; the weights come back in the same order. Rational offsets give exact
-rational weights.
+  "Return weights w_i such that sum w_i f(x + OFFSETS_i h) / h^ORDER approximates the
+ORDER-th derivative of f at x. The algorithm is that of Fornberg (Math. Comp. 51, 1988).
+OFFSETS are in units of h. They can be in any order and can be unevenly spaced. The
+weights come back in the same order. Rational offsets give exact rational weights.
 
   (finite-difference-weights '(-1 1) 1)     => #(-1/2 1/2)
   (finite-difference-weights '(-1 0 1) 2)   => #(1 -2 1)
@@ -67,10 +65,9 @@ rational weights.
                     (values number &optional))
           apply-stencil))
 (defun apply-stencil (weights values h order)
-  "The derivative estimate sum WEIGHTS_i VALUES_i / H^ORDER. Rational weights
-are applied exactly, with a single rounding at the division (see
-EXACT-WEIGHTED-SUM), so (apply-stencil #(-1/2 1/2) (list fm fp) h 1) is
-exactly (/ (- fp fm) (* 2 h)).
+  "Return the derivative estimate sum WEIGHTS_i VALUES_i / H^ORDER. The function applies
+rational weights exactly, with one rounding at the division (see EXACT-WEIGHTED-SUM).
+Thus (apply-stencil #(-1/2 1/2) (list fm fp) h 1) is exactly (/ (- fp fm) (* 2 h)).
 
   (apply-stencil (finite-difference-weights '(-1 0 1) 2) (list fm f0 fp) h 2)"
   (multiple-value-bind (sum denominator) (exact-weighted-sum weights values)
@@ -94,8 +91,8 @@ second-order accurate; forward and backward ones are first-order accurate.
                     (values real &optional))
           difference-quotient))
 (defun difference-quotient (f x h &key (scheme :central) (order 1))
-  "Finite-difference estimate of the ORDER-th derivative of F at X with step
-H. SCHEME is :CENTRAL, :FORWARD or :BACKWARD; see SCHEME-OFFSETS.
+  "Return the finite-difference estimate of the ORDER-th derivative of F at X with step H.
+SCHEME is :CENTRAL, :FORWARD or :BACKWARD (see SCHEME-OFFSETS).
 
   (difference-quotient #'exp 0d0 1d-5) => 1.0000000000166667d0"
   (let ((offsets (scheme-offsets scheme order)))
@@ -105,9 +102,9 @@ H. SCHEME is :CENTRAL, :FORWARD or :BACKWARD; see SCHEME-OFFSETS.
 
 (declaim (ftype (function (real symbol (integer 1)) (values double-float &optional)) default-step))
 (defun default-step (x scheme order)
-  "A step balancing truncation against rounding error: eps^(1/(ORDER+1))
-for one-sided schemes and eps^(1/(ORDER+2)) for central ones, times
-max(1, |X|). For a central first derivative at x = 1 it is about 6e-6.
+  "Return a step that balances truncation error against rounding error. It is
+eps^(1/(ORDER+1)) for one-sided schemes and eps^(1/(ORDER+2)) for central schemes,
+times max(1, |X|). For a central first derivative at x = 1 it is about 6e-6.
 
   (default-step 1d0 :central 1) => 6.055454...d-6"
   (* (expt double-float-epsilon
@@ -118,23 +115,23 @@ max(1, |X|). For a central first derivative at x = 1 it is about 6e-6.
                     (values real (or real null) &optional))
           derivative))
 (defun derivative (f x &key (order 1) h0 (ratio 2) (levels 6))
-  "The ORDER-th derivative of F at X by Ridders' extrapolation (1982):
-central difference quotients at steps H0, H0/RATIO, ..., H0/RATIO^(LEVELS-1)
-have errors in h^2, h^4, ..., which RICHARDSON-EXTRAPOLATE removes. Returns
-(values estimate error-estimate), from whichever prefix of the tableau has
-the smallest error estimate. H0 defaults to 0.1 max(1, |X|).
+  "Return the ORDER-th derivative of F at X by the extrapolation of Ridders (1982).
+Central difference quotients at the steps H0, H0/RATIO, ..., H0/RATIO^(LEVELS-1) have
+errors in h^2, h^4, ... RICHARDSON-EXTRAPOLATE removes them. Return (values estimate
+error-estimate). They come from the prefix of the tableau with the smallest error
+estimate. H0 defaults to 0.1 max(1, |X|).
 
-Each prefix's error estimate is the larger of the tableau estimate and a
-floor for rounding, 2 eps (|f(x)| + |x f'(x)|) sum_i |w_i| c / h_i^ORDER,
-where w_i are the Richardson weights and c is the stencil's sum of absolute
-weights. |f| covers rounding in f; |x f'| covers rounding in the argument
-x + k h, which is off by up to eps |x| (f' is a central quotient at H0).
-Without the floor, extrapolations at tiny steps agree to every bit once
-rounding dominates, and report a spurious zero error.
+The error estimate of each prefix is the larger of two values: the tableau estimate and
+a floor for rounding, 2 eps (|f(x)| + |x f'(x)|) sum_i |w_i| c / h_i^ORDER. The w_i
+are the Richardson weights. c is the sum of the absolute weights of the stencil. |f|
+covers the rounding in f. |x f'| covers the rounding in the argument x + k h, which is
+off by up to eps |x| (f' is a central quotient at H0). Without the floor, the
+extrapolations at tiny steps agree to every bit once rounding dominates. They then
+report a false zero error.
 
-For smooth, deterministic F only: a test oracle, and a derivative for
-deterministic engines. Noise, such as Monte Carlo error, is amplified, not
-removed.
+Use it only for smooth, deterministic F: as a test oracle, and as a derivative for
+deterministic engines. It amplifies noise, such as Monte Carlo error. It does not
+remove it.
 
   (derivative #'sin 1d0) => 0.5403023058681398d0, ~1d-14"
   (let* ((h0 (or h0 (* 0.1d0 (max 1d0 (abs x)))))
@@ -186,15 +183,16 @@ room if the interval is narrower."
                     (values double-vector &optional))
           jacobian!))
 (defun jacobian! (f x out &key (scheme :forward) steps f0 bounds)
-  "The Jacobian of the vector function F (a DOUBLE-VECTOR of m residuals of a
-DOUBLE-VECTOR) at X (length n), by finite differences, written column-major
-into OUT (length m n): OUT[i + m j] = d r_i / d x_j. SCHEME is :FORWARD
-(n extra evaluations) or :CENTRAL (2n); STEPS, a sequence of n steps,
-defaults to DEFAULT-STEP for each x_j; F0, F at X, saves one evaluation.
-BOUNDS, a list of n (lo . hi) intervals (NIL ends unbounded), keeps every
-point F is evaluated at inside them: a coordinate whose stencil would leave
-its interval is differenced one-sided, into it. The stencils come from
-FINITE-DIFFERENCE-WEIGHTS. X is perturbed and restored. Returns OUT.
+  "Compute the Jacobian of the vector function F by finite differences. F maps a
+DOUBLE-VECTOR to a DOUBLE-VECTOR of m residuals. X has length n. The function writes the
+result in column-major order into OUT (length m n): OUT[i + m j] = d r_i / d x_j.
+SCHEME is :FORWARD (n extra evaluations) or :CENTRAL (2n). STEPS is a sequence of n
+steps. It defaults to DEFAULT-STEP for each x_j. F0, the value of F at X, saves one
+evaluation. BOUNDS is a list of n (lo . hi) intervals (NIL ends are unbounded). It keeps
+every point at which F is evaluated inside the intervals. If the stencil of a coordinate
+would leave its interval, the function differences that coordinate one-sided, into the
+interval. The stencils come from FINITE-DIFFERENCE-WEIGHTS. The function perturbs X and
+restores it. It returns OUT.
 
   (jacobian! residuals x (make-array (* m n) :element-type 'double-float))"
   (declare (type double-vector x out))

@@ -1,7 +1,7 @@
 ;;;; instruments/instrument.lisp --- shared across asset classes
 ;;;;
-;;;; Everything here is meant to be reused by bonds, swaps and anything else
-;;;; added later. Option-specific components live in options.lisp.
+;;;; Everything here is for reuse by bonds, swaps and any instrument that is added later.
+;;;; The option-specific components are in options.lisp.
 
 (in-package #:fincl)
 
@@ -15,8 +15,8 @@ means the market's only underlying.")
              :documentation "The currency the instrument pays in, which selects
 the discount curve. NIL means the underlying's currency."))
   (:metaclass component-class)
-  (:documentation "A contract. Carries terms only: no market data, no model.
-Instruments are immutable and reusable across scenarios."))
+  (:documentation "A contract. It holds terms only: no market data and no model. Instruments are
+immutable. Scenarios can reuse them."))
 
 (defmethod initialize-instance :after ((i instrument) &key)
   (check-input (slot-value i 'underlying) (or null keyword) "a keyword naming an underlying")
@@ -49,8 +49,7 @@ or (make-date 2027 9 24), or tenors such as #T\"1Y\" with :FROM; the market ~
 converts dates to year fractions with its day counter." datum))
          (:no-dates
           (format s "A Bermudan exercise needs a non-empty list of dates, not ~S." datum))))))
-  (:documentation "An expiry or exercise schedule that is not a date or a
-list of dates."))
+  (:documentation "An expiry or exercise schedule that is not a date or a list of dates."))
 
 (defun check-expiry (expiry)
   (typecase expiry
@@ -63,9 +62,9 @@ list of dates."))
           resolve-expiry))
 (defun resolve-expiry (expiry &key from calendar (convention :following)
                                    end-of-month)
-  "Return EXPIRY as a date. A date is returned as is. A tenor is added to the
-date FROM (with END-OF-MONTH as in ADD-TENOR) and, if CALENDAR is given,
-moved onto a business day with CONVENTION (see ADJUST).
+  "Return EXPIRY as a date. A date is returned as is. A tenor is added to the date FROM
+(with END-OF-MONTH as in ADD-TENOR). If CALENDAR is given, the result moves onto a
+business day with CONVENTION (see ADJUST).
 
   (resolve-expiry #T\"1Y\" :from #D\"2026-09-26\"
                   :calendar (make-instance 'weekends-only))
@@ -105,23 +104,22 @@ moved onto a business day with CONVENTION (see ADJUST).
     (apply #'call-next-method x :dates sorted :expiry (a:lastcar sorted) initargs)))
 
 (defgeneric exercise-allowed-p (exercise date)
-  (:documentation "Can the holder exercise on DATE? One generic function is
-the entire difference between European, American and Bermudan in a lattice
-or LSM engine.")
+  (:documentation "True if the holder can exercise on DATE. This one generic function is the whole
+difference between European, American and Bermudan exercise in a lattice or LSM
+engine.")
   (:method ((x european-exercise) date) (date= date (expiry x)))
   (:method ((x american-exercise) date) (date<= date (expiry x)))
   (:method ((x bermudan-exercise) date)
     (and (member date (exercise-dates x) :test #'date=) t)))
 
 (defgeneric exercise-mask (exercise market times)
-  (:documentation "A SIMPLE-BIT-VECTOR as long as TIMES, with 1 at the grid
-indices where EXERCISE allows exercise. TIMES are the grid times in MARKET
-time, from 0 at the valuation date to the expiry. Lattice and LSM engines
-read this instead of dispatching on the exercise class themselves. Bermudan
-dates on or before the valuation date are dropped, except that index 0 is
-set when exercise is allowed today; a date whose time is on the grid takes
-its index (MAKE-TIME-GRID puts every date there), and the others snap to the
-nearest index of an evenly spaced grid, clamped to the last one.
+  (:documentation "Return a SIMPLE-BIT-VECTOR as long as TIMES. It has 1 at the grid indices where
+EXERCISE allows exercise. TIMES are the grid times in MARKET time, from 0 at the
+valuation date to the expiry. Lattice and LSM engines read this mask. They do not
+dispatch on the exercise class. The function drops Bermudan dates on or before the
+valuation date, but it sets index 0 if exercise is allowed today. A date whose time is
+on the grid takes its index (MAKE-TIME-GRID puts every date there). Other dates snap
+to the nearest index of an evenly spaced grid, limited to the last index.
 
   (exercise-mask (make-instance 'american-exercise :expiry d) m times) ; all ones")
   (:method ((x european-exercise) market times)
@@ -162,8 +160,8 @@ DOUBLE-FLOAT (*)). The last element is TAU exactly.
 
 (declaim (ftype (function (t t) (values double-float &optional)) time-to-expiry))
 (defun time-to-expiry (exercise market)
-  "Year fraction from MARKET's valuation date to EXERCISE's expiry under the
-market's day counter."
+  "The year fraction from the valuation date of MARKET to the expiry of EXERCISE, under
+the day counter of the market."
   (market-time market (expiry exercise)))
 
 ;;; --------------------------------------------------------------------
@@ -193,21 +191,20 @@ or every Bermudan date.")
 
 (defclass payoff () ()
   (:metaclass component-class)
-  (:documentation "What a contract pays as a function of the observable.
-Carries no slots: call/put and the option's K belong to the option payoffs
-in options.lisp, since a coupon or a swap leg has neither. Subclasses use
-COMPONENT-CLASS too, so construction languages can fill their slots from
-facts (:FACT slot option)."))
+  (:documentation "What a contract pays as a function of the observable. The class has no slots. The
+option payoffs in options.lisp own call/put and the strike K, because a coupon or a
+swap leg has neither. Subclasses also use COMPONENT-CLASS, so construction languages
+can fill their slots from facts (the :FACT slot option)."))
 
 (defgeneric payoff-value (payoff x)
-  (:documentation "Dispatching payoff. Convenient; too slow to call per path."))
+  (:documentation "Return the payoff for an observable value. The function dispatches. It is convenient,
+but too slow to call for each path."))
 
 (defgeneric payoff-kernel (payoff)
-  (:documentation "Dispatch once, return a typed (double-float ->
-double-float) closure. Engines call this before entering their loops. The
-default wraps PAYOFF-VALUE, so any payoff with a PAYOFF-VALUE method works in
-a closure-driven engine; it dispatches on every call, so DEFINE-PAYOFF's
-typed kernel is much faster.")
+  (:documentation "Dispatch once and return a typed (double-float -> double-float) closure. Engines call
+this function before they enter their loops. The default wraps PAYOFF-VALUE, so any
+payoff with a PAYOFF-VALUE method works in a closure-driven engine. The default
+dispatches on every call, so the typed kernel of DEFINE-PAYOFF is much faster.")
   (:method ((p payoff))
     (lambda (s) (float (payoff-value p s) 1d0))))
 
@@ -234,9 +231,9 @@ closed form for ~S would price ~S with it. Inherit from a data class such as ~
 CALL-PUT-PAYOFF or STRIKE-PAYOFF instead."
                        (formula-payoff-name c) (formula-payoff-superclass-name c)
                        (formula-payoff-superclass-name c) (formula-payoff-name c))))
-    (:documentation "DEFINE-PAYOFF was given a payoff with its own formula as
-a superclass. Engines with closed forms for that superclass would apply them
-to the subclass and return the superclass's price."))
+    (:documentation "DEFINE-PAYOFF received a payoff with its own formula as a superclass. Engines with
+closed forms for that superclass would apply them to the subclass. They would return
+the price of the superclass."))
 
   (defun class-payoff-variables (name)
     "The variables the class NAME makes available to a DEFINE-PAYOFF formula:
@@ -297,8 +294,9 @@ INITIALIZE-INSTANCE method coercing reals into its double-float slots."
                                           (float value 1d0))))))))))))
 
 (defmacro declare-payoff-variables (class &rest variables)
-  "Record VARIABLES, each (variable reader type), as usable in DEFINE-PAYOFF
-formulas for subclasses of CLASS, for a payoff class written by hand.
+  "Record VARIABLES as usable in DEFINE-PAYOFF formulas for the subclasses of CLASS.
+Use it for a payoff class that is written by hand. Each variable is
+(variable reader type).
 
   (declare-payoff-variables call-put-payoff (phi phi double-float))"
   `(eval-when (:compile-toplevel :load-toplevel :execute)
@@ -317,24 +315,19 @@ PAYOFF. A value that is not a real signals INVALID-ARGUMENT naming PAYOFF.
                                "a real number as the result of the payoff formula")))
 
 (defmacro define-payoff (name superclasses slots (observable) &body body)
-  "Define the payoff class NAME and derive PAYOFF-VALUE and PAYOFF-KERNEL
-from one formula. Each of SLOTS is (slot-name type &key initform reader doc
-fact); without INITFORM the initarg is required, and FACT names the
-construction fact that fills the slot (see MAKE-FROM-FACTS). BODY, optionally preceded by a
-docstring, computes the payoff from OBSERVABLE (a double-float) and may use
-every slot of NAME, and the variables its superclasses declare, as typed
-local variables. PAYOFF-KERNEL reads them once and closes over them, so the
-closure makes no generic call per evaluation.
+  "Define the payoff class NAME. Derive PAYOFF-VALUE and PAYOFF-KERNEL from one
+formula. Each of SLOTS is (slot-name type &key initform reader doc fact). Without
+INITFORM the initarg is required. FACT names the construction fact that fills the
+slot (see MAKE-FROM-FACTS). BODY can start with a docstring. It computes the
+payoff from OBSERVABLE (a double-float). It can use every slot of NAME and the
+variables that its superclasses declare, as typed local variables. PAYOFF-KERNEL
+reads them once and closes over them, so the closure makes no generic call for
+each evaluation.
 
-Inherit from data classes such as CALL-PUT-PAYOFF or STRIKE-PAYOFF, not from
-a payoff with its own formula: engines with a closed form for the parent
-would price the subclass with it. Doing so signals FORMULA-PAYOFF-SUPERCLASS
-at macroexpansion.
-
-  (define-payoff digital (call-put-payoff)
-      ((level double-float :doc \"Pays 1 beyond this level.\"))
-    (s)
-    (if (plusp (* phi (- s level))) 1d0 0d0))"
+Inherit from data classes such as CALL-PUT-PAYOFF or STRIKE-PAYOFF. Do not inherit
+from a payoff that has its own formula. An engine with a closed form for the
+parent would price the subclass with that form. This signals
+FORMULA-PAYOFF-SUPERCLASS at macroexpansion."
   (dolist (super superclasses)
     (when (gethash super *formula-payoffs*)
       (error 'formula-payoff-superclass :payoff name :superclass super)))
@@ -370,9 +363,8 @@ at macroexpansion.
          ',name))))
 
 (defgeneric validate-payoff (payoff market expiry)
-  (:documentation "Signal an error if MARKET cannot support pricing PAYOFF to
-EXPIRY, a date. Called once per PRICE, before the engine runs; the default
-accepts everything.")
+  (:documentation "Signal an error if MARKET cannot support the pricing of PAYOFF to EXPIRY, a date. PRICE
+calls it once, before the engine runs. The default accepts everything.")
   (:method ((p payoff) market expiry)
     (declare (ignore market expiry))
     nil))

@@ -3,16 +3,14 @@
 ;;;;   log S_t = log S_{t-1} + (r - q) d - h_t/2 + sqrt(h_t) z_t
 ;;;;   h_{t+1}  = omega + beta h_t + alpha h_t (z_t - gamma)^2
 ;;;;
-;;;; The interesting structural point: GARCH is a DISCRETE-time model. Its
-;;;; time step is part of the model, not a numerical knob, so unlike the
-;;;; diffusions it cannot be handed an arbitrary dt. MAKE-STEPPER signals
-;;;; INCOMPATIBLE-TIME-STEP instead of silently returning a wrong number —
-;;;; the kind of mismatch a "just pass a process" design invites, and the
-;;;; reason the protocol lets a process refuse a time grid.
+;;;; GARCH is a discrete-time model. Its time step is part of the model. It is not a
+;;;; numerical setting. Thus, unlike the diffusions, it cannot take an arbitrary dt.
+;;;; MAKE-STEPPER signals INCOMPATIBLE-TIME-STEP. It does not silently return a wrong
+;;;; number. The protocol lets a process refuse a time grid for this reason.
 ;;;;
-;;;; gamma > 0 is the leverage parameter: negative shocks raise next period's
-;;;; variance more than positive ones. alpha = beta = gamma = 0 collapses to
-;;;; GBM with variance omega per period.
+;;;; gamma > 0 is the leverage parameter: negative shocks raise the variance of the next
+;;;; period more than positive shocks. With alpha = beta = gamma = 0, the model reduces to
+;;;; GBM with variance omega for each period.
 
 (in-package #:fincl)
 

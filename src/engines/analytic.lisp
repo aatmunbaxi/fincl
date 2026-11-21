@@ -1,11 +1,10 @@
 ;;;; engines/analytic.lisp --- closed forms and approximations
 ;;;;
-;;;; These read the market only through the protocol (FORWARD,
-;;;; DISCOUNT-FACTOR, BLACK-VARIANCE at the expiry date), so they price on any
-;;;; market with deterministic rates: a flat market, curves, a vol surface.
-;;;; The engine class fixes the model (Black-Scholes); the market only
-;;;; supplies data. Black's formula in F, D and w is exact for every such
-;;;; market.
+;;;; These functions read the market only through the protocol (FORWARD,
+;;;; DISCOUNT-FACTOR, BLACK-VARIANCE at the expiry date). Thus they price on any market
+;;;; with deterministic rates: a flat market, curves, a vol surface. The engine class
+;;;; fixes the model (Black-Scholes). The market only supplies data. Black's formula in
+;;;; F, D and w is exact for every such market.
 
 (in-package #:fincl)
 
@@ -30,11 +29,11 @@ discount factor and the total variance to expiry. No year fraction appears.
                     (values double-float &optional))
           bachelier-formula))
 (defun bachelier-formula (phi forward strike discount normal-variance)
-  "Bachelier (normal) price of a call (PHI = 1) or put (PHI = -1) from the
-forward, the discount factor and the total normal variance sigma_N^2 T. The
-forward and strike may be negative. Evaluated as intrinsic value plus
-|F - K| (-Phi~(-|F - K| / sqrt(w))) (NORMALISED-BACHELIER), so it keeps full
-relative precision far out of the money.
+  "The Bachelier (normal) price of a call (PHI = 1) or a put (PHI = -1). The inputs are
+the forward, the discount factor and the total normal variance sigma_N^2 T. The
+forward and the strike can be negative. The function adds the intrinsic value to
+|F - K| (-Phi~(-|F - K| / sqrt(w))) (NORMALISED-BACHELIER), so it keeps full relative
+precision far out of the money.
 
   (bachelier-formula 1d0 0.01d0 0.012d0 0.95d0 (* 0.008d0 0.008d0)) => 0.002277..."
   (* (float discount 1d0)

@@ -1,18 +1,18 @@
 ;;;; processes/parameters.lisp --- model parameters as slot metadata
 ;;;;
-;;;; A slot of a PARAMETERIZED-CLASS may be declared a model parameter, with
-;;;; bounds and a market default, as slot options:
+;;;; A slot of a PARAMETERIZED-CLASS can be declared a model parameter, with bounds and a
+;;;; market default, as slot options:
 ;;;;
 ;;;;   (kappa :initarg :kappa :initform 2d0 :parameter t :bounds ((0) nil))
 ;;;;
-;;;; The metaobjects carry this metadata, so code that needs the parameters
-;;;; (calibration, printing, validation, Greeks by parameter) enumerates them
-;;;; through the MOP instead of keeping its own list. DEFINE-PROCESS writes
-;;;; the slot options; this file only interprets them.
+;;;; The metaobjects carry this metadata. Code that needs the parameters (calibration,
+;;;; printing, validation, Greeks by parameter) enumerates them through the MOP. It does not
+;;;; keep its own list. DEFINE-PROCESS writes the slot options. This file only interprets
+;;;; them.
 ;;;;
-;;;; Bounds follow CL's interval designators, as in (REAL LO HI): a real is
-;;;; an inclusive bound, a one-element list (X) an exclusive one, NIL no
-;;;; bound. ((0) NIL) is "positive", (-1 1) is "in [-1, 1]".
+;;;; Bounds follow the interval designators of CL, as in (REAL LO HI). A real is an
+;;;; inclusive bound. A one-element list (X) is an exclusive bound. NIL is no bound. ((0)
+;;;; NIL) means "positive". (-1 1) means "in [-1, 1]".
 
 (in-package #:fincl)
 
@@ -85,9 +85,8 @@ SLOT of CLASS is of TYPE, a subtype of DOUBLE-FLOAT or (OR NULL that)."
 (define-slot-option :measure-dependent "T for a parameter whose value differs between measures.")
 
 (defclass parameterized-class (annotated-class) ()
-  (:documentation "Metaclass whose slots accept the options :PARAMETER,
-:BOUNDS and :MARKET-DEFAULT. Use DEFINE-PROCESS rather than writing the
-DEFCLASS by hand."))
+  (:documentation "A metaclass whose slots accept the options :PARAMETER, :BOUNDS and :MARKET-DEFAULT. Use
+DEFINE-PROCESS. Do not write the DEFCLASS by hand."))
 
 ;;; :UNSPECIFIED means that no class in the chain gave the option. A slot is
 ;;; managed (validated at construction) when :PARAMETER was given, T or NIL.
@@ -116,9 +115,9 @@ DEFCLASS by hand."))
 ;;; --------------------------------------------------------------------
 
 (defclass parameterized () ()
-  (:documentation "Mixin that validates managed slots at construction: a
-numeric value is coerced to double-float and checked against its bounds; NIL
-is allowed only for a slot with a market default."))
+  (:documentation "A mixin that validates managed slots at construction. A numeric value is coerced to
+double-float and checked against its bounds. NIL is allowed only for a slot with a market
+default."))
 
 (defmethod initialize-instance :after ((object parameterized) &key)
   (dolist (slot (managed-slots (class-of object)))
@@ -168,11 +167,9 @@ itself, or the risk-neutral process of a physical one.")
 
 (declaim (ftype (function (t) (values list &optional)) process-parameters))
 (defun process-parameters (process-or-class)
-  "Names of the model parameters of a process, or a process class name, in
-declaration order. Settings declared with :PARAMETER NIL (a GARCH period)
-are excluded.
-
-  (process-parameters 'heston) => (V0 KAPPA THETA XI RHO)"
+  "Return the names of the model parameters of a process, or of a process class name, in
+the order of declaration. It excludes settings that are declared with :PARAMETER NIL (a
+GARCH period)."
   (mapcar #'c2mop:slot-definition-name
           (parameter-slots (class-designator (if (or (symbolp process-or-class) (typep process-or-class 'class))
                                                  process-or-class
@@ -210,10 +207,10 @@ FINCL::RHO all find the same slot."
 
 (declaim (ftype (function (t t &optional t real) (values t &optional)) process-parameter))
 (defun process-parameter (process name &optional market (horizon 1d0))
-  "The value of parameter or setting NAME of PROCESS. NAME is matched by
-symbol name, so a keyword works from any package. A NIL value means the
-parameter comes from the market. With MARKET, that default is resolved on
-MARKET at HORIZON (market time); without it, NIL is returned.
+  "Return the value of the parameter or setting NAME of PROCESS. The function matches NAME
+by symbol name, so a keyword from any package works. A NIL value means that the
+parameter comes from the market. With MARKET, the function resolves that default on
+MARKET at HORIZON (market time). Without MARKET, it returns NIL.
 
   (process-parameter (make-instance 'heston :rho -0.5d0) :rho) => -0.5d0
   (process-parameter (make-instance 'heston) :v0)            => NIL
@@ -228,18 +225,18 @@ MARKET at HORIZON (market time); without it, NIL is returned.
 
 (declaim (ftype (function (t t) (values t t &optional)) parameter-bounds))
 (defun parameter-bounds (process-or-class name)
-  "Return (values lo hi), the bounds of parameter NAME as interval
-designators: a real is inclusive, (x) exclusive, NIL unbounded. NAME is
-matched by symbol name.
+  "Return (values lo hi), the bounds of the parameter NAME as interval designators. A real
+is inclusive. (x) is exclusive. NIL is unbounded. The function matches NAME by symbol
+name.
 
   (parameter-bounds 'heston :rho) => -1, 1"
   (values-list (slot-bounds* (find-managed-slot process-or-class name))))
 
 (declaim (ftype (function (t t &optional real) (values double-vector &optional)) parameter-vector))
 (defun parameter-vector (process market &optional (horizon 1d0))
-  "The model parameters of PROCESS as a (SIMPLE-ARRAY DOUBLE-FLOAT (*)), in
-the order of PROCESS-PARAMETERS. A NIL parameter is replaced by its market
-default, evaluated on MARKET at HORIZON (market time).
+  "Return the model parameters of PROCESS as a (SIMPLE-ARRAY DOUBLE-FLOAT (*)), in the order
+of PROCESS-PARAMETERS. A NIL parameter becomes its market default, evaluated on MARKET at
+HORIZON (market time).
 
   (parameter-vector (make-instance 'heston) m) => #(0.04d0 2d0 0.04d0 0.3d0 -0.7d0)"
   (let* ((process (parameter-source process))
@@ -256,9 +253,9 @@ default, evaluated on MARKET at HORIZON (market time).
 
 (declaim (ftype (function (t t) (values t &optional)) with-parameter-vector))
 (defun with-parameter-vector (process vector)
-  "A new process of PROCESS's class with its model parameters taken from
-VECTOR (in the order of PROCESS-PARAMETERS) and every other slot copied.
-PROCESS is not modified. The new process is validated like any other.
+  "Return a new process of the class of PROCESS. Its model parameters come from VECTOR (in
+the order of PROCESS-PARAMETERS). It copies every other slot. PROCESS does not change.
+The function validates the new process like any other.
 
   (with-parameter-vector heston (parameter-vector heston m))"
   (let* ((class (class-of process))

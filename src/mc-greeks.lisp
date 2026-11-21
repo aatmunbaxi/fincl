@@ -1,16 +1,15 @@
 ;;;; mc-greeks.lisp --- pathwise and likelihood-ratio Monte Carlo Greeks
 ;;;;
-;;;; (greeks option mc-engine market :method :pathwise) differentiates each
-;;;; simulated path's value: delta from the path scaled by (1 +/- h), vega
-;;;; from the path moved along its vol tangent d ln S_t / d sigma, the payoff
-;;;; evaluated through its PATH-KERNEL on the moved states (central
-;;;; differences with h = 1e-6 on the same path, exact for piecewise-linear
-;;;; payoffs except within h of a kink). It needs a payoff that is Lipschitz
-;;;; in the path (PATHWISE-DIFFERENTIABLE-P). :likelihood-ratio weights each
-;;;; path's value by the score of the spot in the path density, which needs
-;;;; no smoothness (digitals, barriers): the transition to the first grid
-;;;; point, or to expiry for payoffs that see only the terminal observable.
-;;;; Both are for GBM.
+;;;; (greeks option mc-engine market :method :pathwise) differentiates the value of each
+;;;; simulated path. Delta comes from the path scaled by (1 +/- h). Vega comes from the
+;;;; path moved along its vol tangent d ln S_t / d sigma. The code evaluates the payoff
+;;;; through its PATH-KERNEL on the moved states. It uses central differences with h = 1e-6
+;;;; on the same path. The result is exact for piecewise-linear payoffs, except within h of
+;;;; a kink. The method needs a payoff that is Lipschitz in the path
+;;;; (PATHWISE-DIFFERENTIABLE-P). The :likelihood-ratio method weights the value of each
+;;;; path by the score of the spot in the path density. It needs no smoothness (digitals,
+;;;; barriers). The score is that of the transition to the first grid point, or to expiry
+;;;; for payoffs that see only the terminal observable. Both methods are for GBM.
 
 (in-package #:fincl)
 

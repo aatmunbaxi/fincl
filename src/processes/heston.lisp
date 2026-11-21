@@ -3,22 +3,20 @@
 ;;;;   dS = (r - q) S dt + sqrt(v) S dW1
 ;;;;   dv = kappa (theta - v) dt + xi sqrt(v) dW2,   corr(dW1, dW2) = rho
 ;;;;
-;;;; Two state variables and two correlated factors: the first process here
-;;;; that the single-factor protocol has to accommodate without special
-;;;; cases. Two discretizations, chosen by the SCHEME slot:
+;;;; Two state variables and two correlated factors. The SCHEME slot chooses between two
+;;;; discretizations.
 ;;;;
-;;;; :QUADRATIC-EXPONENTIAL (the default) is L. Andersen, "Simple and
-;;;; efficient simulation of the Heston stochastic volatility model", J.
-;;;; Computational Finance 11 (2008): the variance is drawn from a quadratic
-;;;; Gaussian or an exponential-with-atom law matching the exact conditional
-;;;; mean and variance (switching at psi_c = 1.5), and ln S from the
-;;;; central-discretized integrated variance (gamma_1 = gamma_2 = 1/2) with
-;;;; the martingale correction K0*, so E[S(t+dt) | S(t), V(t)] = S(t)
-;;;; F(t+dt)/F(t) exactly. It stays accurate at coarse steps when the Feller
-;;;; condition 2 kappa theta > xi^2 fails, as it usually does in practice.
+;;;; :QUADRATIC-EXPONENTIAL (the default) is the scheme of L. Andersen, "Simple and
+;;;; efficient simulation of the Heston stochastic volatility model", J. Computational
+;;;; Finance 11 (2008). The code draws the variance from a quadratic Gaussian law or an
+;;;; exponential-with-atom law. The law matches the exact conditional mean and variance
+;;;; (the switch is at psi_c = 1.5). It draws ln S from the central-discretized integrated
+;;;; variance (gamma_1 = gamma_2 = 1/2) with the martingale correction K0*. Thus E[S(t+dt)
+;;;; | S(t), V(t)] = S(t) F(t+dt)/F(t) exactly. The scheme stays accurate at coarse steps
+;;;; when the Feller condition 2 kappa theta > xi^2 fails, as it usually does in practice.
 ;;;;
-;;;; :FULL-TRUNCATION is the Euler scheme of Lord, Koekkoek and van Dijk
-;;;; (2010): simple, but biased at coarse steps when Feller fails.
+;;;; :FULL-TRUNCATION is the Euler scheme of Lord, Koekkoek and van Dijk (2010). It is
+;;;; simple, but it is biased at coarse steps when the Feller condition fails.
 
 (in-package #:fincl)
 
@@ -302,10 +300,10 @@ the variance reaches 0, and a variance premium keeps the two measures equivalent
 the Feller condition holds under both."
                      (feller-measure c) (feller-process c)
                      (* 2 (feller-kappa c) (feller-theta c)) (expt (feller-xi c) 2))))
-  (:documentation "A Heston change of measure whose variance violates the
-Feller condition 2 kappa theta > xi^2 under the risk-neutral or the
-physical measure, so the measures may not be equivalent. Signalled once per
-image for each set of parameters."))
+  (:documentation "A Heston change of measure has a variance that violates the Feller condition 2 kappa
+theta > xi^2 under the risk-neutral or the physical measure. Then the measures can be
+non-equivalent. The condition is signalled once for each image and each set of
+parameters."))
 
 (defvar *feller-warnings* (make-hash-table :test 'equal)
   "Parameter lists FELLER-CONDITION-VIOLATED has been signalled for.")

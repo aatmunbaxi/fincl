@@ -1,21 +1,20 @@
 ;;;; market.lisp --- the market protocol, composite markets and views
 ;;;;
-;;;; Engines never read market slots. They go through these generic
-;;;; functions: SPOT, ZERO-RATE, DIVIDEND-YIELD, BLACK-VOL, BLACK-VARIANCE,
-;;;; and the defaults built on them. That protocol describes one underlying
-;;;; and one discount curve. A COMPOSITE-MARKET holds many, as named term
-;;;; structures (src/term-structures/), and PRICE narrows it to a MARKET-VIEW
-;;;; for the instrument being priced, so engines never see more than one.
+;;;; Engines never read market slots. They use these generic functions: SPOT, ZERO-RATE,
+;;;; DIVIDEND-YIELD, BLACK-VOL, BLACK-VARIANCE, and the defaults that are built on them.
+;;;; That protocol describes one underlying and one discount curve. A COMPOSITE-MARKET
+;;;; holds many, as named term structures (src/term-structures/). PRICE narrows it to a
+;;;; MARKET-VIEW for the instrument that it prices. Thus engines never see more than one
+;;;; underlying.
 ;;;;
-;;;; A market is an immutable snapshot: it is passed to every parallel
-;;;; worker, so nothing may mutate it. Scenarios are new markets, not
-;;;; edits to an existing one.
+;;;; A market is an immutable snapshot. The code passes it to every parallel worker, so
+;;;; nothing can mutate it. A scenario is a new market. It is not an edit to an existing
+;;;; market.
 ;;;;
-;;;; Every protocol function taking a point in time accepts either a DATE or
-;;;; a REAL. A real is a horizon in market time: the year fraction from the
-;;;; valuation date under the market's day counter. Methods on DATE convert
-;;;; with MARKET-TIME and delegate, so concrete markets implement only the
-;;;; REAL methods.
+;;;; Every protocol function that takes a point in time accepts a DATE or a REAL. A real is
+;;;; a horizon in market time: the year fraction from the valuation date under the day
+;;;; counter of the market. The methods on DATE convert with MARKET-TIME and delegate.
+;;;; Thus concrete markets implement only the REAL methods.
 
 (in-package #:fincl)
 (named-readtables:in-readtable fincl:syntax)
@@ -27,26 +26,26 @@
              (format s "The volatility ~@[~,6F ~]~A is not positive; pricing needs a ~
 positive volatility."
                      (error-volatility c) (error-where c))))
-  (:documentation "A volatility of zero or below where a model needs a
-positive one. PRICE offers USE-VALUE, to return a value as the price."))
+  (:documentation "A volatility of zero or below where a model needs a positive volatility. PRICE offers
+USE-VALUE, which returns a value as the price."))
 
 (defclass market ()
   ()
-  (:documentation "State of the world at a valuation date."))
+  (:documentation "The state of the world at a valuation date."))
 
 ;;; --------------------------------------------------------------------
 ;;; Time
 ;;; --------------------------------------------------------------------
 
 (defgeneric valuation-date (market)
-  (:documentation "The date the market is observed on."))
+  (:documentation "The date on which the market is observed."))
 
 (defgeneric market-day-counter (market)
   (:documentation "The day counter that turns dates into market time."))
 
 (declaim (ftype (function (t t) (values double-float &optional)) market-time))
 (defun market-time (market date)
-  "Year fraction from MARKET's valuation date to DATE under its day counter.
+  "The year fraction from the valuation date of MARKET to DATE, under its day counter.
 
   (market-time m #D\"2027-09-24\") => 1.0d0   ; valued 2026-09-24, ACT/365F"
   (let ((dc (market-day-counter market)))
@@ -61,24 +60,22 @@ positive one. PRICE offers USE-VALUE, to return a value as the price."))
 ;;; --------------------------------------------------------------------
 
 (defgeneric spot (market)
-  (:documentation "Current price of the underlying."))
+  (:documentation "The current price of the underlying."))
 
 (defgeneric zero-rate (market x)
-  (:documentation "Continuously compounded risk-free zero rate to X, a date
-or a horizon in market time."))
+  (:documentation "The continuously compounded risk-free zero rate to X, a date or a horizon in market
+time."))
 
 (defgeneric dividend-yield (market x)
-  (:documentation "Continuously compounded dividend yield to X, a date or a
-horizon in market time."))
+  (:documentation "The continuously compounded dividend yield to X, a date or a horizon in market time."))
 
 (defgeneric black-vol (market strike x)
-  (:documentation "Black-Scholes volatility for STRIKE to X, a date or a
-horizon in market time. A flat market ignores STRIKE and X; a surface
-interpolates."))
+  (:documentation "The Black-Scholes volatility for STRIKE to X, a date or a horizon in market time. A
+flat market ignores STRIKE and X. A surface interpolates."))
 
 (defgeneric black-variance (market strike x)
-  (:documentation "Total Black variance for STRIKE to X, a date or a
-horizon in market time: vol^2 * horizon for a flat market."))
+  (:documentation "The total Black variance for STRIKE to X, a date or a horizon in market time. For a
+flat market it is vol^2 * horizon."))
 
 ;;; Derived quantities. Defaults are expressed in terms of the protocol
 ;;; above, so a market only has to implement the primitives; a curve
@@ -89,41 +86,40 @@ horizon in market time: vol^2 * horizon for a flat market."))
     (exp (- (* (zero-rate m horizon) horizon)))))
 
 (defgeneric discrete-dividends (market)
-  (:documentation "The underlying's discrete dividends going ex after the
-valuation date, as DIVIDEND-EVENTs in market time, by time. NIL for a market
-with only a continuous dividend yield (the default).")
+  (:documentation "Return the discrete dividends of the underlying that go ex after the valuation date, as
+DIVIDEND-EVENTs in market time, ordered by time. The default is NIL, for a market with
+only a continuous dividend yield.")
   (:method ((m market)) '()))
 
 (defgeneric carry-factor (market x)
-  (:documentation "Growth factor of the underlying between discrete
-dividends: exp((r - q) horizon), with the continuous dividend yield q only.
-It is the forward factor of a market without discrete dividends. Processes
-grow at it, and engines that model discrete dividends apply each one at its
-ex-date.")
+  (:documentation "The growth factor of the underlying between discrete dividends: exp((r - q) horizon),
+with the continuous dividend yield q only. For a market without discrete dividends, it
+is the forward factor. Processes grow at this factor. Engines that model discrete
+dividends apply each dividend at its ex-date.")
   (:method ((m market) (horizon real))
     (exp (* (- (zero-rate m horizon) (dividend-yield m horizon)) horizon))))
 
 (defgeneric forward-factor (market x)
-  (:documentation "F(x) / S: the CARRY-FACTOR, reduced by any discrete
-dividends going ex by X (see FORWARD).")
+  (:documentation "F(x) / S: the CARRY-FACTOR, reduced by any discrete dividends that go ex by X (see
+FORWARD).")
   (:method ((m market) (horizon real))
     (if (discrete-dividends m)
         (/ (forward m horizon) (spot m))
         (carry-factor m horizon))))
 
 (defgeneric forward (market x)
-  (:documentation "The forward of the underlying to X, a date or a horizon in
-market time. With discrete dividends going ex at t_i <= X,
+  (:documentation "The forward of the underlying to X, a date or a horizon in market time. When discrete
+dividends go ex at t_i <= X,
 
   F(X) = (S - sum_i PV_i) C(X) prod_j (1 - delta_j)
 
-C the CARRY-FACTOR, delta_j the proportional dividends, and PV_i a cash
-dividend D_i paid at p_i, worth D_i P(p_i) / P(t_i) at its ex-date, carried
-back to today: D_i P(p_i) / (P(t_i) C(t_i)), divided by (1 - delta_j) for
-each proportional dividend up to t_i. With rates only (C = 1/P) that is
-F(X) = (S - sum_i D_i P(p_i)) / P(X); a continuous yield Q scales S by Q(X)
-and each dividend term by Q(X)/Q(t_i). Cash dividends are taken in full,
-whether or not they exceed the price.")
+C is the CARRY-FACTOR. delta_j are the proportional dividends. For a cash dividend D_i
+that pays at p_i, the value at its ex-date is D_i P(p_i) / P(t_i). PV_i carries it back
+to today: D_i P(p_i) / (P(t_i) C(t_i)). Divide it by (1 - delta_j) for each
+proportional dividend up to t_i. With rates only (C = 1/P), F(X) = (S - sum_i D_i
+P(p_i)) / P(X). A continuous yield Q scales S by Q(X) and each dividend term by
+Q(X)/Q(t_i). The function takes cash dividends in full, whether or not they exceed the
+price.")
   (:method ((m market) (horizon real))
     (let ((events (discrete-dividends m)))
       (if events
@@ -207,8 +203,8 @@ instrument's with (underlying ...) or :UNDERLYING."
   (:report (lambda (c s)
              (format s "The market has no ~A ~S. It has ~:[none~;~:*~{~S~^, ~}~]."
                      (error-what c) (error-key c) (error-known c))))
-  (:documentation "An instrument or a view needs an entry the market does not
-hold: an underlying, a curve, a vol structure."))
+  (:documentation "An instrument or a view needs an entry that the market does not hold, for example an
+underlying, a curve or a vol structure."))
 
 (define-condition unsupported-quanto (pricing-error)
   ((underlying :initarg :underlying :reader error-underlying)
@@ -219,9 +215,8 @@ hold: an underlying, a curve, a vol structure."))
 which needs an FX vol and correlation fincl does not model. Price it in ~S."
                      (error-currency c) (error-underlying c) (error-underlying-currency c)
                      (error-underlying-currency c))))
-  (:documentation "An instrument paying in a currency other than its
-underlying's: pricing it needs an FX vol and correlation fincl does not
-model."))
+  (:documentation "An instrument pays in a currency other than the currency of its underlying. To price it
+needs an FX vol and a correlation. fincl does not model them."))
 
 (defclass composite-market (market)
   ((valuation-date :initarg :valuation-date :reader valuation-date :type date
@@ -249,14 +244,14 @@ model."))
                      :documentation "Kind -> EQUAL table of key -> value, for the kinds
 DEFINE-MARKET-COMPONENT stores outside the tables above; NIL when the market
 holds none."))
-  (:documentation "Named term structures observed on one valuation date: a spot,
-dividend curve, vol structure and currency per underlying (and a
-DIVIDEND-SCHEDULE for those paying discrete dividends), yield curves by
-id, the curve each currency discounts on, and any kind registered with
-DEFINE-MARKET-COMPONENT. The tables are EQUAL hash tables keyed by keywords. They are copied when a market is derived or bumped
-and never mutated after construction, so a market can be shared by parallel
-workers. Pricing an instrument narrows the market to a MARKET-VIEW of the
-instrument's underlying."))
+  (:documentation "Named term structures that are observed on one valuation date. It holds a spot, a
+dividend curve, a vol structure and a currency for each underlying (and a
+DIVIDEND-SCHEDULE for underlyings that pay discrete dividends). It also holds yield
+curves by id, the curve that each currency discounts on, and any kind that
+DEFINE-MARKET-COMPONENT registered. The tables are EQUAL hash tables with keyword
+keys. The functions that derive or bump a market copy them. Nothing changes them after
+construction, so parallel workers can share a market. To price an instrument, the
+function narrows the market to a MARKET-VIEW of the underlying of the instrument."))
 
 (defun market-entry (table key what known)
   "The value of KEY in TABLE. KNOWN, the keys to report when KEY is missing,
@@ -385,10 +380,10 @@ holds (~{~S~^, ~})" (mapcar #'car curve-alist)))))
           make-bs-market))
 (defun make-bs-market (&key valuation-date (day-counter +actual-365-fixed+)
                             spot rate (dividend 0d0) dividend-schedule vol)
-  "A flat Black-Scholes market: a COMPOSITE-MARKET with one underlying and one
-currency, both :DEFAULT, discounting on the curve :DEFAULT. Numeric inputs
-are coerced to double-float; pass double-float or rational literals, since
-0.05 reads as a single-float and (float 0.05 1d0) is 0.05000000074505806d0.
+  "Make a flat Black-Scholes market: a COMPOSITE-MARKET with one underlying and one
+currency, both :DEFAULT, that discounts on the curve :DEFAULT. The function coerces
+numeric inputs to double-float. Pass double-float or rational literals. The literal
+0.05 reads as a single-float, and (float 0.05 1d0) is 0.05000000074505806d0.
 DIVIDEND-SCHEDULE adds discrete dividends, as in MAKE-MARKET-FROM-SPECS.
 
   (make-bs-market :valuation-date #D\"2026-09-24\"
@@ -437,9 +432,9 @@ registered kind (see DEFINE-MARKET-COMPONENT); MARKET is unchanged.
     new))
 
 (defgeneric derive-market (market &key &allow-other-keys)
-  (:documentation "A new market equal to MARKET but observed on another
-VALUATION-DATE or with another DAY-COUNTER (aging, conventions). MARKET is
-not modified. Move market data with BUMP.
+  (:documentation "Return a new market that equals MARKET but is observed on another VALUATION-DATE or has
+another DAY-COUNTER (aging, conventions). MARKET does not change. Use BUMP to move
+market data.
 
   (derive-market m :valuation-date #D\"2027-03-24\")"))
 
@@ -472,16 +467,21 @@ not modified. Move market data with BUMP.
 
 (declaim (ftype (function (t t t) (values market &optional)) bump))
 (defun bump (market factor shift)
-  "A new market with the risk FACTOR moved by SHIFT; MARKET is unchanged.
-FACTOR is (:spot u), (:vol u), (:dividend u) (the continuous yield) or
-(:dividend-schedule u) (every discrete dividend amount) for underlying U,
-(:dividend-schedule u ex-date) for the dividends going ex on one date,
-(:curve id) for a yield curve, (:quote id selector) for one input quote
-of a bootstrapped curve, chosen by its helper's tenor or index, the curve
-then rebootstrapped, or (kind key) for any other kind DEFINE-MARKET-COMPONENT
-registered. SHIFT is (:relative x), multiplying by 1 + x, or
-(:absolute x), adding x: to the spot, the vol, the yield, the dividend
-amounts (floored at 0), the rate or the quoted rate.
+  "Return a new market with the risk FACTOR moved by SHIFT. MARKET does not change.
+FACTOR is one of:
+  (:spot u), (:vol u), (:dividend u) (the continuous yield)
+                          for underlying U
+  (:dividend-schedule u)  every discrete dividend amount of U
+  (:dividend-schedule u ex-date)
+                          the dividends that go ex on one date
+  (:curve id)             a yield curve
+  (:quote id selector)    one input quote of a bootstrapped curve, chosen by the
+                          tenor or the index of its helper. The function
+                          bootstraps the curve again
+  (kind key)              any other kind that DEFINE-MARKET-COMPONENT registered
+SHIFT is (:relative x), which multiplies by 1 + x, or (:absolute x), which adds x. It
+applies to the spot, the vol, the yield, the dividend amounts (limited below at 0), the
+rate or the quoted rate.
 
   (bump m '(:spot :spx) '(:relative 1/100))     ; SPX spot up 1%
   (bump m '(:curve :usd-ois) '(:absolute 1/10000)) ; rates up 1bp
@@ -527,12 +527,13 @@ with kind one of TARGET-KINDS and key a keyword."
 
 (declaim (ftype (function (t t) (values t &optional)) market-component))
 (defun market-component (market target)
-  "The component of the composite MARKET that TARGET names, in BUMP's factor
-syntax: (:spot u) the spot of underlying U (a bare keyword U means the same),
-(:vol u) its vol structure, (:dividend u) its continuous dividend curve,
-(:dividend-schedule u) its discrete dividends, (:curve id) the yield curve ID,
-(kind key) an entry of any other kind DEFINE-MARKET-COMPONENT registered.
-A component the market lacks signals MISSING-MARKET-DATA listing what it has.
+  "Return the component of the composite MARKET that TARGET names. TARGET uses the factor
+syntax of BUMP: (:spot u) is the spot of underlying U (a bare keyword U means the same),
+(:vol u) is its vol structure, (:dividend u) is its continuous dividend curve,
+(:dividend-schedule u) is its discrete dividends, (:curve id) is the yield curve ID,
+and (kind key) is an entry of any other kind that DEFINE-MARKET-COMPONENT registered.
+If the market lacks the component, the function signals MISSING-MARKET-DATA. The report
+lists what the market has.
 
   (market-component m '(:curve :usd-ois))
   (market-component m :spx)   ; the SPX spot"
@@ -571,19 +572,19 @@ sets the forward's drift.")
    (dividends :initarg :dividends :initform '() :reader view-dividends
               :documentation "The underlying's DIVIDEND-EVENTs after the valuation date.")
    (vol-structure :initarg :vol-structure :reader view-vol-structure))
-  (:documentation "One underlying of a composite market and one discount
-curve, through the single-underlying market protocol that engines use. The
-forward grows at the rate of the underlying currency's curve less the
-dividend yield; DISCOUNT-FACTOR and ZERO-RATE come from the discount curve.
-Made by MARKET-VIEW; PRICE makes one per instrument."))
+  (:documentation "One underlying of a composite market and one discount curve, seen through the
+single-underlying market protocol that engines use. The forward grows at the rate of the
+curve of the currency of the underlying, less the dividend yield. DISCOUNT-FACTOR and
+ZERO-RATE come from the discount curve. MARKET-VIEW makes it. PRICE makes one for each
+instrument."))
 
 (declaim (ftype (function (t &key (:underlying t) (:discount-curve t))
                     (values market-view &optional))
           market-view))
 (defun market-view (market &key underlying discount-curve)
-  "A MARKET-VIEW of MARKET for UNDERLYING (NIL: the market's only underlying),
-discounting on the curve DISCOUNT-CURVE (NIL: the curve of the underlying's
-currency, which always sets the forward).
+  "Make a MARKET-VIEW of MARKET for UNDERLYING (NIL: the only underlying of the market).
+It discounts on the curve DISCOUNT-CURVE (NIL: the curve of the currency of the
+underlying, which always sets the forward).
 
   (spot (market-view m :underlying :spx)) => 5000.0d0"
   (let* ((underlying (resolve-underlying market underlying))

@@ -1,14 +1,11 @@
 ;;;; engines/rates-analytic.lisp --- Black and Bachelier caps and swaptions
 ;;;;
-;;;; A caplet is an option on its coupon's fixing, struck at the cap rate and
-;;;; paid on the discounted accrual; a European swaption is an option on the
-;;;; forward swap rate, paid on the annuity. Both engines read a rates vol
-;;;; structure at the option's expiry: BLACK-RATES-ENGINE as a (shifted)
-;;;; lognormal vol, BACHELIER-RATES-ENGINE as a normal vol.
-;;;;
-;;;; Provenance: they follow QuantLib's BlackCapFloorEngine,
-;;;; BachelierCapFloorEngine and BlackStyleSwaptionEngine
-;;;; (tests/fixtures/caps-swaptions.sexp).
+;;;; A caplet is an option on the fixing of its coupon. It has the cap rate as its strike
+;;;; and it pays on the discounted accrual. A European swaption is an option on the
+;;;; forward swap rate. It pays on the annuity. Both engines read a rates vol structure at
+;;;; the expiry of the option. BLACK-RATES-ENGINE reads it as a (shifted) lognormal vol.
+;;;; BACHELIER-RATES-ENGINE reads it as a normal vol. The file tests/fixtures/caps-
+;;;; swaptions.sexp holds the reference values.
 
 (in-package #:fincl)
 
@@ -49,11 +46,10 @@ id, else the engine's own."
 rate + displacement."))
   (:metaclass engine-class)
   (:designator :black-rates)
-  (:documentation "Black's formula (shifted lognormal) for caps, floors,
-collars and European swaptions.
+  (:documentation "Black's formula (shifted lognormal) for caps, floors, collars and European swaptions.
 
   (price cap (make-engine :black-rates :volatility 0.25d0) market)
-  (price cap (make-engine :black-rates :volatility :usd-cap) market) ; the market's (rates-vol :usd-cap ...)
+  (price cap (make-engine :black-rates :volatility :usd-cap) market) ; the (rates-vol :usd-cap ...) of the market
   (price swaption (make-engine :black-rates :volatility 0.12d0 :displacement 0.02d0) market)"))
 
 (defmethod initialize-instance :after ((e black-rates-engine) &key)
@@ -63,8 +59,7 @@ collars and European swaptions.
 (defclass bachelier-rates-engine (volatility-rates-engine) ()
   (:metaclass engine-class)
   (:designator :bachelier-rates)
-  (:documentation "Bachelier's formula (normal vols) for caps, floors,
-collars and European swaptions.
+  (:documentation "Bachelier's formula (normal vols) for caps, floors, collars and European swaptions.
 
   (price swaption (make-engine :bachelier-rates :volatility 0.008d0) market)"))
 
@@ -126,8 +121,8 @@ valuation date."
 
 (declaim (ftype (function (t t t) (values list &optional)) cap-floor-optionlet-prices))
 (defun cap-floor-optionlet-prices (cap engine market)
-  "The value of each optionlet of CAP under ENGINE (a Black or Bachelier
-rates engine) on MARKET, as a list.
+  "Return the value of each optionlet of CAP as a list. ENGINE (a Black or Bachelier
+rates engine) prices them on MARKET.
 
   (cap-floor-optionlet-prices cap (make-engine :black-rates :volatility 0.25d0) market)"
   (check-input cap cap-floor "a cap, floor or collar")

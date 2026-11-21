@@ -1,18 +1,18 @@
 ;;;; pricing.lisp --- pricing on composite markets
 ;;;;
-;;;; Engines implement PRICE against the single-underlying market protocol.
-;;;; On a COMPOSITE-MARKET, this :AROUND method narrows the market to a
-;;;; MARKET-VIEW for the instrument (its underlying, discounting on its
-;;;; currency's curve) and prices again on the view. Interest-rate
-;;;; instruments have no underlying: they price on the composite market itself.
+;;;; Engines implement PRICE against the single-underlying market protocol. On a
+;;;; COMPOSITE-MARKET, this :AROUND method narrows the market to a MARKET-VIEW for the
+;;;; instrument (its underlying, which discounts on the curve of its currency). Then it
+;;;; prices again on the view. Interest-rate instruments have no underlying. They price on
+;;;; the composite market itself.
 ;;;;
-;;;; It must run before every other :AROUND method, in particular the
-;;;; option's (expiry checks, validation, restarts), which reads the market
-;;;; through the protocol a view implements. PRICE's argument precedence
-;;;; order is (MARKET INSTRUMENT ENGINE), so a method specialized on
-;;;; COMPOSITE-MARKET is more specific than any method whose market
-;;;; specializer is T, whatever its instrument specializer. Primary methods
-;;;; all specialize the market as T, so their order is unaffected.
+;;;; This method must run before every other :AROUND method, in particular the :AROUND
+;;;; method of the option (expiry checks, validation, restarts). That method reads the
+;;;; market through the protocol that a view implements. The argument precedence order of
+;;;; PRICE is (MARKET INSTRUMENT ENGINE). Thus a method that is specialized on
+;;;; COMPOSITE-MARKET is more specific than any method whose market specializer is T, in
+;;;; any instrument specializer. All primary methods specialize the market as T, so their
+;;;; order does not change.
 
 (in-package #:fincl)
 

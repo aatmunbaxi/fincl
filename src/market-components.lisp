@@ -1,19 +1,18 @@
 ;;;; market-components.lisp --- the kinds of data a composite market holds
 ;;;;
-;;;; A kind of market component (spots, vol structures, yield curves, an FX
-;;;; rate) is registered once with DEFINE-MARKET-COMPONENT: its value type,
-;;;; where the market stores it, how a missing entry is reported, how BUMP and
-;;;; simulation reach it, its market-language clause, and how it prints and
-;;;; snapshots. MARKET-COMPONENT, BUMP, SET-MARKET-COMPONENT, the market
-;;;; language, printing, snapshots and simulation targets read the registry,
-;;;; so a new kind is one form. The kinds built into fincl keep their own
-;;;; slots of COMPOSITE-MARKET; every other kind lives in the market's extra
-;;;; table.
+;;;; DEFINE-MARKET-COMPONENT registers a kind of market component once (spots, vol
+;;;; structures, yield curves, an FX rate). The registry holds: its value type, where the
+;;;; market stores it, how a report names a missing entry, how BUMP and simulation reach
+;;;; it, its market-language clause, and how it prints and snapshots. MARKET-COMPONENT,
+;;;; BUMP, SET-MARKET-COMPONENT, the market language, printing, snapshots and simulation
+;;;; targets read the registry. Thus a new kind is one form. The kinds that are built into
+;;;; fincl keep their own slots of COMPOSITE-MARKET. Every other kind lives in the extra
+;;;; table of the market.
 ;;;;
-;;;; Clause names and facts are recorded when a definition is compiled as
-;;;; well as when it is loaded, so a MAKE-MARKET form later in the same file
-;;;; can use the new clause. Functions in a definition are function
-;;;; designators evaluated at load time.
+;;;; The code records clause names and facts when a definition is compiled and when it is
+;;;; loaded. Thus a MAKE-MARKET form later in the same file can use the new clause. The
+;;;; functions in a definition are function designators. The code evaluates them at load
+;;;; time.
 
 (in-package #:fincl)
 
@@ -148,8 +147,7 @@ is replaced by a definition in package ~A with values of type ~S. To replace it 
 muffle this warning with HANDLER-BIND."
                      (error-kind c) (error-old-package c) (error-old-type c)
                      (error-new-package c) (error-new-type c))))
-  (:documentation "A market component kind was defined again from a package
-other than the one that defined it."))
+  (:documentation "A package other than the one that defined a market component kind defined it again."))
 
 (defvar *market-component-order* '()
   "Every registered kind, in definition order.")
@@ -298,52 +296,56 @@ clause, in a scope of its own."
                                           key-fact fact key-documentation fact-documentation
                                           required entry spec print
                                           snapshot-constructors snapshot-classes sealed)
-  "Define KIND, a keyword naming a kind of data a composite market holds (an FX
-rate, a hazard curve), so that MAKE-MARKET builds it, MARKET-COMPONENT and
-BUMP reach it as (KIND key), and the market prints and snapshots it.
+  "Define KIND, a keyword for a kind of data that a composite market holds, for
+example an FX rate or a hazard curve. Then MAKE-MARKET builds it. MARKET-COMPONENT
+and BUMP reach it as (KIND key). The market prints and snapshots it.
 
-  TYPE, DESCRIPTION  the type of a stored value, and how a report names one
-                     (\"a positive FX rate\").
-  WHAT               the noun a MISSING-MARKET-DATA report uses (default the
-                     kind's name).
-  CLAUSE             (name (key value)): a top-level clause (name :eurusd
-                     1.08d0), or (name (key &clauses var)) with PARTS.
-  WITHIN             (group name (value)): a sub-clause of a group's clause,
-                     keyed by the group's key, as (underlying :spx (spot 100)).
-  PARTS              ((name lambda-list documentation) ...): the sub-clauses of
-                     a CLAUSE with &CLAUSES; each publishes (:name arg ...) and
-                     ENTRY, a function of that list, makes the value.
-  DOCUMENTATION      the clause's documentation.
-  INPUT, INPUT-TYPE  a function turning a clause's argument into a value (a
-                     real into a flat structure), and the type it accepts
-                     (default TYPE).
-  COERCE             a function normalizing a value of TYPE before it is
+  TYPE, DESCRIPTION  The type of a stored value, and the words that a report
+                     uses for it (\"a positive FX rate\").
+  WHAT               The noun that a MISSING-MARKET-DATA report uses. The
+                     default is the name of the kind.
+  CLAUSE             (name (key value)) is a top-level clause: (name :eurusd
+                     1.08d0). (name (key &clauses var)) is a clause with PARTS.
+  WITHIN             (group name (value)) is a sub-clause of the clause of a
+                     group. The key of the group keys it, as in
+                     (underlying :spx (spot 100)).
+  PARTS              ((name lambda-list documentation) ...) are the sub-clauses
+                     of a CLAUSE with &CLAUSES. Each one publishes (:name arg
+                     ...). ENTRY is a function of that list. It makes the value.
+  DOCUMENTATION      The documentation of the clause.
+  INPUT, INPUT-TYPE  INPUT is a function that turns a clause argument into a
+                     value (a real into a flat structure). INPUT-TYPE is the
+                     type that it accepts. The default is TYPE.
+  COERCE             A function that normalizes a value of TYPE before it is
                      stored (REAL-TO-DOUBLE for a real).
-  BUMPABLE           true (the default) if (KIND key) is a BUMP factor and a
-                     simulation target; BUMP moves a real by APPLY-SHIFT and
-                     anything else by BUMP-STRUCTURE.
-  VIEW               a function of (market key) returning the market a
-                     simulated process steps on; NIL: the kind is not simulated.
-  PRINT              a function of a value returning the clause's arguments
-                     after the key (NIL: omit the clause); default the value.
+  BUMPABLE           True (the default) if (KIND key) is a BUMP factor and a
+                     simulation target. BUMP moves a real with APPLY-SHIFT and
+                     all other values with BUMP-STRUCTURE.
+  VIEW               A function of (market key). It returns the market that a
+                     simulated process steps on. NIL means that the kind is not
+                     simulated.
+  PRINT              A function of a value. It returns the arguments of the
+                     clause after the key. NIL omits the clause. The default
+                     is the value.
   SNAPSHOT-CONSTRUCTORS, SNAPSHOT-CLASSES
-                     the functions and classes the snapshot form of a value
-                     calls, which READ-SNAPSHOT is then allowed to call.
-  KEY-FACT, FACT     the facts the clause publishes (default :KIND-KEY and
-                     :KIND), with KEY-DOCUMENTATION and FACT-DOCUMENTATION.
-  REQUIRED           true if every member of a group needs the clause.
+                     The functions and classes that the snapshot form of a
+                     value calls. READ-SNAPSHOT can then call them.
+  KEY-FACT, FACT     The facts that the clause publishes (the default is
+                     :KIND-KEY and :KIND), with KEY-DOCUMENTATION and
+                     FACT-DOCUMENTATION.
+  REQUIRED           True if every member of a group needs the clause.
   STORAGE, KNOWN, SPEC, SEALED
-                     for the kinds built into fincl: the reader of their table,
-                     a function of the market listing keys for reports, how
-                     the keyword shape of MAKE-MARKET takes them, and a seal
-                     against redefinition from another package.
+                     For the kinds that are built into fincl: the reader of
+                     their table, a function of the market that lists keys for
+                     reports, how the keyword shape of MAKE-MARKET takes them,
+                     and a seal against redefinition from another package.
 
-Other kinds live in the market's extra table. Function arguments are
-function designators evaluated at load time; name a function as a quoted
-symbol. A definition belongs to the package current when it is expanded.
-Redefining a kind from another package warns with
-MARKET-COMPONENT-REDEFINED; a clause name or fact another kind owns signals
-INVALID-ARGUMENT.
+Other kinds live in the extra table of the market. The function arguments are
+function designators. They are evaluated at load time. Name a function as a
+quoted symbol. A definition belongs to the package that is current when the
+macro is expanded. A redefinition of a kind from another package signals the
+warning MARKET-COMPONENT-REDEFINED. A clause name or fact that another kind owns
+signals INVALID-ARGUMENT.
 
   (define-market-component :fx
     :type (real (0)) :description \"a positive FX rate\"

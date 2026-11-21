@@ -3,13 +3,12 @@
 ;;;;   dS/S = (r - q - lambda k) dt + sigma dW + (e^Y - 1) dN,
 ;;;;   Y ~ Exp(eta_1) with probability p, -Exp(eta_2) with probability 1 - p
 ;;;;
-;;;; S. G. Kou, "A jump-diffusion model for option pricing", Management
-;;;; Science 48 (2002). eta_1 > 1 keeps E[e^Y] finite. With lambda = 0 it is
-;;;; GBM. Up and down jumps are independent Poisson streams (intensities
-;;;; lambda p and lambda (1 - p)), and a sum of n Exp(eta) jumps is
-;;;; Gamma(n, 1/eta), so an increment is sampled exactly from five normals:
-;;;; the Brownian shock, two counts and two gamma sums, all by quantiles at
-;;;; Phi(z).
+;;;; S. G. Kou, "A jump-diffusion model for option pricing", Management Science 48 (2002).
+;;;; eta_1 > 1 keeps E[e^Y] finite. With lambda = 0, the process is GBM. Up jumps and down
+;;;; jumps are independent Poisson streams (intensities lambda p and lambda (1 - p)). A sum
+;;;; of n Exp(eta) jumps is Gamma(n, 1/eta). Thus the code samples an increment exactly
+;;;; from five normals: the Brownian shock, two counts and two gamma sums. It takes the
+;;;; counts and sums as quantiles at Phi(z).
 
 (in-package #:fincl)
 
@@ -20,8 +19,7 @@
 up jump is 1/eta1.")
    (eta2 5d0 :measure-dependent t :type positive-double :bounds ((0) nil) :doc "Rate of the downward exponential jumps; the
 mean down jump is 1/eta2."))
-  (:documentation "Kou's jump diffusion: GBM plus double-exponential log
-jumps at Poisson times."))
+  (:documentation "The jump diffusion of Kou: GBM plus double-exponential log jumps at Poisson times."))
 
 (defmethod levy-exponent ((p kou-jump) u)
   (let ((iu (* #c(0d0 1d0) u)) (up (up-probability p)) (eta1 (eta1 p)) (eta2 (eta2 p)))

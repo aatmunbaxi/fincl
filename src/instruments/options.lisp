@@ -1,9 +1,8 @@
 ;;;; instruments/options.lisp --- options as component bundles
 ;;;;
-;;;; An option is payoff x exercise x path feature. Anything that only
-;;;; changes a number inside a method (call vs. put) is a slot; anything that
-;;;; changes which method applies (exercise style, path dependence) is a
-;;;; class.
+;;;; An option is payoff x exercise x path feature. Anything that changes only a number
+;;;; inside a method (call or put) is a slot. Anything that changes which method applies
+;;;; (exercise style, path dependence) is a class.
 
 (in-package #:fincl)
 
@@ -11,7 +10,7 @@
   ((kind :initarg :kind :reader kind :type option-kind
          :initform (a:required-argument :kind) :fact :kind))
   (:metaclass component-class)
-  (:documentation "A payoff that comes as a call or a put."))
+  (:documentation "A payoff that is a call or a put."))
 
 (declaim (inline phi))
 (defun phi (payoff)
@@ -25,13 +24,10 @@
   ((strike :initarg :strike :reader strike :type double-float
            :initform (a:required-argument :strike) :fact :strike))
   (:metaclass component-class)
-  (:documentation "A call or put with a strike: the data a struck payoff
-needs, with no formula. Build new struck payoffs on this, not on
-VANILLA-PAYOFF: engines with closed forms for VANILLA-PAYOFF would apply them
-to a subclass and return the vanilla price.
-
-  (define-payoff digital (strike-payoff) () (s)
-    (if (plusp (* phi (- s strike))) 1d0 0d0))"))
+  (:documentation "A call or put with a strike. It is the data that a struck payoff needs, with no
+formula. Build new struck payoffs on this class, not on VANILLA-PAYOFF. Engines with
+closed forms for VANILLA-PAYOFF would apply them to a subclass. They would return the
+vanilla price."))
 
 (defmethod initialize-instance :after ((p strike-payoff) &key)
   (check-input (slot-value p 'strike) real "a real strike")
@@ -92,9 +88,9 @@ needs on a time grid.")
   (:method ((p payoff)) '()))
 
 (defgeneric instrument-mandatory-dates (instrument)
-  (:documentation "Every date a path simulation of INSTRUMENT must hit
-exactly: exercise dates, the expiry, observation and payment dates. Sorted,
-without duplicates.
+  (:documentation "Return every date that a path simulation of INSTRUMENT must hit exactly: exercise
+dates, the expiry, observation dates and payment dates. The list is sorted and has no
+duplicates.
 
   (instrument-mandatory-dates (make-option (put 100) (bermudan :dates ds))) => DS"))
 

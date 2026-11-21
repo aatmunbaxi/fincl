@@ -1,22 +1,21 @@
 ;;;; math/extrapolation.lisp --- Richardson extrapolation
 ;;;;
-;;;; A quantity computed with step h often has an error expansion
+;;;; A quantity that is computed with step h often has an error expansion
 ;;;;
 ;;;;   A(h) = A + a1 h^p1 + a2 h^p2 + ...
 ;;;;
-;;;; with known exponents p1 < p2 < ... and unknown coefficients. Given A at
-;;;; the geometric steps h, h/r, h/r^2, ..., Richardson's tableau removes one
-;;;; term per column:
+;;;; with known exponents p1 < p2 < ... and unknown coefficients. Take A at the geometric
+;;;; steps h, h/r, h/r^2, ... The tableau of Richardson removes one term in each column:
 ;;;;
 ;;;;   R_k(i) = (r^pk R_{k-1}(i+1) - R_{k-1}(i)) / (r^pk - 1)
 ;;;;
-;;;; The result is a fixed linear combination of the inputs, so the tableau
-;;;; is run once on the coefficients (exactly, in rationals, whenever r and
-;;;; the exponents are rational) rather than on the values.
+;;;; The result is a fixed linear combination of the inputs. Thus the code runs the tableau
+;;;; once on the coefficients, and not on the values. It is exact, in rationals, when r and
+;;;; the exponents are rational.
 ;;;;
-;;;; Uses in fincl: the BBSR binomial tree (errors in 1/N), the COS American
-;;;; (Bermudans with M, 2M, 4M, 8M dates; errors in 1/M, 1/M^2, 1/M^3), and
-;;;; the cumulant estimates from a characteristic function (errors in u^2).
+;;;; Uses in fincl: the BBSR binomial tree (errors in 1/N), the COS American (Bermudans
+;;;; with M, 2M, 4M, 8M dates, with errors in 1/M, 1/M^2, 1/M^3), and the cumulant
+;;;; estimates from a characteristic function (errors in u^2).
 
 (in-package #:fincl)
 
@@ -39,11 +38,11 @@ after the first" (1- n)))))
                     (values vector &optional))
           richardson-weights))
 (defun richardson-weights (n &key (ratio 2) (exponents (default-exponents n)))
-  "Weights w_0 ... w_{N-1} such that sum w_i A(h / RATIO^i) cancels the
-terms h^p, p in EXPONENTS, of A's error expansion; index 0 is the coarsest
-step. EXPONENTS holds N - 1 increasing positive reals and defaults to 1, 2,
-..., N - 1. The weights sum to 1. They are exact rationals when RATIO is
-rational and the exponents are integers, and floats otherwise.
+  "Return weights w_0 ... w_{N-1} such that sum w_i A(h / RATIO^i) cancels the terms h^p,
+p in EXPONENTS, of the error expansion of A. Index 0 is the coarsest step. EXPONENTS
+holds N - 1 increasing positive reals. It defaults to 1, 2, ..., N - 1. The weights sum
+to 1. They are exact rationals when RATIO is rational and the exponents are integers.
+Otherwise they are floats.
 
   (richardson-weights 4) => #(-1/21 2/3 -8/3 64/21)
   (richardson-weights 2 :exponents '(2)) => #(-1/3 4/3)"
@@ -93,14 +92,14 @@ DENOMINATOR of 1.
           richardson-extrapolate))
 (defun richardson-extrapolate (values &key (ratio 2)
                                            (exponents (default-exponents (length values))))
-  "Extrapolate VALUES to step zero. VALUES are one quantity computed at the
-steps h, h/RATIO, h/RATIO^2, ..., coarsest first; EXPONENTS are the powers of
-h in its error expansion, one per value after the first (default 1, 2, ...).
-See RICHARDSON-WEIGHTS.
+  "Extrapolate VALUES to step zero. VALUES are one quantity that is computed at the steps
+h, h/RATIO, h/RATIO^2, ..., coarsest first. EXPONENTS are the powers of h in the error
+expansion, one for each value after the first (default 1, 2, ...). See
+RICHARDSON-WEIGHTS.
 
-Returns (values estimate error-estimate). ERROR-ESTIMATE is the absolute
-difference from the extrapolation one order lower through the finest values
-(the usual tableau error estimate), or NIL for a single value.
+Return (values estimate error-estimate). ERROR-ESTIMATE is the absolute difference from
+the extrapolation of one order lower through the finest values (the usual tableau error
+estimate). It is NIL for a single value.
 
   ;; A binomial tree with errors in 1/N: 2 v(N) - v(N/2)
   (richardson-extrapolate (list v-half v-full) :exponents '(1))

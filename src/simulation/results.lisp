@@ -7,10 +7,10 @@
 (named-readtables:in-readtable fincl:syntax)
 
 (defstruct (simulation-result (:constructor %make-simulation-result))
-  "What SIMULATE collected: per-path outputs by name, per-date statistics by
-name, and what :KEEP stored. Read it with SIMULATION-VALUES,
-SIMULATION-MEAN, SIMULATION-STANDARD-ERROR, SIMULATION-QUANTILE,
-SIMULATION-SUMMARY, SIMULATION-STATISTIC, SIMULATION-HELD and PATH-MARKETS."
+  "What SIMULATE collected: per-path outputs by name, per-date statistics by name, and what
+:KEEP stored. Read it with SIMULATION-VALUES, SIMULATION-MEAN, SIMULATION-STANDARD-ERROR,
+SIMULATION-QUANTILE, SIMULATION-SUMMARY, SIMULATION-STATISTIC, SIMULATION-HELD and
+PATH-MARKETS."
   (plan nil :read-only t)
   (output-names '() :read-only t)
   (outputs nil :read-only t)
@@ -19,7 +19,7 @@ SIMULATION-SUMMARY, SIMULATION-STATISTIC, SIMULATION-HELD and PATH-MARKETS."
 
 (declaim (ftype (function (t) (values t &optional)) simulation-output-names))
 (defun simulation-output-names (result)
-  "The names of RESULT's outputs, in the order of SIMULATE's :FINAL."
+  "Return the names of the outputs of RESULT, in the order of the :FINAL clause of SIMULATE."
   (simulation-result-output-names result))
 
 (defun output-column (result name)
@@ -33,21 +33,21 @@ SIMULATION-SUMMARY, SIMULATION-STATISTIC, SIMULATION-HELD and PATH-MARKETS."
 
 (declaim (ftype (function (t &optional t) (values sequence &optional)) simulation-values))
 (defun simulation-values (result &optional name)
-  "The per-path values of RESULT's output NAME (optional with one output), a
-DOUBLE-VECTOR in path order; under antithetics the second half holds the
-partners of the first."
+  "Return the per-path values of the output NAME of RESULT (optional when there is one
+output), as a DOUBLE-VECTOR in path order. Under antithetics, the second half holds the
+partners of the first half."
   (let* ((n (simulation-n-total (simulation-result-plan result)))
          (start (* n (output-column result name))))
     (subseq (simulation-result-outputs result) start (+ start n))))
 
 (declaim (ftype (function (t t) (values double-float double-float &optional)) simulation-summary))
 (defun simulation-summary (result vector)
-  "(values mean standard-error) of VECTOR, a per-path vector of RESULT's
-length in path order, such as an output or a quantity computed from several
-(a difference, a ratio, an indicator). Antithetic partners are averaged
-first, and under :SOBOL the randomizations, so the standard error is that of
-the estimator. Outputs share their paths, so the standard error of a
-difference is that of the paired differences.
+  "Return (values mean standard-error) of VECTOR. VECTOR is a per-path vector with the length
+of RESULT, in path order. It can be an output, or a quantity that is computed from several
+outputs (a difference, a ratio, an indicator). The function averages antithetic partners
+first, and under :SOBOL the randomizations. Thus the standard error is that of the
+estimator. Outputs share their paths, so the standard error of a difference is that of the
+paired differences.
 
   (simulation-summary r (map 'double-vector #'- (simulation-values r :a)
                                                 (simulation-values r :b)))"
@@ -61,14 +61,14 @@ difference is that of the paired differences.
 
 (declaim (ftype (function (t &optional t) (values double-float &optional)) simulation-mean))
 (defun simulation-mean (result &optional name)
-  "The mean of RESULT's output NAME (see SIMULATION-SUMMARY)."
+  "The mean of the output NAME of RESULT (see SIMULATION-SUMMARY)."
   (values (simulation-summary result (simulation-values result name))))
 
 (declaim (ftype (function (t &optional t)
                     (values double-float &optional))
           simulation-standard-error))
 (defun simulation-standard-error (result &optional name)
-  "The standard error of the mean of RESULT's output NAME (see SIMULATION-SUMMARY)."
+  "The standard error of the mean of the output NAME of RESULT (see SIMULATION-SUMMARY)."
   (nth-value 1 (simulation-summary result (simulation-values result name))))
 
 (defun sample-quantile (values p)
@@ -87,8 +87,8 @@ difference is that of the paired differences.
 
 (declaim (ftype (function (t t real) (values double-float &optional)) simulation-quantile))
 (defun simulation-quantile (result name p)
-  "The P-quantile of RESULT's output NAME over every path (NAME may be NIL with
-one output)."
+  "Return the P-quantile of the output NAME of RESULT over every path (NAME can be NIL when
+there is one output)."
   (sample-quantile (simulation-values result name) p))
 
 (defun recorded-names (statistics)
@@ -99,10 +99,9 @@ one output)."
                     (values double-vector &optional))
           simulation-statistic))
 (defun simulation-statistic (result name statistic &optional p)
-  "A DOUBLE-VECTOR over (SIMULATION-DATES RESULT) of STATISTIC of the values
-recorded under NAME: :MEAN, :STD-DEV, :MIN, :MAX, :COUNT, or :QUANTILE with P
-(needs :KEEP :QUANTILES). A date where nothing was recorded holds NaN (0 for
-:COUNT).
+  "Return a DOUBLE-VECTOR over (SIMULATION-DATES RESULT) of STATISTIC of the values that were
+recorded under NAME. STATISTIC is :MEAN, :STD-DEV, :MIN, :MAX, :COUNT, or :QUANTILE with P
+(this needs :KEEP :QUANTILES). A date where nothing was recorded holds NaN (0 for :COUNT).
 
   (simulation-statistic r :hedge-value :mean)"
   (let ((s (or (gethash name (simulation-result-statistics result))
@@ -142,19 +141,16 @@ recorded under NAME: :MEAN, :STD-DEV, :MIN, :MAX, :COUNT, or :QUANTILE with P
 
 (declaim (ftype (function (t integer t) (values simple-vector &optional)) simulation-held))
 (defun simulation-held (result path name)
-  "The values of the :HOLD or :PORTFOLIO variable NAME (a keyword, the
-variable's name) on stored PATH at each simulation date, a vector."
+  "Return the values of the :HOLD or :PORTFOLIO variable NAME (a keyword, the name of the
+variable) on the stored PATH at each simulation date, as a vector."
   (map 'simple-vector (lambda (plist) (getf plist name)) (kept-dates result path :held)))
 
 (declaim (ftype (function (t integer t) (values sequence &optional)) simulation-path-record))
 (defun simulation-path-record (result path name)
-  "The values stored PATH (:KEEP (:PATHS k) or :STATES) recorded under NAME at
-each of (SIMULATION-DATES RESULT), a DOUBLE-VECTOR with NaN where the path
-recorded nothing (before its first record of NAME, or after STOP); the last
-value recorded on a date. A book's records are named by their lists.
-
-  (simulation-path-record r 0 :balance)
-  (simulation-path-record r 0 '(:book :value))"
+  "Return the values that the stored PATH (:KEEP (:PATHS k) or :STATES) recorded under NAME at
+each date of (SIMULATION-DATES RESULT), as a DOUBLE-VECTOR. It has NaN where the path
+recorded nothing (before its first record of NAME, or after STOP). It holds the last value
+that the path recorded on a date. The lists of a book name its records."
   (let* ((store (simulation-result-store result))
          (records (simulation-store-records store)))
     (unless (gethash name (simulation-result-statistics result))
@@ -172,9 +168,9 @@ value recorded on a date. A book's records are named by their lists.
 
 (declaim (ftype (function (t integer) (values list &optional)) path-markets))
 (defun path-markets (result path)
-  "((date . market) ...) for stored PATH (:KEEP (:PATHS k) or :STATES), each
-market built from the path's state on its date as during the run, at every
-simulation date from the valuation date on.
+  "Return ((date . market) ...) for the stored PATH (:KEEP (:PATHS k) or :STATES). The
+function builds each market from the state of the path on its date, as during the run, at
+every simulation date from the valuation date on.
 
   (path-markets r 0)"
   (let* ((plan (simulation-result-plan result))
@@ -188,29 +184,29 @@ simulation date from the valuation date on.
 
 (declaim (ftype (function (t) (values list &optional)) simulation-recorded-names))
 (defun simulation-recorded-names (result)
-  "The names RESULT recorded with RECORD, keywords or lists, in printed order."
+  "Return the names that RESULT recorded with RECORD, keywords or lists, in printed order."
   (recorded-names (simulation-result-statistics result)))
 
 (declaim (ftype (function (t) (values fixnum &optional)) simulation-kept-paths))
 (defun simulation-kept-paths (result)
-  "How many paths RESULT stored the states of (:KEEP (:PATHS k) or :STATES):
-paths 0 .. n-1 can be read with SIMULATION-PATH-STATE."
+  "Return the number of paths for which RESULT stored the states (:KEEP (:PATHS k) or
+:STATES). SIMULATION-PATH-STATE can read paths 0 .. n-1."
   (let ((store (simulation-result-store result)))
     (if (simulation-store-kept-states store) (simulation-store-kept-paths store) 0)))
 
 (declaim (ftype (function (t t) (values boolean &optional)) simulation-quantiles-p))
 (defun simulation-quantiles-p (result name)
-  "True if RESULT kept the values recorded under NAME for quantiles
-(:KEEP :QUANTILES), so that SIMULATION-STATISTIC can give :QUANTILE."
+  "True if RESULT kept the values that were recorded under NAME for quantiles (:KEEP
+:QUANTILES). Then SIMULATION-STATISTIC can give :QUANTILE."
   (and (gethash name (simulation-store-quantile-tables (simulation-result-store result))) t))
 
 (declaim (ftype (function (t integer t &optional t)
                     (values double-vector &optional))
           simulation-path-state))
 (defun simulation-path-state (result path name &optional underlying)
-  "State component NAME (see SIMULATION-STATE-NAMES) of stored PATH at each of
-(SIMULATION-DATES RESULT), a DOUBLE-VECTOR with NaN at a date the path had
-already stopped.
+  "Return the state component NAME (see SIMULATION-STATE-NAMES) of the stored PATH at each
+date of (SIMULATION-DATES RESULT), as a DOUBLE-VECTOR. It has NaN at a date where the path
+had already stopped.
 
   (simulation-path-state r 0 :spot)"
   (let ((plan (simulation-result-plan result))
@@ -225,9 +221,9 @@ already stopped.
 
 (declaim (ftype (function (t) (values list &optional)) simulation-state-names))
 (defun simulation-state-names (process)
-  "The names a :STATE clause may use for PROCESS, a process or a list of legs
-(target process &rest options): the process's state names, or (component
-leg) lists for legs, a spot leg named by its underlying and any other by its
+  "Return the names that a :STATE clause can use for PROCESS, a process or a list of legs
+(target process &rest options). For a process, they are its state names. For legs, they are
+(component leg) lists. A spot leg is named by its underlying and any other leg by its
 target.
 
   (simulation-state-names (make-heston)) => (:SPOT :VARIANCE)
@@ -265,10 +261,10 @@ name lists the valid ones."
                     (values (member :risk-neutral :physical) &optional))
           simulation-measure))
 (defun simulation-measure (simulation)
-  "The measure SIMULATION's paths were stepped under: :PHYSICAL when a leg's
-process is a PHYSICAL-PROCESS, else :RISK-NEUTRAL. SIMULATION is a
-SIMULATION-RESULT or a SIMULATION-PLAN. Discounted means of a :PHYSICAL
-result are expectations under the physical measure, not prices.
+  "Return the measure under which SIMULATION stepped its paths: :PHYSICAL when the process of a
+leg is a PHYSICAL-PROCESS, else :RISK-NEUTRAL. SIMULATION is a SIMULATION-RESULT or a
+SIMULATION-PLAN. Discounted means of a :PHYSICAL result are expectations under the physical
+measure, not prices.
 
   (simulation-measure (simulate ((make-gbm) m dates) ...)) => :RISK-NEUTRAL"
   (let ((plan (if (simulation-result-p simulation) (simulation-result-plan simulation) simulation)))
@@ -312,9 +308,9 @@ result are expectations under the physical measure, not prices.
 
 (declaim (ftype (function (t) (values cons &optional)) simulation-dates))
 (defun simulation-dates (object)
-  "The valuation date followed by the dates the path logic sees, in order:
-the dates of a SIMULATION-PLAN or of a SIMULATION-RESULT. Per-date statistics
-are vectors over these dates."
+  "Return the valuation date followed by the dates that the path logic sees, in order. The
+argument is a SIMULATION-PLAN or a SIMULATION-RESULT. Per-date statistics are vectors over
+these dates."
   (let ((plan (if (simulation-result-p object) (simulation-result-plan object) object)))
     `(,(valuation-date (simulation-plan-market plan))
       ,@(coerce (simulation-plan-event-dates plan) 'list))))

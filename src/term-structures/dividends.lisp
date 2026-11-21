@@ -1,10 +1,9 @@
 ;;;; term-structures/dividends.lisp --- discrete dividend schedules
 ;;;;
-;;;; A continuous dividend yield (a DIVIDEND-CURVE) suits an index. A single
-;;;; stock pays known amounts on known dates: a DIVIDEND-SCHEDULE lists them,
-;;;; and a market holds one per underlying next to its dividend curve. The
-;;;; market view turns the schedule into DIVIDEND-EVENTs in market time
-;;;; (market.lisp), which FORWARD and the engines read.
+;;;; A continuous dividend yield (a DIVIDEND-CURVE) suits an index. A single stock pays
+;;;; known amounts on known dates. A DIVIDEND-SCHEDULE lists them. A market holds one for
+;;;; each underlying, next to its dividend curve. The market view turns the schedule into
+;;;; DIVIDEND-EVENTs in market time (market.lisp). FORWARD and the engines read them.
 
 (in-package #:fincl)
 (named-readtables:in-readtable fincl:syntax)
@@ -20,8 +19,7 @@ EX-DATE; KIND :PROPORTIONAL pays the fraction AMOUNT of the price."
 (defclass dividend-schedule (term-structure)
   ((dividends :initarg :dividends :reader schedule-dividends :type list
               :documentation "DIVIDEND structures, by ex-date."))
-  (:documentation "Known discrete dividends of one underlying. Made by
-MAKE-DIVIDEND-SCHEDULE."))
+  (:documentation "The known discrete dividends of one underlying. MAKE-DIVIDEND-SCHEDULE makes it."))
 
 (defun as-date (x what)
   (let ((date (if (stringp x) (parse-date x) x)))
@@ -30,10 +28,9 @@ MAKE-DIVIDEND-SCHEDULE."))
 
 (declaim (ftype (function (t t &key (:kind t) (:pay-date t)) (values dividend &optional)) make-dividend))
 (defun make-dividend (ex-date amount &key (kind :cash) pay-date)
-  "A dividend going ex on EX-DATE, a date or a \"YYYY-MM-DD\" string, of
-AMOUNT: for KIND :CASH a non-negative sum of money paid on PAY-DATE (default
-EX-DATE; it may not precede EX-DATE), for :PROPORTIONAL a fraction in [0, 1)
-of the price.
+  "Make a dividend of AMOUNT that goes ex on EX-DATE, a date or a \"YYYY-MM-DD\" string. For KIND
+:CASH, AMOUNT is a non-negative sum of money that is paid on PAY-DATE (default: EX-DATE. It
+must not precede EX-DATE). For :PROPORTIONAL, AMOUNT is a fraction of the price in [0, 1).
 
   (make-dividend #D\"2027-02-10\" 0.82d0 :pay-date #D\"2027-03-01\")"
   (let ((ex-date (as-date ex-date "an ex-date"))
@@ -49,9 +46,9 @@ of the price.
 
 (declaim (ftype (function (t) (values dividend-schedule &optional)) make-dividend-schedule))
 (defun make-dividend-schedule (dividends)
-  "A DIVIDEND-SCHEDULE of DIVIDENDS, a list of MAKE-DIVIDEND results, kept in
-order of ex-date. An element may also be a list (ex-date amount &key kind
-pay-date), the arguments of MAKE-DIVIDEND.
+  "Make a DIVIDEND-SCHEDULE of DIVIDENDS, a list of results of MAKE-DIVIDEND. The schedule is
+in order of ex-date. An element can also be a list (ex-date amount &key kind pay-date), the
+arguments of MAKE-DIVIDEND.
 
   (make-dividend-schedule
    (list (make-dividend #D\"2027-02-10\" 0.82d0 :pay-date #D\"2027-03-01\")

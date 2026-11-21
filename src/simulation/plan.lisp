@@ -44,9 +44,9 @@ factor of the factor correlation, and how markets are built from states."
 
 (declaim (ftype (function (t) (values list &optional)) simulation-underlyings))
 (defun simulation-underlyings (simulation)
-  "The legs SIMULATION steps, in order: the underlying of a spot leg (NIL for
-a market that is not composite), the target (kind key) of any other.
-MARKET-AT-STATE's STATES follow this order."
+  "Return the legs that SIMULATION steps, in order: the underlying of a spot leg (NIL for a
+market that is not composite), or the target (kind key) of any other leg. The STATES of
+MARKET-AT-STATE follow this order."
   (map 'list #'simulation-leg-underlying (simulation-plan-legs simulation)))
 
 (defun simulation-n-total (plan) (total-paths (simulation-plan-engine plan)))

@@ -1,14 +1,14 @@
 ;;;; processes/cgmy.lisp --- the CGMY process
 ;;;;
-;;;; P. Carr, H. Geman, D. B. Madan and M. Yor, "The fine structure of asset
-;;;; returns", J. Business 75 (2002). Levy density C e^(-G|x|)/|x|^(1+Y) for
-;;;; x < 0 and C e^(-M x)/x^(1+Y) for x > 0, so
+;;;; P. Carr, H. Geman, D. B. Madan and M. Yor, "The fine structure of asset returns", J.
+;;;; Business 75 (2002). The Levy density is C e^(-G|x|)/|x|^(1+Y) for x < 0 and C e^(-M
+;;;; x)/x^(1+Y) for x > 0. Thus
 ;;;;
 ;;;;   psi(u) = C Gamma(-Y) ((M - i u)^Y - M^Y + (G + i u)^Y - G^Y),
 ;;;;
-;;;; with the limits Y -> 0 (variance gamma's form) and Y -> 1 taken
-;;;; explicitly. M > 1 keeps E[e^L] finite. Known here only through psi:
-;;;; Fourier engines price it; Monte Carlo does not (SIMULATABLE-P is NIL).
+;;;; with the limits Y -> 0 (the form of variance gamma) and Y -> 1 taken explicitly. M > 1
+;;;; keeps E[e^L] finite. The process is known only through psi. Fourier engines price it.
+;;;; Monte Carlo does not (SIMULATABLE-P is NIL).
 
 (in-package #:fincl)
 

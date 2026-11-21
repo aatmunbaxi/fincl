@@ -1,17 +1,17 @@
 ;;;; math/solvers.lisp --- one-dimensional root finding
 ;;;;
-;;;; All solvers share one failure protocol: CONVERGENCE-FAILURE, signalled
-;;;; with a USE-VALUE restart, and for bracketing solvers a
-;;;; RETRY-WITH-BRACKET restart, so the caller chooses the recovery policy.
+;;;; All solvers share one failure protocol: CONVERGENCE-FAILURE, signalled with a
+;;;; USE-VALUE restart. Bracketing solvers also offer a RETRY-WITH-BRACKET restart. Thus
+;;;; the caller chooses the recovery policy.
 ;;;;
-;;;; Provenance: SOLVE-BRENT-FROM-GUESS reproduces the iterates of QuantLib's
-;;;; Brent::solve with a guess, and QL-CLOSE-P is QuantLib's close().
+;;;; SOLVE-BRENT-FROM-GUESS reproduces the iterates of the Brent solver with a guess in
+;;;; the reference library. QL-CLOSE-P is the close() test of that library.
 ;;;;
-;;;;   SOLVE-BISECTION  bracketed, linear convergence, cannot fail once bracketed
-;;;;   SOLVE-BRENT      bracketed, superlinear; the default choice
-;;;;   SOLVE-NEWTON     from a starting point, quadratic near the root, with
-;;;;                    the derivative by central differences; optionally
-;;;;                    safeguarded by a bracket
+;;;;   SOLVE-BISECTION  bracketed, linear convergence. It cannot fail once the root is
+;;;;                    bracketed
+;;;;   SOLVE-BRENT      bracketed, superlinear. It is the default choice
+;;;;   SOLVE-NEWTON     from a starting point, quadratic near the root, with the
+;;;;                    derivative by central differences. A bracket can safeguard it
 
 (in-package #:fincl)
 
@@ -66,9 +66,9 @@ restarts."
                     (values real &optional))
           solve-bisection))
 (defun solve-bisection (f lo hi &key expand-hi (epsilon 1d-12) (delta 1d-12))
-  "Root of F on [LO, HI] by bisection (NU:ROOT-BISECTION): stops when the
-bracket is narrower than DELTA or |F| is below EPSILON. See
-CALL-WITH-BRACKET for EXPAND-HI and the restarts.
+  "Return the root of F on [LO, HI] by bisection (NU:ROOT-BISECTION). It stops when the
+bracket is narrower than DELTA or |F| is below EPSILON. See CALL-WITH-BRACKET for
+EXPAND-HI and the restarts.
 
   (solve-bisection (lambda (x) (- (* x x) 2)) 0d0 2d0) => 1.4142135623...d0"
   (call-with-bracket
@@ -132,12 +132,12 @@ Derivatives, 1973, ch. 4). Returns (values root iterations)."
                     (values real &optional integer))
           solve-brent))
 (defun solve-brent (f lo hi &key expand-hi (tolerance 1d-12) (max-iterations 1000))
-  "Root of F on [LO, HI] by Brent's method, to within TOLERANCE in x.
-Converges superlinearly for smooth F. Its worst case, on flat roots such as
-(x - 1)^3, is about the square of the bisection count (~1700 iterations for
-TOLERANCE 1e-12 on a unit bracket; 125 in that example), hence the default
-MAX-ITERATIONS. Returns (values root iterations). See CALL-WITH-BRACKET for
-EXPAND-HI and the restarts.
+  "Return the root of F on [LO, HI] by the method of Brent, to within TOLERANCE in x. The
+method converges superlinearly for smooth F. Its worst case is a flat root such as (x -
+1)^3. There it takes about the square of the bisection count (about 1700 iterations for
+TOLERANCE 1e-12 on a unit bracket, and 125 in that example). This is why MAX-ITERATIONS
+has its default. Return (values root iterations). See CALL-WITH-BRACKET for EXPAND-HI and
+the restarts.
 
   (solve-brent (lambda (x) (- (* x x) 2)) 0d0 2d0) => 1.4142135623730951d0, 7"
   (call-with-bracket
@@ -230,16 +230,16 @@ SOLVE-BRENT is the general solver.
           solve-newton))
 (defun solve-newton (f x0 &key lo hi (tolerance 1d-12) (max-iterations 50)
                               (relative-step 1d-6))
-  "Root of F by Newton's method from X0, with F' estimated by the central
-difference (F(x + h) - F(x - h)) / 2h, h = RELATIVE-STEP max(1, |x|).
-Converges quadratically near a simple root, at three evaluations of F per
-iteration. Stops when a step is shorter than TOLERANCE. Returns
-(values root iterations).
+  "Return the root of F by the method of Newton from X0. The function estimates F' with the
+central difference (F(x + h) - F(x - h)) / 2h, with h = RELATIVE-STEP max(1, |x|). The
+method converges quadratically near a simple root, with three evaluations of F for each
+iteration. It stops when a step is shorter than TOLERANCE. Return (values root
+iterations).
 
-With LO and HI, F must change sign on [LO, HI]; the bracket is then
-tightened each iteration and any step that would leave it is replaced by a
-bisection step, so the solver cannot diverge. Without them a poor X0 can
-diverge, which signals CONVERGENCE-FAILURE.
+With LO and HI, F must change sign on [LO, HI]. Each iteration then tightens the
+bracket. A step that would leave the bracket becomes a bisection step, so the solver
+cannot diverge. Without LO and HI, a poor X0 can diverge. This signals
+CONVERGENCE-FAILURE.
 
   (solve-newton (lambda (x) (- (* x x) 2)) 1d0) => 1.4142135623730951d0, 5"
   (let ((bracketed (and lo hi))

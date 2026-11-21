@@ -1,16 +1,14 @@
 ;;;; math/linear-algebra.lisp --- least squares, banded solves and symmetric
-;;;; eigendecomposition on typed arrays
 ;;;;
-;;;; Typed (SIMPLE-ARRAY DOUBLE-FLOAT (*)) throughout, in Lisp: fincl uses no
-;;;; BLAS or LAPACK.
+;;;; Typed (SIMPLE-ARRAY DOUBLE-FLOAT (*)) throughout, in Lisp. fincl uses no BLAS or
+;;;; LAPACK.
 ;;;;
-;;;; Least squares is solved by QR, never by the normal equations X'X b =
-;;;; X'y, which square the condition number. Rows are folded into an upper
-;;;; triangular R and Q'y one at a time by Givens rotations, so the design
-;;;; matrix is never stored, and two accumulators built from disjoint rows
-;;;; merge into the accumulator of all of them. That is what lets Monte Carlo
-;;;; chunks factor their own rows in parallel and combine the results in a
-;;;; fixed order (a tall-skinny QR).
+;;;; Least squares uses QR. It never uses the normal equations X'X b = X'y, which square
+;;;; the condition number. Givens rotations fold rows into an upper triangular R and Q'y,
+;;;; one row at a time. Thus the design matrix is never stored. Two accumulators that are
+;;;; built from disjoint rows merge into the accumulator of all of them. Thus Monte Carlo
+;;;; chunks can factor their own rows in parallel and combine the results in a fixed order
+;;;; (a tall-skinny QR).
 
 (in-package #:fincl)
 
@@ -178,14 +176,13 @@ is singular or not diagonally dominant" n))
                     (values double-vector &optional))
           solve-tridiagonal!))
 (defun solve-tridiagonal! (a b c d)
-  "Solve the tridiagonal system with sub-diagonal A, diagonal B and
-super-diagonal C (A[0] and C[n-1] unused) for the right-hand side D by the
-Thomas algorithm, in O(n) and without allocating: C is overwritten with
-scratch values and D with the solution, which is returned. Stable without
-pivoting when the matrix is diagonally dominant (|b_i| >= |a_i| + |c_i|,
-strictly in at least one row), as finite-difference and spline systems are.
-A zero pivot signals CONVERGENCE-FAILURE, whose USE-VALUE restart returns a
-value in place of the solution.
+  "Solve a tridiagonal system for the right-hand side D with the Thomas algorithm. A is the
+sub-diagonal, B is the diagonal and C is the super-diagonal (A[0] and C[n-1] are not
+used). The cost is O(n). The function does not allocate. It overwrites C with scratch
+values and D with the solution, and returns the solution. The algorithm is stable
+without pivoting when the matrix is diagonally dominant (|b_i| >= |a_i| + |c_i|, strict
+in at least one row), as finite-difference and spline systems are. A zero pivot signals
+CONVERGENCE-FAILURE. Its USE-VALUE restart returns a value in place of the solution.
 
   (solve-tridiagonal! a b (copy-seq c) (copy-seq d))"
   (declare (type double-vector a b c d))
@@ -198,13 +195,13 @@ value in place of the solution.
           solve-tridiagonal-cyclic!))
 (defun solve-tridiagonal-cyclic! (a b c d &key (work (make-array (* 3 (length d))
                                                                  :element-type 'double-float)))
-  "Solve the cyclic tridiagonal system whose row i is a[i] x[i-1] + b[i] x[i]
-+ c[i] x[i+1] = d[i], indices modulo n (A[0] multiplies x[n-1], C[n-1]
-multiplies x[0]), by Sherman-Morrison: two Thomas solves on the matrix with
-the corners removed and its first and last diagonal entries modified. D is
-overwritten with the solution and returned; A, B and C are unchanged. WORK, a
-DOUBLE-VECTOR of length at least 3n, is scratch: pass one to solve without
-allocating. Needs n >= 3 and, like SOLVE-TRIDIAGONAL!, diagonal dominance.
+  "Solve the cyclic tridiagonal system with rows a[i] x[i-1] + b[i] x[i] + c[i] x[i+1] =
+d[i], with indices modulo n (A[0] multiplies x[n-1] and C[n-1] multiplies x[0]). The
+method is Sherman-Morrison: two Thomas solves on the matrix without the corners and with
+modified first and last diagonal entries. The function overwrites D with the solution
+and returns it. A, B and C do not change. WORK is scratch: a DOUBLE-VECTOR of length at
+least 3n. Pass one to solve without allocation. The system needs n >= 3 and, like
+SOLVE-TRIDIAGONAL!, diagonal dominance.
 
   (solve-tridiagonal-cyclic! a b c (copy-seq d))"
   (declare (type double-vector a b c d work))
@@ -245,9 +242,9 @@ allocating. Needs n >= 3 and, like SOLVE-TRIDIAGONAL!, diagonal dominance.
                     (values double-vector &optional))
           tridiagonal-multiply))
 (defun tridiagonal-multiply (a b c x out &key cyclic)
-  "OUT = M X for the tridiagonal M with sub-diagonal A, diagonal B and
-super-diagonal C, in the layout of SOLVE-TRIDIAGONAL! (with CYCLIC, A[0] and
-C[n-1] are corner elements). Returns OUT.
+  "Compute OUT = M X for the tridiagonal M with sub-diagonal A, diagonal B and super-diagonal
+C, in the layout of SOLVE-TRIDIAGONAL! (with CYCLIC, A[0] and C[n-1] are corner
+elements). Return OUT.
 
   (tridiagonal-multiply a b c x (make-array n :element-type 'double-float))"
   (declare (type double-vector a b c x out)
@@ -390,11 +387,10 @@ CONVERGENCE-FAILURE after MAX-SWEEPS.
                     (values double-vector &optional))
           repair-positive-semidefinite))
 (defun repair-positive-semidefinite (matrix n &key (floor 0d0))
-  "The symmetric N x N MATRIX (column-major DOUBLE-VECTOR) with its
-eigenvalues below FLOOR raised to FLOOR: V max(Lambda, FLOOR) V', the
-nearest positive-semidefinite matrix in the Frobenius norm when FLOOR is 0
-(Higham 1988). For covariance and correlation estimates that came out
-slightly indefinite. Returns a new vector."
+  "Return a new vector: the symmetric N x N MATRIX (a column-major DOUBLE-VECTOR) with its
+eigenvalues below FLOOR raised to FLOOR: V max(Lambda, FLOOR) V'. When FLOOR is 0, this
+is the nearest positive-semidefinite matrix in the Frobenius norm (Higham 1988). Use it
+for covariance and correlation estimates that are slightly indefinite."
   (multiple-value-bind (lambdas vectors) (symmetric-eigen matrix n)
     (let ((out (make-array (* n n) :element-type 'double-float :initial-element 0d0)))
       (dotimes (k n out)

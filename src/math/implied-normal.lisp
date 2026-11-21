@@ -1,15 +1,14 @@
 ;;;; math/implied-normal.lisp --- Bachelier's normalised price and its inverse
 ;;;;
 ;;;; Peter Jäckel, "Implied Normal Volatility", 6 June 2017
-;;;; (www.jaeckel.org/ImpliedNormalVolatility.pdf). An out-of-the-money
-;;;; Bachelier price with x = -|F - K| / (sigma sqrt(T)) < 0 is
+;;;; (www.jaeckel.org/ImpliedNormalVolatility.pdf). An out-of-the-money Bachelier price
+;;;; with x = -|F - K| / (sigma sqrt(T)) < 0 is
 ;;;;
 ;;;;   v = |F - K| (-Phi~(x)),   Phi~(x) := Phi(x) + phi(x) / x,
 ;;;;
-;;;; so implying sigma is inverting the univariate Phi~ on x < 0. The inverse
-;;;; is a rational guess in one of two branches plus one closed-form
-;;;; third-order correction, accurate to about 1.2e-17 relative in x with no
-;;;; iteration (the paper's figure 1).
+;;;; so to imply sigma is to invert the univariate Phi~ on x < 0. The inverse is a rational
+;;;; guess in one of two branches, plus one closed-form third-order correction. It is
+;;;; accurate to about 1.2e-17 relative in x with no iteration (figure 1 of the paper).
 
 (in-package #:fincl)
 

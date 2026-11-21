@@ -11,8 +11,8 @@
 (defstruct (tenor (:constructor %tenor (n unit))
                   (:copier nil)
                   (:predicate tenorp))
-  "A length of time in whole days, weeks, months or years. Immutable; two
-tenors are EQUALP when they have the same N and UNIT.
+  "A length of time in whole days, weeks, months or years. It is immutable. Two tenors are EQUALP
+when they have the same N and UNIT.
 
   (make-tenor 3 :months) => #T\"3M\""
   (n 0 :type integer :read-only t)
@@ -39,8 +39,8 @@ tenors are EQUALP when they have the same N and UNIT.
 
 (declaim (ftype (function (t) (values tenor &optional)) parse-tenor))
 (defun parse-tenor (string)
-  "Parse an optionally signed integer followed by D, W, M or Y (either
-case). Signals INVALID-TENOR otherwise.
+  "Parse an optionally signed integer that is followed by D, W, M or Y (either case). For any other
+string, signal INVALID-TENOR.
 
   (parse-tenor \"3M\") => #T\"3M\""
   (let* ((len (if (stringp string) (length string) 0))
@@ -68,10 +68,9 @@ case). Signals INVALID-TENOR otherwise.
 
 (declaim (ftype (function (date tenor &key (:end-of-month t)) (values date &optional)) add-tenor))
 (defun add-tenor (date tenor &key end-of-month)
-  "The date TENOR after DATE, with no business-day adjustment. Months and
-years clamp the day to the target month's length. With END-OF-MONTH true
-and DATE on the last day of its month, the result is the last day of the
-target month.
+  "Return the date TENOR after DATE, with no business-day adjustment. Months and years limit the day
+to the length of the target month. With END-OF-MONTH true and DATE on the last day of its month,
+the result is the last day of the target month.
 
   (add-tenor #D\"2027-01-31\" #T\"1M\") => #D\"2027-02-28\"
   (add-tenor #D\"2027-02-28\" #T\"1M\" :end-of-month t) => #D\"2027-03-31\""

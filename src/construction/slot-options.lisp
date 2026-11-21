@@ -1,14 +1,14 @@
 ;;;; construction/slot-options.lisp --- custom slot options with inheritance
 ;;;;
-;;;; A slot of an ANNOTATED-CLASS may carry registered slot options
-;;;; ("annotations") beside the standard ones:
+;;;; A slot of an ANNOTATED-CLASS can carry registered slot options ("annotations")
+;;;; beside the standard options:
 ;;;;
 ;;;;   (defclass c () ((x :initarg :x :fact :strike)) (:metaclass component-class))
 ;;;;
-;;;; Annotations are inherited slot by slot: the most specific class that gave
-;;;; an option wins, so a subclass can override one option of an inherited
-;;;; slot and keep the rest. Process parameters (:PARAMETER, :BOUNDS,
-;;;; :MARKET-DEFAULT) and construction facts (:FACT) are both annotations.
+;;;; Annotations are inherited slot by slot. The most specific class that gave an option
+;;;; wins. Thus a subclass can override one option of an inherited slot and keep the
+;;;; other options. Process parameters (:PARAMETER, :BOUNDS, :MARKET-DEFAULT) and
+;;;; construction facts (:FACT) are both annotations.
 
 (in-package #:fincl)
 
@@ -25,11 +25,11 @@
     keyword))
 
 (defmacro define-slot-option (keyword &optional documentation)
-  "Register KEYWORD as a slot option that ANNOTATED-CLASS slots accept and
-inherit. DOCUMENTATION is shown by DESCRIBE for a slot that carries the
-option. A slot of an ANNOTATED-CLASS given any other option than a registered
-one or a standard one (:INITARG, :READER, :TYPE, ...) signals
-INVALID-ARGUMENT, so define an option before the first class that uses it.
+  "Register KEYWORD as a slot option that slots of ANNOTATED-CLASS accept and
+inherit. DOCUMENTATION is shown by DESCRIBE for a slot that has the option. A slot
+of an ANNOTATED-CLASS that has an option that is neither registered nor standard
+(:INITARG, :READER, :TYPE, ...) signals INVALID-ARGUMENT. Define an option before
+the first class that uses it.
 
   (define-slot-option :fact \"The construction fact that fills the slot.\")"
   `(eval-when (:compile-toplevel :load-toplevel :execute)
@@ -41,8 +41,8 @@ INVALID-ARGUMENT, so define an option before the first class that uses it.
   (values (gethash keyword *slot-option-documentation*)))
 
 (defclass annotated-class (standard-class) ()
-  (:documentation "Metaclass whose slots accept registered slot options (see
-DEFINE-SLOT-OPTION) and inherit them option by option."))
+  (:documentation "A metaclass whose slots accept registered slot options (see DEFINE-SLOT-OPTION). The
+slots inherit them option by option."))
 
 ;;; Annotated and standard classes may inherit from each other. A plain
 ;;; DEFCLASS subclass keeps no annotations of its own: its effective slots

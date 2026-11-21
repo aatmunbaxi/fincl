@@ -3,12 +3,11 @@
 ;;;;   L(t) = theta G(t) + sigma W(G(t)),   G a gamma process with E[G(t)] = t,
 ;;;;   Var[G(t)] = nu t
 ;;;;
-;;;; D. B. Madan, P. P. Carr and E. C. Chang, "The variance gamma process and
-;;;; option pricing", European Finance Review 2 (1998). psi(u) = -log(1 - i u
-;;;; theta nu + sigma^2 nu u^2 / 2) / nu. As nu -> 0 the gamma clock becomes
-;;;; calendar time and L is a Brownian motion with drift theta: GBM. An
-;;;; increment is sampled exactly by subordination: a Gamma(dt/nu, nu) time
-;;;; (its quantile at Phi(z)), then a normal given that time.
+;;;; D. B. Madan, P. P. Carr and E. C. Chang, "The variance gamma process and option
+;;;; pricing", European Finance Review 2 (1998). psi(u) = -log(1 - i u theta nu + sigma^2 nu
+;;;; u^2 / 2) / nu. As nu -> 0, the gamma clock becomes calendar time, and L is a Brownian
+;;;; motion with drift theta: GBM. The code samples an increment exactly by subordination: a
+;;;; Gamma(dt/nu, nu) time (its quantile at Phi(z)), then a normal given that time.
 
 (in-package #:fincl)
 
@@ -21,12 +20,11 @@ the expiry, which the process reproduces as nu -> 0 with theta = 0.")
    (theta -0.14d0 :measure-dependent t :doc "Drift on the gamma clock: skewness."))
   (:documentation "The variance gamma process of Madan, Carr and Chang.
 
-Under a change of measure SIGMA and THETA may take physical values and NU
-may not: with NU fixed the Levy measures C e^(-G|x|)/|x| (x < 0) and C
-e^(-Mx)/x (x > 0), C = 1/NU, are equivalent for any G, M > 0 (Sato,
-Theorem 33.1), and (SIGMA, THETA) <-> (G, M) is one to one. A drift change
-is refused: a pure-jump process has no Brownian driver, and its drift beside
-the jumps is fixed by equivalence."))
+Under a change of measure, SIGMA and THETA can take physical values. NU cannot. With NU
+fixed, the Levy measures C e^(-G|x|)/|x| (x < 0) and C e^(-Mx)/x (x > 0), with C = 1/NU,
+are equivalent for any G, M > 0 (Sato, Theorem 33.1). The map (SIGMA, THETA) <-> (G, M) is
+one to one. The change of measure refuses a drift change. A pure-jump process has no
+Brownian driver, and equivalence fixes its drift beside the jumps."))
 
 (defmethod exponential-moment-problem ((p variance-gamma))
   (let ((sigma (sigma p)))

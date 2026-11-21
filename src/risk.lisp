@@ -1,9 +1,9 @@
 ;;;; risk.lisp --- scenarios, VaR, ladders, P&L explain
 ;;;;
-;;;; A scenario is a set of risk-factor bumps (BUMP) and an optional aging:
-;;;; applied to a market it gives another market, so revaluation is pricing
-;;;; on many markets. Each position's engine is chosen once, on the base
-;;;; market, and reused on every scenario.
+;;;; A scenario is a set of risk-factor bumps (BUMP) and an optional aging. Applied to a
+;;;; market, it gives another market. Thus revaluation is pricing on many markets. The code
+;;;; chooses the engine of each position once, on the base market, and reuses it on every
+;;;; scenario.
 
 (in-package #:fincl)
 (named-readtables:in-readtable fincl:syntax)
@@ -13,8 +13,8 @@
 ;;; --------------------------------------------------------------------
 
 (defstruct (scenario (:constructor %make-scenario (name bumps age)))
-  "NAME, BUMPS (a list of (factor shift), as BUMP takes them) and AGE (NIL,
-a number of calendar days, or a date to move the valuation date to)."
+  "NAME, BUMPS (a list of (factor shift), as BUMP takes them) and AGE (NIL, a number of
+calendar days, or a date to move the valuation date to)."
   (name nil :read-only t)
   (bumps '() :type list :read-only t)
   (age nil :read-only t))
@@ -23,8 +23,8 @@ a number of calendar days, or a date to move the valuation date to)."
                     (values scenario &optional))
           make-scenario))
 (defun make-scenario (name &key bumps age)
-  "A SCENARIO called NAME: BUMPS, a list of (factor shift) applied in order
-(see BUMP), then AGE, calendar days to age the market by or a date.
+  "Make a SCENARIO called NAME. BUMPS is a list of (factor shift) that the function applies in
+order (see BUMP). AGE is a number of calendar days to age the market by, or a date.
 
   (make-scenario \"spot -10%, vol +5\" :bumps '(((:spot :spx) (:relative -1/10))
                                                ((:vol :spx) (:absolute 5/100))))"
@@ -41,7 +41,7 @@ a number of calendar days, or a date to move the valuation date to)."
 
 (declaim (ftype (function (scenario t) (values market &optional)) apply-scenario))
 (defun apply-scenario (scenario market)
-  "The market SCENARIO turns the composite MARKET into."
+  "Return the market that SCENARIO turns the composite MARKET into."
   (let ((m (reduce (lambda (m b) (bump m (first b) (second b))) (scenario-bumps scenario)
                    :initial-value market)))
     (etypecase (scenario-age scenario)
@@ -51,7 +51,8 @@ a number of calendar days, or a date to move the valuation date to)."
 
 (declaim (ftype (function (t t &key (:kind t)) (values list &optional)) parallel-shift-scenarios))
 (defun parallel-shift-scenarios (factor shifts &key (kind :absolute))
-  "One scenario per shift of SHIFTS applied to FACTOR as (KIND shift).
+  "Return one scenario for each shift of SHIFTS. Each scenario applies the shift to FACTOR as
+(KIND shift).
 
   (parallel-shift-scenarios '(:curve :usd-ois) '(-1/100 -1/1000 1/1000 1/100))"
   (iter (for x in shifts)
@@ -60,9 +61,8 @@ a number of calendar days, or a date to move the valuation date to)."
 
 (declaim (ftype (function (t t t) (values list &optional)) spot-vol-grid))
 (defun spot-vol-grid (underlying spot-shifts vol-shifts)
-  "The scenarios of every relative spot shift in SPOT-SHIFTS combined with
-every absolute vol shift in VOL-SHIFTS for UNDERLYING, spot shifts varying
-slowest.
+  "Return the scenarios of every relative spot shift in SPOT-SHIFTS combined with every
+absolute vol shift in VOL-SHIFTS for UNDERLYING. Spot shifts vary slowest.
 
   (spot-vol-grid :spx '(-1/10 0 1/10) '(-5/100 0 5/100))  ; 9 scenarios"
   (iter outer (for s in spot-shifts)
@@ -73,11 +73,11 @@ slowest.
 
 (declaim (ftype (function (t t) (values list &optional)) historical-scenarios))
 (defun historical-scenarios (market history)
-  "One scenario per observation of HISTORY, a list of (factor kind changes):
-FACTOR as BUMP takes it, KIND :RELATIVE (returns) or :ABSOLUTE (differences),
-CHANGES a sequence of the factor's observed changes, every factor's of the
-same length. Scenario i applies change i of every factor. MARKET is used to
-check the factors.
+  "Return one scenario for each observation of HISTORY, a list of (factor kind changes).
+FACTOR is as BUMP takes it. KIND is :RELATIVE (returns) or :ABSOLUTE (differences).
+CHANGES is a sequence of the observed changes of the factor. The sequences of all factors
+must have the same length. Scenario i applies change i of every factor. The function uses
+MARKET to check the factors.
 
   (historical-scenarios m `(((:spot :spx) :relative ,spx-returns)
                             ((:curve :usd-ois) :absolute ,rate-changes)))"
@@ -114,15 +114,14 @@ PORTFOLIO with its base unit price and the engine that priced it on MARKET
                     (values (simple-array double-float (* *)) list &optional))
           revalue))
 (defun revalue (portfolio market scenarios &key (engine :auto))
-  "The P&L of PORTFOLIO's positions under SCENARIOS relative to MARKET:
-(values pnl unpriced), PNL an N-POSITIONS x N-SCENARIOS array of doubles,
-quantity x (price in the scenario - base price), positions in the order of
-PORTFOLIO-POSITIONS. Each position is priced with the engine it got on the
-base market (its own, or ENGINE by PRICE-PORTFOLIO's rules), so automatic
-selection runs once. A position that cannot be priced on the base market or
-in a scenario contributes 0 there and is listed in UNPRICED as (position
-scenario-name condition). Scenarios run in parallel under lp:*kernel*; the
-result does not depend on the number of workers.
+  "Return the P&L of the positions of PORTFOLIO under SCENARIOS, relative to MARKET, as
+(values pnl unpriced). PNL is an N-POSITIONS x N-SCENARIOS array of doubles: quantity x
+(price in the scenario - base price). The positions are in the order of
+PORTFOLIO-POSITIONS. The function prices each position with the engine that it got on the
+base market (its own, or ENGINE by the rules of PRICE-PORTFOLIO). Thus automatic selection
+runs once. A position that cannot be priced on the base market or in a scenario
+contributes 0 there. UNPRICED lists it as (position scenario-name condition). Scenarios run
+in parallel under lp:*kernel*. The result does not depend on the number of workers.
 
   (scenario-pnl (revalue book m (spot-vol-grid :spx '(-1/10 1/10) '(0))))"
   (check-input portfolio portfolio "a portfolio")
@@ -155,8 +154,8 @@ result does not depend on the number of workers.
 
 (declaim (ftype (function (t) (values double-vector &optional)) scenario-pnl))
 (defun scenario-pnl (pnl)
-  "The portfolio's P&L in each scenario: the column sums of a REVALUE matrix,
-as a DOUBLE-VECTOR."
+  "Return the P&L of the portfolio in each scenario as a DOUBLE-VECTOR. These are the column
+sums of a REVALUE matrix."
   (destructuring-bind (rows columns) (array-dimensions pnl)
     (let ((totals (make-array columns :element-type 'double-float :initial-element 0d0)))
       (dotimes (j columns totals)
@@ -178,18 +177,18 @@ ceiling(n (1 - CONFIDENCE)), at least 1."
 
 (declaim (ftype (function (t real) (values double-float &optional)) historical-var))
 (defun historical-var (pnl confidence)
-  "Value at risk at CONFIDENCE (e.g. 0.99) from the P&L sample PNL (a
-sequence, e.g. SCENARIO-PNL): the K-th largest loss, K = ceiling(n (1 -
-CONFIDENCE)), as a positive number when it is a loss. With n = 500 and 0.99,
-the 5th largest loss.
+  "Return the value at risk at CONFIDENCE (for example 0.99) from the P&L sample PNL (a
+sequence, for example SCENARIO-PNL). It is the K-th largest loss, with K = ceiling(n (1 -
+CONFIDENCE)). It is a positive number when it is a loss. With n = 500 and 0.99, it is the
+5th largest loss.
 
   (historical-var (scenario-pnl (revalue book m scenarios)) 0.99d0)"
   (float (a:lastcar (tail-losses pnl confidence)) 1d0))
 
 (declaim (ftype (function (t real) (values double-float &optional)) expected-shortfall))
 (defun expected-shortfall (pnl confidence)
-  "Expected shortfall at CONFIDENCE from the P&L sample PNL: the mean of the
-K largest losses, K as in HISTORICAL-VAR."
+  "Return the expected shortfall at CONFIDENCE from the P&L sample PNL: the mean of the K
+largest losses. K is as in HISTORICAL-VAR."
   (let ((tail (tail-losses pnl confidence)))
     (float (/ (reduce #'+ tail) (length tail)) 1d0)))
 
@@ -201,10 +200,10 @@ K largest losses, K as in HISTORICAL-VAR."
                     (values double-vector &optional))
           factor-sensitivities))
 (defun factor-sensitivities (portfolio market factors &key (engine :auto) (step 1d-3))
-  "dV/dx for each of FACTORS, a list of (factor kind): the change in
-PORTFOLIO's value per unit of the factor's change of KIND (:RELATIVE: per
-unit return; :ABSOLUTE: per unit move), by central differences of steps of
-STEP, as a DOUBLE-VECTOR. Each position keeps its base engine."
+  "Return dV/dx for each of FACTORS, a list of (factor kind), as a DOUBLE-VECTOR. It is the
+change in the value of PORTFOLIO for each unit of the change of the factor, of KIND
+(:RELATIVE: for each unit return; :ABSOLUTE: for each unit move). The function uses central
+differences of steps of STEP. Each position keeps its base engine."
   (multiple-value-bind (positions base-prices engines conditions) (resolved-positions portfolio market engine)
     (declare (ignore base-prices))
     (a:when-let ((bad (position nil engines)))
@@ -237,11 +236,12 @@ the latter."
                     (values double-float double-vector &optional))
           delta-normal-var))
 (defun delta-normal-var (portfolio market factors covariance confidence &key (engine :auto) (step 1d-3))
-  "Parametric VaR at CONFIDENCE: z sqrt(s' C s), z the normal quantile, s the
-FACTOR-SENSITIVITIES to FACTORS (a list of (factor kind)), C the COVARIANCE
-of the factors' changes over the horizon (an n x n 2-D array or column-major
-DOUBLE-VECTOR, in the units of each KIND). (values var sensitivities). Exact
-for a portfolio linear in the factors whose changes are jointly normal.
+  "Return the parametric VaR at CONFIDENCE: z sqrt(s' C s). Here z is the normal quantile and
+s is the FACTOR-SENSITIVITIES to FACTORS (a list of (factor kind)). C is the COVARIANCE of
+the changes of the factors over the horizon. It is an n x n 2-D array or a column-major
+DOUBLE-VECTOR, in the units of each KIND. Return (values var sensitivities). The result is
+exact for a portfolio that is linear in the factors, when their changes are jointly
+normal.
 
   (delta-normal-var book m '(((:spot :spx) :relative)) #2A((0.0004d0)) 0.99d0)"
   (let* ((s (factor-sensitivities portfolio market factors :engine engine :step step))
@@ -263,11 +263,11 @@ for a portfolio linear in the factors whose changes are jointly normal.
                     (values list &optional))
           curve-delta-ladder))
 (defun curve-delta-ladder (portfolio market curve-id &key (engine :auto) (step 1d-4))
-  "((label . dV/dq) ...): PORTFOLIO's sensitivity to each input quote of the
-bootstrapped curve CURVE-ID, per unit of the quote, by central differences
-of STEP with the curve rebootstrapped (BUMP (:quote id index)). LABEL is the
-helper's tenor, or its index. Their sum is the sensitivity to a parallel
-move of every quote, (:curve id), to first order.
+  "Return ((label . dV/dq) ...): the sensitivity of PORTFOLIO to each input quote of the
+bootstrapped curve CURVE-ID, per unit of the quote. The function uses central differences
+of STEP, with the curve bootstrapped again (BUMP (:quote id index)). LABEL is the tenor of
+the helper, or its index. Their sum is the sensitivity to a parallel move of every quote,
+(:curve id), to first order.
 
   (curve-delta-ladder book m :usd-sofr)"
   (let ((curve (find-yield-curve market curve-id)))
@@ -282,11 +282,10 @@ move of every quote, (:curve id), to first order.
 
 (declaim (ftype (function (portfolio t t &key (:engine t)) (values list &optional)) vega-ladder))
 (defun vega-ladder (portfolio market buckets &key (engine :auto))
-  "((label . vega) ...): PORTFOLIO's vega (per unit vol, quantity-weighted)
-by the expiry of its options, BUCKETS a list of tenors from the valuation
-date; an option falls in the first bucket whose end is on or after its
-expiry, and later ones in a last bucket labelled :BEYOND. Other instruments
-have no vega.
+  "Return ((label . vega) ...): the vega of PORTFOLIO (per unit vol, weighted by quantity) by
+the expiry of its options. BUCKETS is a list of tenors from the valuation date. An option
+falls in the first bucket whose end is on or after its expiry. Later options fall in a last
+bucket that has the label :BEYOND. Other instruments have no vega.
 
   (vega-ladder book m (list #T\"3M\" #T\"1Y\" #T\"5Y\"))"
   (let* ((today (valuation-date market))
@@ -330,8 +329,8 @@ days between the valuation dates."
 
 (declaim (ftype (function (portfolio t t &key (:engine t)) (values cons &optional)) explain-pnl))
 (defun explain-pnl (portfolio market-0 market-1 &key (engine :auto))
-  "PORTFOLIO's P&L from the composite MARKET-0 to MARKET-1, explained by a
-Taylor expansion in the Greeks at MARKET-0, position by position, as a plist:
+  "Explain the P&L of PORTFOLIO from the composite MARKET-0 to MARKET-1 with a Taylor
+expansion in the Greeks at MARKET-0, position by position. Return a plist:
 
   :delta  delta dS             :gamma  gamma dS^2 / 2
   :vega   vega dsigma          :vanna  vanna dS dsigma
@@ -339,10 +338,10 @@ Taylor expansion in the Greeks at MARKET-0, position by position, as a plist:
   :rho    rho dr               :dividend-rho  dividend-rho dq
   :explained (their sum)  :actual (full revaluation)  :unexplained (the rest)
 
-dS is the move of each position's underlying's spot, dsigma of its Black
-vol at its strike and expiry, dr and dq of the zero rate and dividend yield
-to its expiry, days the calendar days between the valuation dates. Each
-position keeps the engine it gets on MARKET-0. Third-order terms, rate
+dS is the move of the spot of the underlying of each position. dsigma is the move of its
+Black vol at its strike and expiry. dr and dq are the moves of the zero rate and the
+dividend yield to its expiry. days is the number of calendar days between the valuation
+dates. Each position keeps the engine that it gets on MARKET-0. Third-order terms, rate
 convexity and cross terms with rates are in :UNEXPLAINED.
 
   (explain-pnl book m (bump m '(:spot :spx) '(:relative 1/100)))"

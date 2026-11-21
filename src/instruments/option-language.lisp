@@ -1,9 +1,8 @@
 ;;;; instruments/option-language.lisp --- building options from clauses
 ;;;;
-;;;; The option construction language, on the general kernel in
-;;;; src/construction/. This file is vocabulary and assembly only: facts,
-;;;; clauses, rules, how an option is assembled from facts, and how one
-;;;; prints back as clauses.
+;;;; The option construction language, built on the general kernel in src/construction/.
+;;;; This file has vocabulary and assembly only: facts, clauses, rules, how the code
+;;;; assembles an option from facts, and how an option prints back as clauses.
 ;;;;
 ;;;;   (make-option (call 100) (expires #D"2027-09-24"))                ; European
 ;;;;   (make-option (put k) (american) (expires #T"1Y" :from *today*))
@@ -11,11 +10,10 @@
 ;;;;   (make-option (put 95) (bermudan :every #T"3M" :from *today*) (expires d))
 ;;;;   (make-option (call 100) (capped-call :cap 30) (expires d))
 ;;;;
-;;;; With no exercise clause an option is European, with no payoff clause its
-;;;; payoff is vanilla, and with no path clause it is path-independent: the
-;;;; option Black-Scholes prices. (call k) and (put k) give only the kind and
-;;;; strike, so they also feed other struck payoffs, as above. The
-;;;; expiry has no default.
+;;;; With no exercise clause, an option is European. With no payoff clause, its payoff is
+;;;; vanilla. With no path clause, it is path-independent: the option that Black-Scholes
+;;;; prices. (call k) and (put k) give only the kind and the strike, so they also feed
+;;;; other struck payoffs, as above. The expiry has no default.
 
 (in-package #:fincl)
 
@@ -72,12 +70,14 @@ ASSEMBLE-PATH-FEATURE method: :INDEPENDENT (nothing), :ASIAN (an average),
                                   (when initargs (publish :payoff-initargs initargs))))))))
 
 (define-construction-language option
-  (:documentation "Build an option from clauses: a kind (call/put) and strike or a
-payoff scheme, an expiry, and optionally exercise rights. With no payoff clause the
-payoff is vanilla; with no exercise clause the option is European.
+  (:documentation "Build an option from clauses. The clauses give a kind (call or put) and
+a strike, or a payoff scheme, an expiry, and optionally exercise rights. With no
+payoff clause, the payoff is vanilla. With no exercise clause, the option is
+European.
 
-A vanilla European call K=110 with 1Y expiry
-(make-option (call 110) (expires #T\"1Y\" :from +today+))")
+This example is a vanilla European call with strike 110 and an expiry of one year.
+
+  (make-option (call 110) (expires #T\"1Y\" :from +today+))")
   (:macro make-option)
   (:function make-option-from-clauses)
   (:defaults :exercise-style :european :payoff-class 'vanilla-payoff :path-kind :independent)
@@ -210,10 +210,10 @@ of definition."
           (collect (c2mop:eql-specializer-object specializer)))))
 
 (defgeneric assemble-path-feature (kind)
-  (:documentation "The path feature of kind KIND (the :PATH-KIND fact), built
-from the facts in scope. A method on (EQL :keyword) adds a kind; a clause
-publishes the keyword as :PATH-KIND. An unknown kind signals
-INVALID-ARGUMENT naming the kinds that have a method.")
+  (:documentation "Build the path feature of kind KIND (the :PATH-KIND fact) from the
+facts in scope. A method on (EQL :keyword) adds a kind. A clause publishes the keyword
+as :PATH-KIND. An unknown kind signals INVALID-ARGUMENT. The report names the kinds
+that have a method.")
   (:method ((kind (eql :independent))) (make-instance 'path-independent))
   (:method (kind)
     (signal-invalid-argument :path-kind kind 'keyword
@@ -221,10 +221,10 @@ INVALID-ARGUMENT naming the kinds that have a method.")
                                      (eql-specializer-keywords #'assemble-path-feature)))))
 
 (defgeneric assemble-exercise (style)
-  (:documentation "The exercise of style STYLE (the :EXERCISE-STYLE fact), built
-from the facts in scope. A method on (EQL :keyword) adds a style; a clause
-publishes the keyword as :EXERCISE-STYLE. An unknown style signals
-INVALID-ARGUMENT naming the styles that have a method.")
+  (:documentation "Build the exercise of style STYLE (the :EXERCISE-STYLE fact) from the
+facts in scope. A method on (EQL :keyword) adds a style. A clause publishes the keyword
+as :EXERCISE-STYLE. An unknown style signals INVALID-ARGUMENT. The report names the
+styles that have a method.")
   (:method ((style (eql :european))) (make-from-facts 'european-exercise))
   (:method ((style (eql :american))) (make-from-facts 'american-exercise))
   (:method ((style (eql :bermudan)))
@@ -248,8 +248,8 @@ INVALID-ARGUMENT naming the styles that have a method.")
 (defun make-vanilla-option (kind strike expiry &key (exercise :european) from calendar
                                                     (roll-convention :following) end-of-month
                                                     underlying)
-  "A vanilla option: (KIND STRIKE) with EXERCISE (:EUROPEAN or :AMERICAN) and
-the expiry clause (expires EXPIRY :from FROM ...).
+  "Make a vanilla option: (KIND STRIKE) with EXERCISE (:EUROPEAN or :AMERICAN) and the
+expiry clause (expires EXPIRY :from FROM ...).
 
   (make-vanilla-option :put 40 #D\"2027-09-24\" :exercise :american)"
   (make-option-from-clauses `((,kind ,strike) (,exercise)

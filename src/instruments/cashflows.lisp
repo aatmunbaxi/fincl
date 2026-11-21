@@ -1,25 +1,24 @@
 ;;;; instruments/cashflows.lisp --- cash flows, coupons and legs
 ;;;;
-;;;; A leg is a list of cash flows. Fixed coupons know their amount; floating
-;;;; coupons read fixings and forecast curves from a market. Leg builders
-;;;; work period by period (reference periods for stubs, payment lags, par
-;;;; Ibor coupons, daily compounded overnight coupons), and
-;;;; tests/fixtures/legs.sexp holds reference legs.
+;;;; A leg is a list of cash flows. Fixed coupons know their amount. Floating coupons read
+;;;; fixings and forecast curves from a market. Leg builders work period by period
+;;;; (reference periods for stubs, payment lags, par Ibor coupons, daily compounded
+;;;; overnight coupons). The file tests/fixtures/legs.sexp holds reference legs.
 
 (in-package #:fincl)
 
 (defclass cashflow ()
   ((payment-date :initarg :payment-date :reader payment-date :type date)
    (currency :initarg :currency :reader cashflow-currency :type keyword))
-  (:documentation "An amount paid on PAYMENT-DATE in CURRENCY."))
+  (:documentation "An amount that is paid on PAYMENT-DATE in CURRENCY."))
 
 (defgeneric cashflow-amount (cashflow market)
-  (:documentation "The amount CASHFLOW pays, a double-float. MARKET supplies
-fixings and forecast curves to floating coupons; fixed flows ignore it."))
+  (:documentation "The amount that CASHFLOW pays, a double-float. MARKET gives fixings and forecast
+curves to floating coupons. Fixed flows ignore it."))
 
 (defclass simple-cashflow (cashflow)
   ((amount :initarg :amount :reader simple-amount :type double-float))
-  (:documentation "A known amount: a notional exchange or a fee."))
+  (:documentation "A known amount, for example a notional exchange or a fee."))
 
 (defmethod cashflow-amount ((c simple-cashflow) market)
   (declare (ignore market))
@@ -35,9 +34,8 @@ fixings and forecast curves to floating coupons; fixed flows ignore it."))
    (period :reader %accrual-period :type year-fraction
            :documentation "The year fraction from ACCRUAL-START to ACCRUAL-END,
 computed once: coupons are immutable."))
-  (:documentation "Interest on NOMINAL accrued from ACCRUAL-START to
-ACCRUAL-END under DAY-COUNTER, with REF-START and REF-END the reference
-period for day counters that need one."))
+  (:documentation "Interest on NOMINAL that accrues from ACCRUAL-START to ACCRUAL-END under DAY-COUNTER.
+REF-START and REF-END are the reference period for day counters that need one."))
 
 (defun coupon-year-fraction (coupon end)
   (year-fraction (coupon-day-counter coupon) (accrual-start coupon) end
@@ -48,14 +46,14 @@ period for day counters that need one."))
 
 (declaim (ftype (function (t &optional t) (values double-float &optional)) accrual-period))
 (defun accrual-period (coupon &optional (end nil end-p))
-  "The year fraction of COUPON's accrual, up to END (default its accrual end)."
+  "The year fraction of the accrual of COUPON, up to END (default: the end of the
+accrual)."
   (if end-p
       (coupon-year-fraction coupon end)
       (%accrual-period coupon)))
 
 (defgeneric coupon-rate (coupon market)
-  (:documentation "The rate COUPON accrues at: fixed, or fixed or forecast
-from MARKET."))
+  (:documentation "The rate that COUPON accrues at. It is fixed, or it is fixed or forecast from MARKET."))
 
 (defmethod cashflow-amount ((c coupon) market)
   (* (coupon-nominal c) (coupon-rate c market) (accrual-period c)))
@@ -75,8 +73,8 @@ accrual start and after its payment date.")
 
 (defclass fixed-rate-coupon (coupon)
   ((rate :initarg :rate :reader fixed-coupon-rate :type interest-rate))
-  (:documentation "Interest at a fixed INTEREST-RATE: nominal times the
-rate's compound factor over the accrual period, less one."))
+  (:documentation "Interest at a fixed INTEREST-RATE. It is the nominal times the compound factor of the
+rate over the accrual period, less one."))
 
 (defmethod coupon-rate ((c fixed-rate-coupon) market)
   (declare (ignore market))
@@ -117,10 +115,10 @@ rate's compound factor over the accrual period, less one."))
                     :documentation "End of the forecast period: the next coupon's
 fixing value date (the par coupon), at least a day after the value
 date."))
-  (:documentation "A coupon on an Ibor index fixed FIXING-DAYS before its
-accrual start. The rate is forecast over the coupon's own accrual (from this
-fixing's value date to the next fixing's), the \"par\" Ibor
-coupon, rather than over the index tenor."))
+  (:documentation "A coupon on an Ibor index that fixes FIXING-DAYS before its accrual start. The rate is
+the \"par\" Ibor coupon. The function forecasts it over the accrual of the coupon (from
+the value date of this fixing to the value date of the next fixing), not over the
+tenor of the index."))
 
 (defmethod initialize-instance :after ((c ibor-coupon) &key)
   (let* ((index (coupon-index c))
@@ -149,11 +147,11 @@ coupon, rather than over the index tenor."))
    (fixing-dates :reader overnight-fixing-dates :type simple-vector)
    (interest-dates :reader overnight-interest-dates :type simple-vector)
    (spans :reader overnight-spans :type double-vector))
-  (:documentation "A coupon on an overnight index compounded daily in
-arrears over its accrual period: (prod (1 + r_i d_i) - 1) / tau, d_i the
-index day counter's fraction of each business day, then gearing and spread.
-Forecast days telescope to D(start)/D(end) on the forecast curve. Lookback,
-lockout and observation shift are not modelled."))
+  (:documentation "A coupon on an overnight index that compounds daily in arrears over its accrual
+period: (prod (1 + r_i d_i) - 1) / tau. Here d_i is the fraction of the day counter of
+the index for each business day. Gearing and spread apply after that. Forecast days
+telescope to D(start)/D(end) on the forecast curve. The coupon has no lookback,
+lockout or observation shift."))
 
 (defun business-day-list (calendar from to)
   "The business days of CALENDAR from FROM to TO, both included."
@@ -265,12 +263,12 @@ lockout and observation shift are not modelled."))
                        (day-counter (required fixed-leg :day-counter))
                        currency (payment-convention :following) (payment-lag 0) payment-calendar
                        (compounding :simple) (frequency :annual))
-  "Fixed-rate coupons on SCHEDULE's periods: NOTIONAL (a real, with CURRENCY,
-or MONEY) at RATE (a real quoted with DAY-COUNTER, COMPOUNDING and FREQUENCY,
-or an INTEREST-RATE). Coupons pay PAYMENT-LAG business days after each
-period end, adjusted by PAYMENT-CONVENTION on PAYMENT-CALENDAR (default the
-schedule's). A short or long first or last period accrues against a notional
-regular period.
+  "Make fixed-rate coupons on the periods of SCHEDULE. NOTIONAL is a real (with CURRENCY)
+or MONEY. RATE is a real that is quoted with DAY-COUNTER, COMPOUNDING and FREQUENCY, or
+an INTEREST-RATE. Coupons pay PAYMENT-LAG business days after each period end,
+adjusted by PAYMENT-CONVENTION on PAYMENT-CALENDAR (default: the calendar of the
+schedule). A short or long first or last period accrues against a notional regular
+period.
 
   (fixed-leg :schedule schedule :notional (make-money 1d6 :usd) :rate 0.04d0
              :day-counter (make-instance 'thirty-360 :variant :bond-basis))"
@@ -315,11 +313,12 @@ regular period.
                           currency (spread 0) (gearing 1) day-counter
                           (payment-convention :following) (payment-lag 0) payment-calendar
                           fixing-days)
-  "Floating coupons on SCHEDULE's periods paying GEARING times INDEX plus
-SPREAD on NOTIONAL (a real, or MONEY; the currency defaults to the index's):
-IBOR-COUPONs for an Ibor index, fixed FIXING-DAYS (default the index's)
-before each period; OVERNIGHT-INDEXED-COUPONs for an overnight index.
-DAY-COUNTER defaults to the index's. Payment dates as in FIXED-LEG.
+  "Make floating coupons on the periods of SCHEDULE. They pay GEARING times INDEX plus
+SPREAD on NOTIONAL (a real, or MONEY). The currency defaults to the currency of the
+index. For an Ibor index the coupons are IBOR-COUPONs, fixed FIXING-DAYS before each
+period (default: the fixing days of the index). For an overnight index they are
+OVERNIGHT-INDEXED-COUPONs. DAY-COUNTER defaults to the day counter of the index. The
+payment dates follow the rules of FIXED-LEG.
 
   (floating-leg :schedule schedule :notional 1d6 :index (euribor #T\"6M\")
                 :spread 0.001d0)"
@@ -376,9 +375,9 @@ DAY-COUNTER defaults to the index's. Payment dates as in FIXED-LEG.
 
 (declaim (ftype (function (list t &key (:discount-curve t)) (values money &optional)) leg-npv))
 (defun leg-npv (leg market &key discount-curve)
-  "The value on MARKET's valuation date of the cash flows of LEG paying on or
-after it, as MONEY. DISCOUNT-CURVE is a curve or a curve id; by default the
-curve the market discounts the leg's currency on.
+  "Return, as MONEY, the value on the valuation date of MARKET of the cash flows of LEG
+that pay on or after that date. DISCOUNT-CURVE is a curve or a curve id. By default it
+is the curve that the market discounts the currency of the leg on.
 
   (leg-npv (fixed-leg :schedule schedule :notional (make-money 1d6 :eur) :rate 0.03d0 :day-counter +actual-360+) market)"
   (check-input market composite-market "a composite market")
@@ -390,9 +389,8 @@ curve the market discounts the leg's currency on.
 
 (declaim (ftype (function (list t &key (:discount-curve t)) (values money &optional)) leg-bps))
 (defun leg-bps (leg market &key discount-curve)
-  "The value of one basis point on the notional of LEG's live coupons, as
-MONEY: 1e-4 times the sum of nominal times accrual period times discount
-factor."
+  "Return, as MONEY, the value of one basis point on the notional of the live coupons of
+LEG. It is 1e-4 times the sum of nominal times accrual period times discount factor."
   (check-input market composite-market "a composite market")
   (let ((curve (market-discount-curve market (leg-discount-curve leg market discount-curve))))
     (make-money (* 1d-4
@@ -404,9 +402,8 @@ factor."
 
 (declaim (ftype (function (list t &optional t) (values money &optional)) accrued-amount))
 (defun accrued-amount (leg date &optional market)
-  "Interest accrued by DATE on the coupons of LEG paying on its next payment
-date after DATE, as MONEY. Floating
-coupons need MARKET for their rates.
+  "Return, as MONEY, the interest that accrued by DATE on the coupons of LEG that pay on
+the next payment date after DATE. Floating coupons need MARKET for their rates.
 
   (accrued-amount leg #D\"2027-01-15\")"
   (let* ((next (iter (for cf in leg)

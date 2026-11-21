@@ -1,13 +1,12 @@
 ;;;; math/distributions.lisp --- non-normal variates from normal draws
 ;;;;
-;;;; The Monte Carlo engine hands a process standard normals only: normal k of
-;;;; path i is a pure function of (seed, i, k), which is what makes prices
-;;;; independent of the chunking. A process that needs a Poisson count or a
-;;;; gamma time therefore takes one normal Z per variate and inverts the
-;;;; target CDF at Phi(Z). That is exact in distribution, consumes a fixed
-;;;; number of normals per step, and an antithetic partner (-Z) gets the
-;;;; mirrored quantile. Upper-half draws are inverted through the survival
-;;;; function at Phi(-Z), so they keep their precision.
+;;;; The Monte Carlo engine gives a process standard normals only. Normal k of path i is a
+;;;; pure function of (seed, i, k). This makes prices independent of the chunking. A
+;;;; process that needs a Poisson count or a gamma time takes one normal Z for each variate
+;;;; and inverts the target CDF at Phi(Z). This is exact in distribution and consumes a
+;;;; fixed number of normals for each step. An antithetic partner (-Z) gets the mirrored
+;;;; quantile. The code inverts upper-half draws through the survival function at Phi(-Z).
+;;;; Thus they keep their precision.
 
 (in-package #:fincl)
 

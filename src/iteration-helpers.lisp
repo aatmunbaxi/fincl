@@ -1,6 +1,6 @@
 ;;;; iteration-helpers.lisp --- ITERATE drivers and clauses fincl uses
 ;;;;
-;;;; Iteration patterns that recur across the library, each written once:
+;;;; These are iteration patterns that recur across the library. Each is written once:
 ;;;;
 ;;;;   (for (key value) in-plist plist)           a property list, by pairs
 ;;;;   (for (t0 t1) in-intervals times)           consecutive grid times
@@ -9,9 +9,9 @@
 ;;;;   (for d in-business-days calendar from start to end)
 ;;;;   (collect-double x into v length n)         a typed double vector
 ;;;;
-;;;; and SORTED-KEYS, a function over ITERATE's IN-HASHTABLE. The macros
-;;;; expand at their use sites, so the date functions they call may be
-;;;; defined later. Not exported.
+;;;; SORTED-KEYS is a function over IN-HASHTABLE of ITERATE. The macros expand at their
+;;;; use sites, so the date functions that they call can be defined later. The package does
+;;;; not export them.
 
 (in-package #:fincl)
 

@@ -1,23 +1,18 @@
 ;;;; time/schedule.lisp --- coupon and exercise schedules
 ;;;;
-;;;; MAKE-SCHEDULE generates dates backward or forward from a seed in whole
-;;;; multiples of the tenor, skipping dates that adjust onto their neighbour,
-;;;; with stubs at the ends and end-of-month alignment, then applies the
-;;;; business-day adjustment and the two safety checks that merge a period
-;;;; collapsed by adjustment.
-;;;;
-;;;; Provenance: follows QuantLib 1.43's Schedule constructor
-;;;; (ql/time/schedule.cpp) step for step; tests/fixtures/schedules.sexp,
-;;;; generated from QuantLib, is the reference.
+;;;; MAKE-SCHEDULE generates dates backward or forward from a seed, in whole multiples of the
+;;;; tenor. It skips dates that adjust onto their neighbor. It handles stubs at the ends and
+;;;; end-of-month alignment. Then it applies the business-day adjustment and two safety
+;;;; checks that merge a period that the adjustment collapsed. The file
+;;;; tests/fixtures/schedules.sexp holds the reference schedules.
 
 (in-package #:fincl)
 
 (defstruct (schedule (:constructor %make-schedule))
-  "Dates of a schedule, immutable. SCHEDULE-DATES are adjusted;
-SCHEDULE-UNADJUSTED-DATES the same dates before adjustment;
-SCHEDULE-REGULAR-P has one bit per period, 0 for a stub. The other slots are
-the inputs ICMA day counting needs (END-OF-MONTH as applied: only for month
-and year tenors)."
+  "The dates of a schedule. It is immutable. SCHEDULE-DATES are adjusted. SCHEDULE-UNADJUSTED-DATES
+are the same dates before adjustment. SCHEDULE-REGULAR-P has one bit for each period: 0 for a
+stub. The other slots are the inputs that ICMA day counting needs (END-OF-MONTH as applied: only
+for month and year tenors)."
   (dates '() :type list :read-only t)
   (unadjusted-dates '() :type list :read-only t)
   (regular-p #* :type simple-bit-vector :read-only t)
@@ -48,13 +43,15 @@ and year tenors)."
                            (convention :modified-following)
                            (termination-convention convention)
                            (rule :backward) end-of-month first-date next-to-last-date)
-  "The schedule from EFFECTIVE to TERMINATION every TENOR. RULE is :BACKWARD (dates counted back from TERMINATION, any stub at
-the front), :FORWARD (from EFFECTIVE, stub at the back), :ZERO (the two
-dates only; also any zero TENOR) or :TWENTIETH (forward on the 20th of the
-month). Dates are adjusted onto CALENDAR's business days by CONVENTION, the
-last one by TERMINATION-CONVENTION. END-OF-MONTH, for month and year tenors,
-keeps a schedule seeded on a month end on month ends. FIRST-DATE and
-NEXT-TO-LAST-DATE give explicit stubs (backward and forward rules only).
+  "Make the schedule from EFFECTIVE to TERMINATION every TENOR. RULE is one of:
+  :BACKWARD    Dates count back from TERMINATION. Any stub is at the front.
+  :FORWARD     Dates count forward from EFFECTIVE. Any stub is at the back.
+  :ZERO        The two dates only. Also used for any zero TENOR.
+  :TWENTIETH   Forward, on the 20th of the month.
+CONVENTION adjusts the dates onto business days of CALENDAR. TERMINATION-CONVENTION adjusts the
+last date. END-OF-MONTH applies to month and year tenors. It keeps the dates of a schedule that
+starts on a month end on month ends. FIRST-DATE and NEXT-TO-LAST-DATE give explicit stubs
+(backward and forward rules only).
 
   (make-schedule :effective #D\"2027-01-31\" :termination #D\"2032-01-31\" :tenor #T\"6M\" :calendar +target+
                  :end-of-month t)"

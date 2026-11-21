@@ -1,17 +1,17 @@
 ;;;; engines/path-payoffs.lisp --- DEFINE-PATH-PAYOFF
 ;;;;
-;;;; A path payoff carries its own path logic: autocallables, cliquets,
-;;;; payoffs on latent state. DEFINE-PATH-PAYOFF writes its class and its
-;;;; PATH-KERNEL from declarative clauses, as DEFINE-PAYOFF writes a terminal
-;;;; payoff's PAYOFF-VALUE and PAYOFF-KERNEL from one formula.
+;;;; A path payoff carries its own path logic, for example autocallables, cliquets and
+;;;; payoffs on latent state. DEFINE-PATH-PAYOFF writes its class and its PATH-KERNEL from
+;;;; declarative clauses. In the same way, DEFINE-PAYOFF writes PAYOFF-VALUE and
+;;;; PAYOFF-KERNEL of a terminal payoff from one formula.
 
 (in-package #:fincl)
 
 (defclass path-payoff (payoff) ()
   (:metaclass component-class)
-  (:documentation "A payoff defined by DEFINE-PATH-PAYOFF: its PATH-KERNEL
-holds all of its path logic, so it is European, combines only with
-PATH-INDEPENDENT, and has no closed form."))
+  (:documentation "A payoff that DEFINE-PATH-PAYOFF defines. Its PATH-KERNEL holds all of its path
+logic. It is European, it combines only with PATH-INDEPENDENT, and it has no closed
+form."))
 
 (defmethod check-path-feature ((f path-independent) (p path-payoff) exercise)
   (unless (typep exercise 'european-exercise)
@@ -39,26 +39,26 @@ PATH-INDEPENDENT, and has no closed form."))
           (t nil))))
 
 (defmacro define-path-payoff (name superclasses slots (observable) &body clauses)
-  "Define the payoff class NAME (a PATH-PAYOFF) and its PATH-KERNEL from
-CLAUSES. SLOTS are as in DEFINE-PAYOFF; a slot holding dates has type LIST.
-Every clause may use the slots and the variables SUPERCLASSES declare (PHI,
-STRIKE) as typed local variables, OBSERVABLE (the observable at the current
+  "Define the payoff class NAME (a PATH-PAYOFF) and its PATH-KERNEL from CLAUSES.
+SLOTS are as in DEFINE-PAYOFF. A slot that holds dates has type LIST. Each
+clause can use these as typed local variables: the slots, the variables that
+SUPERCLASSES declare (PHI, STRIKE), OBSERVABLE (the observable at the current
 grid point, a double-float), and the latent state variables of :STATE.
 
-  (:accumulate (var init) ...)   per-path double-float variables, set to
+  (:accumulate (var init) ...)   Per-path double-float variables. Each is set to
                                  INIT at the start of each path
-  (:state var name)              VAR is the state component NAME
-                                 (STATE-INDEX), e.g. (:state v :variance)
-  (:start form ...)              at grid index 0 (the valuation date)
+  (:state var name)              VAR is the state component NAME (STATE-INDEX),
+                                 for example (:state v :variance)
+  (:start form ...)              Runs at grid index 0 (the valuation date)
   (:on date-slot (index) form ...)
-                                 at each date of DATE-SLOT; INDEX is the
-                                 date's position in the slot
-  (:every form ...)              at every grid index
-  (:final form)                  the amount paid at expiry
+                                 Runs at each date of DATE-SLOT. INDEX is the
+                                 position of the date in the slot
+  (:every form ...)              Runs at every grid index
+  (:final form)                  The amount that is paid at expiry
 
-In :ON clauses, (pay amount) pays AMOUNT on the current date and (pay amount
-i) on date I of the clause's slot. Clauses run in the order written; (stop)
-in any of them ends the path, which then pays nothing at expiry.
+In :ON clauses, (pay amount) pays AMOUNT on the current date. (pay amount i) pays
+on date I of the slot of the clause. The clauses run in the order written. A call
+to (stop) in any clause ends the path. The path then pays nothing at expiry.
 
   (define-path-payoff autocallable (payoff)
       ((notional double-float) (initial double-float) (barrier double-float)

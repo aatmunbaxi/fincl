@@ -1,31 +1,29 @@
 ;;;; engines/binomial.lisp --- Cox-Ross-Rubinstein binomial tree
 ;;;;
-;;;; J. C. Cox, S. A. Ross and M. Rubinstein, "Option pricing: a simplified
-;;;; approach", J. Financial Economics 7 (1979).
+;;;; J. C. Cox, S. A. Ross and M. Rubinstein, "Option pricing: a simplified approach",
+;;;; J. Financial Economics 7 (1979).
 ;;;;
-;;;; Over each step dt the spot moves up by u = exp(sigma sqrt(dt)) or down by
-;;;; d = 1/u. The up probability p = (g - d) / (u - d) matches the step's
-;;;; growth factor g, and values are discounted by the step's discount
-;;;; factor. Both come from the market protocol (ratios of FORWARD-FACTOR and
-;;;; DISCOUNT-FACTOR between grid times), so a market with term structure
-;;;; changes p and discounting step by step while the tree still recombines.
+;;;; Over each step dt, the spot moves up by u = exp(sigma sqrt(dt)) or down by d = 1/u.
+;;;; The up probability p = (g - d) / (u - d) matches the growth factor g of the step.
+;;;; The tree discounts values by the discount factor of the step. Both come from the
+;;;; market protocol (ratios of FORWARD-FACTOR and DISCOUNT-FACTOR between grid times).
+;;;; Thus a market with a term structure changes p and the discounting step by step, and
+;;;; the tree still recombines.
 ;;;;
-;;;; A plain CRR tree converges at O(1/N) but oscillates between odd and even
-;;;; N. By default the engine values the last step with the Black-Scholes
-;;;; formula (the BBS tree of Broadie and Detemple, 1996), which removes the
-;;;; oscillation, and returns 2 v(N) - v(N/2) to cancel the O(1/N) term
-;;;; (their BBSR). Europeans under GBM are left to the
-;;;; Black-Scholes engine, which is exact.
+;;;; A plain CRR tree converges at O(1/N), but it oscillates between odd and even N. By
+;;;; default the engine values the last step with the Black-Scholes formula (the BBS tree
+;;;; of Broadie and Detemple, 1996). This removes the oscillation. The engine then
+;;;; returns 2 v(N) - v(N/2) to cancel the O(1/N) term (their BBSR). The engine leaves
+;;;; Europeans under GBM to the Black-Scholes engine, which is exact.
 ;;;;
-;;;; Discrete dividends. The tree grows at the CARRY-FACTOR, so it
-;;;; stays recombining, and each dividend is applied at the step nearest its
-;;;; ex-date. Under the spot model the value just before the ex-date at a
-;;;; node with spot S is the value after it at S - D, interpolated (natural
-;;;; cubic in S) across that step's nodes: B. Vellekoop and J. Nieuwenhuis,
-;;;; "Efficient pricing of derivatives on assets with discrete dividends",
-;;;; Applied Mathematical Finance 13 (2006). Exercise is then checked on S,
-;;;; before the dividend. Under the escrowed model the tree carries S - R(t),
-;;;; R the dividends still to go ex, and exercise pays on S.
+;;;; Discrete dividends. The tree grows at the CARRY-FACTOR, so it stays recombining. The
+;;;; tree applies each dividend at the step nearest to its ex-date. Under the spot model,
+;;;; the value just before the ex-date at a node with spot S is the value after it at S -
+;;;; D. The engine interpolates this value (natural cubic in S) across the nodes of that
+;;;; step. Reference: B. Vellekoop and J. Nieuwenhuis, "Efficient pricing of derivatives
+;;;; on assets with discrete dividends", Applied Mathematical Finance 13 (2006). The tree
+;;;; then checks exercise on S, before the dividend. Under the escrowed model, the tree
+;;;; carries S - R(t), with R the dividends that still go ex. Exercise pays on S.
 
 (in-package #:fincl)
 

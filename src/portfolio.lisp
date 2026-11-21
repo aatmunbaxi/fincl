@@ -1,13 +1,12 @@
 ;;;; portfolio.lisp --- holdings, positions, portfolios
 ;;;;
-;;;; A position is an instrument and a signed quantity: long when positive,
-;;;; short when negative. A portfolio is a named tree of positions and
-;;;; sub-portfolios. Pricing a portfolio prices each position on the same
-;;;; market snapshot, in parallel, under a recovery policy, and reports
-;;;; per-position results rather than signalling: a book is priced even when
-;;;; one of its positions cannot be.
+;;;; A position is an instrument and a signed quantity: long when positive, short when
+;;;; negative. A portfolio is a named tree of positions and sub-portfolios. To price a
+;;;; portfolio, the code prices each position on the same market snapshot, in parallel,
+;;;; under a recovery policy. It reports results for each position and does not signal.
+;;;; Thus a book is priced even when one of its positions cannot be.
 ;;;;
-;;;; A HOLDING is the underlying itself, so that a book can hold its hedge.
+;;;; A HOLDING is the underlying itself. Thus a book can hold its hedge.
 
 (in-package #:fincl)
 (named-readtables:in-readtable fincl:syntax)
@@ -18,10 +17,10 @@
 
 (defclass holding (instrument) ()
   (:metaclass component-class)
-  (:documentation "One unit of an underlying, worth its spot. Its currency is
-the underlying's; another is a quanto and signals UNSUPPORTED-QUANTO. Borrow
-and financing costs are not modelled, and dividends received are not part of
-its value.
+  (:documentation "One unit of an underlying, worth its spot. Its currency is the currency of the
+underlying. Another currency is a quanto and signals UNSUPPORTED-QUANTO. The class does
+not model borrow and financing costs. Dividends that are received are not part of its
+value.
 
   (make-holding :underlying :spx)"))
 
@@ -29,8 +28,8 @@ its value.
                     (values holding &optional))
           make-holding))
 (defun make-holding (&key underlying currency)
-  "A HOLDING of UNDERLYING (a keyword; NIL means the market's only
-underlying), paying in CURRENCY (NIL: the underlying's).
+  "Make a HOLDING of UNDERLYING (a keyword). NIL means the only underlying of the market.
+CURRENCY is the currency of payment (NIL: the currency of the underlying).
 
   (make-holding :underlying :spx)"
   (make-instance 'holding :underlying underlying :currency currency))
@@ -60,15 +59,15 @@ underlying), paying in CURRENCY (NIL: the underlying's).
 
 (defclass cash-account (instrument) ()
   (:metaclass component-class)
-  (:documentation "One unit of a currency, worth 1 in it: a position's
-quantity is a cash balance (negative: borrowed). Interest is not part of its
-value; SIMULATE's books accrue it.
+  (:documentation "One unit of a currency, worth 1 in that currency. The quantity of a position is a cash
+balance (a negative balance is borrowed). Interest is not part of its value. The books of
+SIMULATE accrue it.
 
   (make-position (make-cash-account :currency :usd) :quantity 1000)"))
 
 (declaim (ftype (function (&key (:currency t)) (values cash-account &optional)) make-cash-account))
 (defun make-cash-account (&key currency)
-  "A CASH-ACCOUNT in CURRENCY (a keyword; NIL means the market's).
+  "Make a CASH-ACCOUNT in CURRENCY (a keyword). NIL means the currency of the market.
 
   (make-cash-account :currency :usd)"
   (make-instance 'cash-account :currency currency))
@@ -102,16 +101,15 @@ value; SIMULATE's books accrue it.
            :documentation "An engine designator, or NIL for the portfolio's default.")
    (tags :initarg :tags :initform '() :reader position-tags :type list
          :documentation "A plist, e.g. (:desk :a :strategy :hedge)."))
-  (:documentation "QUANTITY units of INSTRUMENT: long when positive, short
-when negative, closed at zero. Made by MAKE-POSITION; immutable."))
+  (:documentation "QUANTITY units of INSTRUMENT: long when positive, short when negative, closed at zero.
+MAKE-POSITION makes it. It is immutable."))
 
 (declaim (ftype (function (t &key (:quantity t) (:engine t) (:tags t))
                     (values portfolio-position &optional))
           make-position))
 (defun make-position (instrument &key (quantity 1) engine tags)
-  "A position of QUANTITY (a real; negative is short) in INSTRUMENT, priced
-with ENGINE (a designator; NIL: the portfolio's default) and carrying TAGS,
-a plist.
+  "Make a position of QUANTITY (a real, negative for short) in INSTRUMENT. ENGINE prices it
+(a designator, NIL: the default engine of the portfolio). TAGS is a plist.
 
   (make-position (make-option (put 95) (expires #D\"2027-09-24\")) :quantity -10
                  :tags '(:desk :a))"
@@ -129,7 +127,7 @@ a plist.
 (defun derive-position (position &key (quantity (position-quantity position))
                                       (engine (position-engine position))
                                       (tags (position-tags position)))
-  "A copy of POSITION with QUANTITY, ENGINE or TAGS replaced."
+  "Return a copy of POSITION with QUANTITY, ENGINE or TAGS replaced."
   (make-position (position-instrument position) :quantity quantity :engine engine :tags tags))
 
 (defmethod print-object ((p portfolio-position) stream)
@@ -146,12 +144,11 @@ a plist.
   ((name :initarg :name :reader portfolio-name)
    (members :initarg :members :reader portfolio-members :type list
             :documentation "Positions and sub-portfolios, in order."))
-  (:documentation "A named tree of positions and sub-portfolios. Made by
-MAKE-PORTFOLIO; immutable."))
+  (:documentation "A named tree of positions and sub-portfolios. MAKE-PORTFOLIO makes it. It is immutable."))
 
 (declaim (ftype (function (t &rest t) (values portfolio &optional)) make-portfolio))
 (defun make-portfolio (name &rest members)
-  "A PORTFOLIO called NAME (a string or keyword) of MEMBERS, each a position
+  "Make a PORTFOLIO called NAME (a string or keyword) of MEMBERS. Each member is a position
 or a portfolio.
 
   (make-portfolio \"book\"
@@ -162,9 +159,9 @@ or a portfolio.
   (make-instance 'portfolio :name name :members members))
 
 (defgeneric same-instrument-p (a b)
-  (:documentation "True if instruments A and B are the same contract, so that
-ADJUST-POSITION adds to an existing position. Options are compared by
-identity; holdings by underlying and currency.")
+  (:documentation "True if the instruments A and B are the same contract, so that ADJUST-POSITION adds to
+an existing position. Options are compared by identity. Holdings are compared by
+underlying and currency.")
   (:method (a b) (eq a b))
   (:method ((a holding) (b holding))
     (and (eq (instrument-underlying a) (instrument-underlying b))
@@ -176,10 +173,10 @@ identity; holdings by underlying and currency.")
                     (values portfolio &optional))
           adjust-position))
 (defun adjust-position (portfolio instrument &key by to)
-  "A copy of PORTFOLIO whose top-level position in INSTRUMENT (see
-SAME-INSTRUMENT-P) has its quantity moved BY a real, or set TO one; with no
-such position, one is appended with quantity BY or TO. Exactly one of BY and
-TO. PORTFOLIO is unchanged.
+  "Return a copy of PORTFOLIO. In the copy, the top-level position in INSTRUMENT (see
+SAME-INSTRUMENT-P) has its quantity moved BY a real, or set TO a real. If there is no
+such position, the function appends one with quantity BY or TO. Give exactly one of BY
+and TO. PORTFOLIO does not change.
 
   (adjust-position book (make-holding :underlying :spx) :to -0.53d0)   ; rebalance a hedge"
   (check-input portfolio portfolio "a portfolio")
@@ -199,7 +196,7 @@ TO. PORTFOLIO is unchanged.
 
 (declaim (ftype (function (portfolio) (values list &optional)) portfolio-positions))
 (defun portfolio-positions (portfolio)
-  "Every position in PORTFOLIO's tree, depth first, in order."
+  "Return every position in the tree of PORTFOLIO, depth first, in order."
   (iter (for m in (portfolio-members portfolio))
         (if (typep m 'portfolio)
             (appending (portfolio-positions m))
@@ -211,20 +208,21 @@ TO. PORTFOLIO is unchanged.
 
 (declaim (ftype (function (portfolio) (values portfolio &optional)) portfolio-long))
 (defun portfolio-long (portfolio)
-  "The positions of PORTFOLIO with a positive quantity, as a flat portfolio."
+  "Return the positions of PORTFOLIO with a positive quantity, as a flat portfolio."
   (filter-portfolio portfolio (lambda (p) (plusp (position-quantity p)))
                     (format nil "~A (long)" (portfolio-name portfolio))))
 
 (declaim (ftype (function (portfolio) (values portfolio &optional)) portfolio-short))
 (defun portfolio-short (portfolio)
-  "The positions of PORTFOLIO with a negative quantity, as a flat portfolio."
+  "Return the positions of PORTFOLIO with a negative quantity, as a flat portfolio."
   (filter-portfolio portfolio (lambda (p) (minusp (position-quantity p)))
                     (format nil "~A (short)" (portfolio-name portfolio))))
 
 (declaim (ftype (function (portfolio t) (values list &optional)) portfolio-by-tag))
 (defun portfolio-by-tag (portfolio key)
-  "((value . portfolio) ...): PORTFOLIO's positions grouped by the value of
-their tag KEY (NIL for positions without it), in order of first appearance.
+  "Return ((value . portfolio) ...): the positions of PORTFOLIO grouped by the value of
+their tag KEY, in order of first appearance. Positions without the tag have the value
+NIL.
 
   (portfolio-by-tag book :desk) => ((:a . #<PORTFOLIO ...>) (:b . ...))"
   (let ((groups '()))
@@ -248,9 +246,9 @@ their tag KEY (NIL for positions without it), in order of first appearance.
 ;;; --------------------------------------------------------------------
 
 (defgeneric engine-preference (engine)
-  (:documentation "The rank of ENGINE (an instance) in APPLICABLE-ENGINES'
-order, lower first: closed forms 10 (Black-Scholes before RGW and BAW),
-COS 20, finite differences 30, the tree 40, Monte Carlo 90.")
+  (:documentation "The rank of ENGINE (an instance) in the order of APPLICABLE-ENGINES, lower first: closed
+forms 10 (Black-Scholes before RGW and BAW), COS 20, finite differences 30, the tree 40,
+Monte Carlo 90.")
   (:method ((e engine)) 50)
   (:method ((e analytic-engine)) 12)
   (:method ((e black-scholes-engine)) 10)
@@ -296,9 +294,10 @@ UNSUPPORTED-COMBINATION fallback, by its classes alone."
                 methods))))))
 
 (defvar *default-engines* nil
-  "The engine designators APPLICABLE-ENGINES considers by default. NIL means
-every registered designator whose engine class has an ENGINE-DISPATCH method
-(see DEFAULT-ENGINES), so an engine a user defines is found; a list replaces it.")
+  "The engine designators that APPLICABLE-ENGINES tries by default. NIL means every
+registered designator whose engine class has an ENGINE-DISPATCH method (see
+DEFAULT-ENGINES). Thus an engine that a user defines is found. A list replaces
+the default.")
 
 (defparameter *built-in-engine-order*
   '(:black-scholes :rgw :baw :cos :fd :binomial :mc :merton-series :cev)
@@ -320,14 +319,14 @@ prices options when ENGINE-DISPATCH has a method for its class.
       ,@(remove-if (lambda (key) (member key *built-in-engine-order*)) pricing))))
 
 (defgeneric applicable-engines (instrument market &key candidates process)
-  (:documentation "The engines that have a pricing method for INSTRUMENT, as
-instances, ordered by ENGINE-PREFERENCE: those of CANDIDATES (designators,
-default *DEFAULT-ENGINES*, else DEFAULT-ENGINES) that model PROCESS (default GBM on the market)
-and whose pricing generic function has a method for the instrument's
-exercise, payoff and path classes more specific than the
-UNSUPPORTED-COMBINATION fallback. An engine listed may still decline in a
-market regime (MODEL-DOMAIN-ERROR, e.g. discrete dividends it does not
-model); SELECT-ENGINE and PRICE-PORTFOLIO move on when it does.
+  (:documentation "Return the engines (as instances) that have a pricing method for INSTRUMENT, ordered by
+ENGINE-PREFERENCE. They come from CANDIDATES (designators, default *DEFAULT-ENGINES*,
+else DEFAULT-ENGINES). Each engine must model PROCESS (default: GBM on the market). The
+pricing generic function of the engine must have a method for the exercise, payoff and
+path classes of the instrument that is more specific than the UNSUPPORTED-COMBINATION
+fallback. A listed engine can still decline in a market regime (MODEL-DOMAIN-ERROR, for
+example discrete dividends that it does not model). SELECT-ENGINE and PRICE-PORTFOLIO
+move on when it does.
 
   (applicable-engines (make-option (put 100) (american) (expires d)) m :process (make-heston))
   => (#<ENGINE (make-engine :fd :process (make-heston))> #<ENGINE (make-engine :mc ...)>)")
@@ -354,7 +353,7 @@ model); SELECT-ENGINE and PRICE-PORTFOLIO move on when it does.
                     (values t &optional))
           select-engine))
 (defun select-engine (instrument market &rest options &key candidates process)
-  "The first of APPLICABLE-ENGINES for INSTRUMENT, or NIL."
+  "Return the first of APPLICABLE-ENGINES for INSTRUMENT, or NIL."
   (declare (ignore candidates process))
   (first (apply #'applicable-engines instrument market options)))
 
@@ -364,9 +363,10 @@ model); SELECT-ENGINE and PRICE-PORTFOLIO move on when it does.
 
 (defstruct (position-result (:constructor make-position-result
                                 (position unit-price standard-error engine condition)))
-  "One position's pricing: UNIT-PRICE and STANDARD-ERROR per unit of the
-instrument (NIL if it could not be priced), the ENGINE that priced it, and
-the CONDITION recovered from or, if unpriced, the last one."
+  "The pricing of one position. UNIT-PRICE and STANDARD-ERROR are for one unit of the
+instrument (NIL if it could not be priced). ENGINE is the engine that priced it.
+CONDITION is the condition that the pricing recovered from or, if the position is
+unpriced, the last condition."
   (position nil :read-only t)
   (unit-price nil :read-only t)
   (standard-error nil :read-only t)
@@ -377,12 +377,12 @@ the CONDITION recovered from or, if unpriced, the last one."
                     (values (or number null) &optional))
           position-result-value))
 (defun position-result-value (r)
-  "Quantity x unit price, or NIL if the position was not priced."
+  "Quantity times unit price, or NIL if the position was not priced."
   (a:when-let ((p (position-result-unit-price r)))
     (* (position-quantity (position-result-position r)) p)))
 
 (defstruct (portfolio-result (:constructor make-portfolio-result (portfolio results)))
-  "PORTFOLIO priced: RESULTS, a vector of POSITION-RESULTs in the order of
+  "A priced PORTFOLIO. RESULTS is a vector of POSITION-RESULTs in the order of
 PORTFOLIO-POSITIONS."
   (portfolio nil :read-only t)
   (results nil :read-only t))
@@ -391,9 +391,10 @@ PORTFOLIO-POSITIONS."
                     (values double-float (or double-float null) list &optional))
           portfolio-value))
 (defun portfolio-value (result)
-  "(values value standard-error unpriced) of a PORTFOLIO-RESULT: the sum of
-the priced positions' values, the standard error of that sum (NIL if no
-position has one), and the list of positions that could not be priced."
+  "Return (values value standard-error unpriced) of a PORTFOLIO-RESULT. VALUE is the sum of
+the values of the priced positions. STANDARD-ERROR is the standard error of that sum
+(NIL if no position has one). UNPRICED is the list of positions that could not be
+priced."
   (let ((value 0d0) (variance nil) (unpriced '()))
     (iter (for r in-vector (portfolio-result-results result))
           (a:if-let ((v (position-result-value r)))
@@ -449,16 +450,15 @@ returns, in order. Other errors are recorded, not signalled."
           price-portfolio))
 (defun price-portfolio (portfolio market &key (engine :auto) (policy #'default-fallback-policy)
                                               (parallel t))
-  "PORTFOLIO priced on MARKET: a PORTFOLIO-RESULT (see PORTFOLIO-VALUE) with
-one POSITION-RESULT per position, in order. Each position is priced with its
-own engine, or ENGINE (default :AUTO); if that declines
-(UNSUPPORTED-COMBINATION, MODEL-DOMAIN-ERROR), POLICY, a function of
-(position market engine condition), gives the engines to try next (default:
-the instrument's APPLICABLE-ENGINES). A position that cannot be priced is
-recorded with its condition; nothing is signalled. Positions are priced in
-parallel under lp:*kernel* (serially with PARALLEL NIL, e.g. inside code
-that already runs in parallel); the result does not depend on the number of
-workers.
+  "Price PORTFOLIO on MARKET. Return a PORTFOLIO-RESULT (see PORTFOLIO-VALUE) with one
+POSITION-RESULT for each position, in order. Each position is priced with its own
+engine, or ENGINE (default :AUTO). If that engine declines (UNSUPPORTED-COMBINATION,
+MODEL-DOMAIN-ERROR), POLICY gives the engines to try next. POLICY is a function of
+(position market engine condition). The default is the APPLICABLE-ENGINES of the
+instrument. The function records a position that it cannot price with its condition. It
+signals nothing. It prices positions in parallel under lp:*kernel*. With PARALLEL NIL it
+prices them in serial, for example inside code that already runs in parallel. The result
+does not depend on the number of workers.
 
   (portfolio-value (price-portfolio book m)) => 1234.56d0, NIL, NIL"
   (check-input portfolio portfolio "a portfolio")

@@ -1,9 +1,9 @@
 ;;;; time/date.lisp --- calendar dates
 ;;;;
-;;;; A date is a serial day number: days since 1970-01-01 in the proleptic
-;;;; Gregorian calendar. Conversion to and from year/month/day uses Howard
-;;;; Hinnant's days_from_civil / civil_from_days, which are exact for every
-;;;; date, negative serials included.
+;;;; A date is a serial day number: the days since 1970-01-01 in the proleptic Gregorian
+;;;; calendar. The conversion to and from year/month/day uses days_from_civil and
+;;;; civil_from_days of Howard Hinnant. They are exact for every date, negative serials
+;;;; included.
 
 (in-package #:fincl)
 
@@ -19,8 +19,8 @@
 (defstruct (date (:constructor %date (serial))
                  (:copier nil)
                  (:predicate datep))
-  "A calendar date. Immutable. Two dates are EQUALP when they are the same
-day, so they can key an EQUALP hash table.
+  "A calendar date. It is immutable. Two dates are EQUALP when they are the same day, so they can
+key an EQUALP hash table.
 
   (make-date 2027 6 15) => #D\"2027-06-15\""
   (serial 0 :type fixnum :read-only t))
@@ -90,7 +90,7 @@ DAY still yields a number, which MAKE-DATE rejects by round-tripping."
                     (values (integer 28 31) &optional))
           days-in-month))
 (defun days-in-month (year month)
-  "Number of days in MONTH of YEAR.
+  "Return the number of days in MONTH of YEAR.
 
   (days-in-month 2028 2) => 29"
   (if (= month 2)
@@ -103,7 +103,7 @@ DAY still yields a number, which MAKE-DATE rejects by round-tripping."
 
 (declaim (ftype (function (t t t) (values date &optional)) make-date))
 (defun make-date (year month day)
-  "Return the date YEAR-MONTH-DAY. Signals INVALID-DATE if it does not exist.
+  "Return the date YEAR-MONTH-DAY. If the date does not exist, signal INVALID-DATE.
 
   (make-date 2027 6 15) => #D\"2027-06-15\""
   (check-input year integer)
@@ -119,7 +119,7 @@ DAY still yields a number, which MAKE-DATE rejects by round-tripping."
 
 (declaim (ftype (function (t) (values date &optional)) parse-date))
 (defun parse-date (string)
-  "Parse a strict YYYY-MM-DD string. Signals INVALID-DATE otherwise.
+  "Parse a strict YYYY-MM-DD string. For any other string, signal INVALID-DATE.
 
   (parse-date \"2027-06-15\") => #D\"2027-06-15\""
   (flet ((digits-at-p (&rest positions)
@@ -152,7 +152,7 @@ DAY still yields a number, which MAKE-DATE rejects by round-tripping."
 
 (declaim (ftype (function (date) (values (integer 1 7) &optional)) day-of-week))
 (defun day-of-week (date)
-  "ISO day of the week: 1 = Monday ... 7 = Sunday.
+  "Return the ISO day of the week: 1 = Monday ... 7 = Sunday.
 
   (day-of-week #D\"2027-06-15\") => 2"
   ;; 1970-01-01 was a Thursday.
@@ -162,14 +162,14 @@ DAY still yields a number, which MAKE-DATE rejects by round-tripping."
 
 (declaim (ftype (function (date integer) (values date &optional)) date+))
 (defun date+ (date days)
-  "The date DAYS calendar days after DATE (before, if DAYS is negative).
+  "Return the date DAYS calendar days after DATE (before DATE, if DAYS is negative).
 
   (date+ #D\"2027-06-15\" 10) => #D\"2027-06-25\""
   (%date (+ (date-serial date) days)))
 
 (declaim (ftype (function (date date) (values integer &optional)) date-))
 (defun date- (a b)
-  "Calendar days from B to A, as an integer.
+  "Return the calendar days from B to A, as an integer.
 
   (date- #D\"2027-06-25\" #D\"2027-06-15\") => 10"
   (- (date-serial a) (date-serial b)))

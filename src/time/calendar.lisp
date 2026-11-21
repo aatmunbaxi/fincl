@@ -1,13 +1,13 @@
 ;;;; time/calendar.lisp --- the business-day calendar protocol
 ;;;;
-;;;; A calendar answers BUSINESS-DAY-P; everything else is derived from it.
-;;;; Only calendars with no country holidays are provided: NULL-CALENDAR,
-;;;; WEEKENDS-ONLY, and JOINT-CALENDAR for combining others.
+;;;; A calendar answers BUSINESS-DAY-P. All other functions derive from it. This file
+;;;; provides only calendars with no country holidays: NULL-CALENDAR, WEEKENDS-ONLY, and
+;;;; JOINT-CALENDAR, which combines other calendars.
 
 (in-package #:fincl)
 
 (defclass calendar () ()
-  (:documentation "Decides which dates are business days."))
+  (:documentation "A calendar decides which dates are business days."))
 
 (defmethod make-load-form ((c calendar) &optional environment)
   (make-load-form-saving-slots c :environment environment))
@@ -16,13 +16,13 @@
   (:documentation "True if DATE is a business day in CALENDAR."))
 
 (defgeneric weekend-p (calendar date)
-  (:documentation "True if DATE falls on CALENDAR's weekend.")
+  (:documentation "True if DATE falls on the weekend of CALENDAR.")
   (:method ((c calendar) date)
     (>= (day-of-week date) 6)))
 
 (declaim (ftype (function (calendar date) (values boolean &optional)) holiday-p))
 (defun holiday-p (calendar date)
-  "True if DATE is not a business day in CALENDAR, weekends included."
+  "True if DATE is not a business day in CALENDAR. Weekends count as holidays."
   (not (business-day-p calendar date)))
 
 ;;; --------------------------------------------------------------------
@@ -41,7 +41,7 @@
   nil)
 
 (defclass weekends-only (calendar) ()
-  (:documentation "Saturdays and Sundays are holidays; nothing else is."))
+  (:documentation "Saturdays and Sundays are holidays. Nothing else is."))
 
 (defmethod business-day-p ((c weekends-only) date)
   (not (weekend-p c date)))
@@ -51,9 +51,9 @@
               :initform (a:required-argument :calendars))
    (rule :initarg :rule :reader joint-rule :initform :join-holidays
          :type (member :join-holidays :join-business-days)))
-  (:documentation "Combines CALENDARS. Under :JOIN-HOLIDAYS a date is a
-business day only if it is one in every calendar; under
-:JOIN-BUSINESS-DAYS, if it is one in any calendar.
+  (:documentation "A combination of CALENDARS. Under :JOIN-HOLIDAYS a date is a business day only if it is one in
+every calendar. Under :JOIN-BUSINESS-DAYS a date is a business day if it is one in any
+calendar.
 
   (make-instance 'joint-calendar :calendars (list a b) :rule :join-holidays)"))
 
@@ -75,9 +75,9 @@ business day only if it is one in every calendar; under
 
 (declaim (ftype (function (calendar date &optional symbol) (values date &optional)) adjust))
 (defun adjust (calendar date &optional (convention :following))
-  "Move DATE onto a business day of CALENDAR. CONVENTION is :UNADJUSTED,
-:FOLLOWING, :MODIFIED-FOLLOWING, :PRECEDING or :MODIFIED-PRECEDING. The
-modified conventions reverse direction rather than leave DATE's month.
+  "Move DATE onto a business day of CALENDAR. CONVENTION is :UNADJUSTED, :FOLLOWING,
+:MODIFIED-FOLLOWING, :PRECEDING or :MODIFIED-PRECEDING. The modified conventions reverse
+direction. They do not leave the month of DATE.
 
   (adjust (make-instance 'weekends-only) #D\"2027-07-31\" :modified-following)
   => #D\"2027-07-30\""
@@ -97,8 +97,8 @@ modified conventions reverse direction rather than leave DATE's month.
          (if (= (date-month d) (date-month date)) d (roll date 1)))))))
 
 (defgeneric count-business-days (calendar from to)
-  (:documentation "Business days of CALENDAR in [FROM, TO), FROM <= TO. The
-default tests each day; holiday calendars use per-year prefix counts.")
+  (:documentation "Return the business days of CALENDAR in [FROM, TO), with FROM <= TO. The default tests each day.
+Holiday calendars use prefix counts for each year.")
   (:method ((calendar calendar) from to)
     (iter (for d in-dates from below to)
           (counting (business-day-p calendar d)))))
@@ -107,8 +107,8 @@ default tests each day; holiday calendars use per-year prefix counts.")
                     (values integer &optional))
           business-days-between))
 (defun business-days-between (calendar from to &key (include-first t) include-last)
-  "Business days of CALENDAR between FROM and TO, by default counting
-[FROM, TO). Negative when TO precedes FROM.
+  "Return the business days of CALENDAR between FROM and TO. By default the count includes FROM and
+excludes TO ([FROM, TO)). The result is negative when TO precedes FROM.
 
   (business-days-between (make-instance 'weekends-only)
                          #D\"2027-06-14\" #D\"2027-06-21\") => 5"
@@ -121,7 +121,7 @@ default tests each day; holiday calendars use per-year prefix counts.")
 
 (declaim (ftype (function (calendar date) (values date &optional)) calendar-end-of-month))
 (defun calendar-end-of-month (calendar date)
-  "The last business day of DATE's month in CALENDAR."
+  "Return the last business day of the month of DATE in CALENDAR."
   (multiple-value-bind (y m) (civil-from-days (date-serial date))
     (adjust calendar (make-date y m (days-in-month y m)) :preceding)))
 
@@ -134,12 +134,11 @@ default tests each day; holiday calendars use per-year prefix counts.")
                     (values date &optional))
           advance))
 (defun advance (calendar date tenor &key (convention :following) end-of-month)
-  "DATE moved by TENOR in CALENDAR: days
-count business days; weeks add calendar days, then adjust by CONVENTION;
-months and years add calendar months (the day clamped to the month's
-length), then adjust, except that with END-OF-MONTH a DATE at its month's
-end (the last calendar day under :UNADJUSTED, the last business day
-otherwise) moves to the target month's end.
+  "Return DATE moved by TENOR in CALENDAR. Days count business days. Weeks add calendar days, then
+adjust by CONVENTION. Months and years add calendar months (the day is limited to the length of
+the month), then adjust. With END-OF-MONTH, a DATE at the end of its month moves to the end of
+the target month. The end of the month is the last calendar day under :UNADJUSTED, and the last
+business day otherwise.
 
   (advance +target+ #D\"2027-06-30\" #T\"2D\") => #D\"2027-07-02\""
   (let ((n (tenor-n tenor)))

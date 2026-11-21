@@ -1,8 +1,7 @@
 ;;;; instruments/path-features.lisp --- Asian, barrier and lookback options
 ;;;;
-;;;; A path feature is what a payoff depends on beside the terminal value.
-;;;; It is a class, so engines dispatch on it, and a clause of the option
-;;;; language:
+;;;; A path feature is what a payoff depends on besides the terminal value. It is a class,
+;;;; so engines dispatch on it. It is also a clause of the option language:
 ;;;;
 ;;;;   (make-option (call 100) (average :arithmetic :dates ds) (expires d))
 ;;;;   (make-option (call 100) (average :geometric :every #T"1M" :from today) (expires d))
@@ -10,8 +9,8 @@
 ;;;;   (make-option (put 100) (barrier :up-and-in 120 :monitoring dates) (expires d))
 ;;;;   (make-option (call 100) (lookback :floating) (expires d))
 ;;;;
-;;;; Observation dates are given (:DATES, :MONITORING) or generated EVERY
-;;;; tenor back from the expiry, strictly after FROM, as Bermudan dates are.
+;;;; The user gives observation dates (:DATES, :MONITORING), or the code generates them
+;;;; EVERY tenor back from the expiry, strictly after FROM, as for Bermudan dates.
 
 (in-package #:fincl)
 
@@ -21,8 +20,8 @@
 
 (defclass observed-path (path-feature) ()
   (:metaclass component-class)
-  (:documentation "A path feature that observes the observable on
-OBSERVATION-DATES (or continuously, when they are NIL)."))
+  (:documentation "A path feature that observes the observable on OBSERVATION-DATES, or continuously
+when they are NIL."))
 
 (defclass asian (observed-path)
   ((average :initarg :average :reader asian-average :type (member :arithmetic :geometric)
@@ -32,9 +31,9 @@ OBSERVATION-DATES (or continuously, when they are NIL)."))
    (strike-type :initarg :strike-type :reader strike-type :type (member :fixed :floating)
                 :initform :fixed :fact :strike-type))
   (:metaclass component-class)
-  (:documentation "The payoff is applied to the average of the observable on
-DATES (arithmetic or geometric, equal weights). A :FIXED strike pays the
-payoff of the average; a :FLOATING strike pays max(phi (S_T - A), 0)."))
+  (:documentation "The payoff applies to the average of the observable on DATES (arithmetic or
+geometric, with equal weights). A :FIXED strike pays the payoff of the average. A
+:FLOATING strike pays max(phi (S_T - A), 0)."))
 
 (defclass barrier (observed-path)
   ((direction :initarg :direction :reader barrier-direction :type (member :up :down)
@@ -48,9 +47,9 @@ payoff of the average; a :FLOATING strike pays max(phi (S_T - A), 0)."))
    (dates :initarg :dates :reader observation-dates :initform nil :fact :observation-dates
           :documentation "Monitoring dates, or NIL for continuous monitoring."))
   (:metaclass component-class)
-  (:documentation "A single barrier at LEVEL. A knock-out pays nothing once
-the observable has touched it and pays REBATE when it does; a knock-in pays
-only if it has, and REBATE at expiry otherwise. Monitored continuously, or on
+  (:documentation "A single barrier at LEVEL. A knock-out pays nothing after the observable touches the
+barrier. It pays REBATE at the touch. A knock-in pays only if the observable touches
+the barrier. Otherwise it pays REBATE at expiry. The monitoring is continuous, or on
 DATES."))
 
 (defclass lookback (observed-path)
@@ -59,13 +58,13 @@ DATES."))
    (dates :initarg :dates :reader observation-dates :initform nil :fact :observation-dates
           :documentation "Observation dates, or NIL for every simulation step."))
   (:metaclass component-class)
-  (:documentation "The extremum of the observable: a :FLOATING strike pays
-phi (S_T - extremum), the minimum for a call and the maximum for a put; a
-:FIXED strike pays the payoff of the maximum (call) or minimum (put)."))
+  (:documentation "The extremum of the observable. A :FLOATING strike pays phi (S_T - extremum). The
+extremum is the minimum for a call and the maximum for a put. A :FIXED strike pays the
+payoff of the maximum (call) or the minimum (put)."))
 
 (declaim (ftype (function (t) (values keyword &optional)) barrier-type))
 (defun barrier-type (barrier)
-  "The barrier's direction and knock as one keyword, e.g. :DOWN-AND-OUT."
+  "The direction and the knock of the barrier as one keyword, for example :DOWN-AND-OUT."
   (a:format-symbol :keyword "~A-AND-~A" (barrier-direction barrier) (barrier-knock barrier)))
 
 (defmethod initialize-instance :after ((b barrier) &key)
@@ -85,8 +84,7 @@ phi (S_T - extremum), the minimum for a call and the maximum for a put; a
 already observed are not supported. Price before the first observation date."
                      (class-name (class-of (error-path c))) (error-date c)
                      (error-valuation-date c))))
-  (:documentation "A path feature has an observation date the market has
-already passed."))
+  (:documentation "An observation date of a path feature is before the valuation date of the market."))
 
 (defun floating-p (f) (eq (strike-type f) :floating))
 

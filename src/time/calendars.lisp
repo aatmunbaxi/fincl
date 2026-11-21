@@ -1,10 +1,8 @@
 ;;;; time/calendars.lisp --- country and exchange calendars
 ;;;;
-;;;; Provenance: ported from QuantLib 1.43 (ql/time/calendars/target.cpp,
-;;;; unitedstates.cpp, unitedkingdom.cpp). tests/fixtures/calendars.sexp,
-;;;; generated from QuantLib, lists every holiday of each calendar from 1990 to
-;;;; 2060 and is the reference; rules before 1990 follow the ported code but are
-;;;; not checked against it.
+;;;; The calendar rules in this file are those of TARGET, the United States and the United
+;;;; Kingdom. The file tests/fixtures/calendars.sexp is the reference. It lists every holiday
+;;;; of each calendar from 1990 to 2060. The code checks rules before 1990 against nothing.
 
 (in-package #:fincl)
 
@@ -20,7 +18,7 @@
 ;;; --------------------------------------------------------------------
 
 (define-calendar target (weekends-only)
-  "TARGET, the euro area's payment system."
+  "TARGET, the payment system of the euro area."
   (:fixed 1 1)
   (:easter -2 :from 2000)                      ; Good Friday
   (:easter 1 :from 2000)                       ; Easter Monday
@@ -34,8 +32,7 @@
 ;;; --------------------------------------------------------------------
 
 (define-calendar united-states-settlement (weekends-only)
-  "United States settlement days: federal holidays, moved to the nearest
-weekday."
+  "United States settlement days: federal holidays, moved to the nearest weekday."
   (:fixed 1 1 :observe :nearest-weekday)       ; New Year's Day
   (:nth-weekday 3 :monday 1 :from 1983)        ; Martin Luther King Jr.
   (:nth-weekday 3 :monday 2 :from 1971)        ; Washington's Birthday
@@ -53,7 +50,7 @@ weekday."
   (:fixed 12 25 :observe :nearest-weekday))    ; Christmas
 
 (define-calendar nyse (weekends-only)
-  "New York Stock Exchange."
+  "The New York Stock Exchange."
   (:fixed 1 1 :observe :sunday-to-monday)      ; New Year's Day (not moved to Friday)
   (:nth-weekday 3 :monday 1 :from 1998)        ; Martin Luther King Jr.
   (:nth-weekday 3 :monday 2 :from 1971)        ; Washington's Birthday
@@ -88,7 +85,7 @@ weekday."
           "1954-12-24" "1956-12-24" "1965-12-24"))
 
 (define-calendar united-states-government-bond (weekends-only)
-  "United States government bond market (SIFMA recommendations)."
+  "The United States government bond market (recommendations of SIFMA)."
   (:fixed 1 1 :observe :sunday-to-monday)      ; New Year's Day
   (:nth-weekday 3 :monday 1 :from 1983)        ; Martin Luther King Jr.
   (:nth-weekday 3 :monday 2 :from 1971)        ; Washington's Birthday
@@ -117,7 +114,7 @@ weekday."
 ;;; --------------------------------------------------------------------
 
 (define-calendar united-kingdom-settlement (weekends-only)
-  "United Kingdom settlement days: England and Wales bank holidays."
+  "United Kingdom settlement days: the bank holidays of England and Wales."
   (:fixed 1 1 :observe :next-monday)           ; New Year's Day
   (:easter -2)                                 ; Good Friday
   (:easter 1)                                  ; Easter Monday
@@ -136,9 +133,9 @@ weekday."
           "1999-12-31"))
 
 (define-calendar united-kingdom-exchange (united-kingdom-settlement)
-  "London Stock Exchange: the same holidays as UK settlement.")
+  "The London Stock Exchange. It has the same holidays as UK settlement.")
 
 (define-calendar united-states-sofr (united-states-government-bond)
-  "SOFR fixings: the government bond market's days, closed on every Good
-Friday (SOFR has never fixed on one)."
+  "SOFR fixings: the days of the government bond market, closed on every Good Friday (SOFR has never
+fixed on one)."
   (:easter -2))

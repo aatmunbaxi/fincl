@@ -2,11 +2,10 @@
 ;;;;
 ;;;;   dS = (r - q) S dt + sigma S dW
 ;;;;
-;;;; Exactly samplable in log space, so both the stepper and the terminal
-;;;; shortcut are free of discretization error. With discrete cash dividends
-;;;; the DIVIDEND-MODEL setting says what follows these dynamics: the price,
-;;;; which drops at each ex-date (:SPOT), or the price less the dividends to
-;;;; come (:ESCROWED).
+;;;; The code can sample the process exactly in log space. Thus both the stepper and the
+;;;; terminal shortcut have no discretization error. With discrete cash dividends, the
+;;;; DIVIDEND-MODEL setting says what follows these dynamics: the price, which drops at
+;;;; each ex-date (:SPOT), or the price less the dividends to come (:ESCROWED).
 
 (in-package #:fincl)
 
@@ -32,8 +31,8 @@ to go ex before expiry follows GBM, so a European is Black's formula on the
 dividend-adjusted forward. The escrowed model is simpler but puts the vol on
 a smaller quantity, so its vol is not the spot model's; :SPOT is the
 realistic one."))
-  (:documentation "Black-Scholes dynamics, with the market's rate, dividend
-and (by default) vol term structures.
+  (:documentation "Black-Scholes dynamics. They use the rate, the dividend and (by default) the vol term
+structures of the market.
 
   (make-gbm :vol 0.2d0 :dividend-model :escrowed)"))
 

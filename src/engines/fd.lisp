@@ -1,30 +1,28 @@
 ;;;; engines/fd.lisp --- finite differences in log-spot
 ;;;;
-;;;; The value V(t, x), x = ln S, solves V_t + 1/2 s2(x) V_xx + mu(x) V_x - r V
-;;;; = 0 backward from the payoff. A process supplies s2, mu and r per time
-;;;; step (PDE-COEFFICIENTS); the engine discretizes x on a sinh-concentrated
-;;;; grid (the strike midway between nodes, a barrier exactly on one) with
-;;;; three-point stencils from FINITE-DIFFERENCE-WEIGHTS, and t by a
-;;;; theta-scheme with Rannacher start-up after each payoff discontinuity.
+;;;; The value V(t, x), with x = ln S, solves V_t + 1/2 s2(x) V_xx + mu(x) V_x - r V = 0
+;;;; backward from the payoff. A process supplies s2, mu and r for each time step
+;;;; (PDE-COEFFICIENTS). The engine discretizes x on a sinh-concentrated grid. The strike
+;;;; is midway between nodes. A barrier is exactly on a node. The stencils have three
+;;;; points and come from FINITE-DIFFERENCE-WEIGHTS. The engine discretizes t with a
+;;;; theta-scheme. Rannacher start-up follows each payoff discontinuity.
 ;;;;
-;;;; The solver rolls back a list of LAYERS (value arrays over index ranges
-;;;; of the grid) in one loop, with hooks in a fixed order at each step: the
-;;;; scheme's step with each layer's boundary conditions, then events
-;;;; (barrier monitoring), then the exercise projection. A layer's boundary
-;;;; is a function of time, so a rebate and another layer's value at the
-;;;; barrier are the same mechanism: a knock-out is one layer on the grid
-;;;; truncated at the barrier, a knock-in two coupled layers. Exercise rights
-;;;; come from EXERCISE-MASK: Ikonen-Toivanen splitting over consecutive
-;;;; exercise times (American), a projection at isolated ones (Bermudan).
+;;;; The solver rolls back a list of LAYERS (value arrays over index ranges of the grid)
+;;;; in one loop. At each step, hooks run in a fixed order: the step of the scheme with
+;;;; the boundary conditions of each layer, then events (barrier monitoring), then the
+;;;; exercise projection. The boundary of a layer is a function of time. Thus a rebate
+;;;; and the value of another layer at the barrier use the same mechanism. A knock-out is
+;;;; one layer on the grid truncated at the barrier. A knock-in is two coupled layers.
+;;;; Exercise rights come from EXERCISE-MASK: Ikonen-Toivanen splitting over consecutive
+;;;; exercise times (American), and a projection at isolated times (Bermudan).
 ;;;;
-;;;; Discrete dividends: ex-dates are grid times. Under the spot
-;;;; model the value just before an ex-date is the value after it at the
-;;;; price the dividend leaves, V(x, t-) = V(ln(e^x - D), t+), by a natural
-;;;; cubic spline in x on the grid; exercise is then checked on the price
-;;;; before the dividend, and the scheme restarts with Rannacher steps.
-;;;; Under the escrowed model (GBM) the grid is in the price less the
-;;;; dividends to come, R(t), and exercise pays on the price, so the
-;;;; exercise value moves with t.
+;;;; Discrete dividends: ex-dates are grid times. Under the spot model, the value just
+;;;; before an ex-date is the value after it at the price that the dividend leaves, V(x,
+;;;; t-) = V(ln(e^x - D), t+). A natural cubic spline in x on the grid gives it. The
+;;;; engine then checks exercise on the price before the dividend, and the scheme restarts
+;;;; with Rannacher steps. Under the escrowed model (GBM), the grid is in the price less
+;;;; the dividends to come, R(t). Exercise pays on the price, so the exercise value moves
+;;;; with t.
 
 (in-package #:fincl)
 
@@ -33,12 +31,11 @@
 ;;; --------------------------------------------------------------------
 
 (defgeneric pde-coefficients (process market t0 t1)
-  (:documentation "The coefficients of the pricing PDE in x = ln S over
-[T0, T1] (market time), as (values drift-fn diffusion-fn rate): DRIFT-FN and
-DIFFUSION-FN are closures of x giving the drift mu(x) and the variance rate
-s2(x) of x per unit time, RATE the short rate over the step, from discount
-factor ratios. PROCESS is resolved. NIL when the process has no
-one-dimensional PDE (the default).")
+  (:documentation "Return the coefficients of the pricing PDE in x = ln S over [T0, T1] (market time) as
+(values drift-fn diffusion-fn rate). DRIFT-FN and DIFFUSION-FN are closures of x.
+They give the drift mu(x) and the variance rate s2(x) of x per unit time. RATE is the
+short rate over the step, from ratios of discount factors. PROCESS is resolved. The
+default returns NIL: the process has no one-dimensional PDE.")
   (:method ((p stochastic-process) market t0 t1)
     (declare (ignore market t0 t1))
     nil))

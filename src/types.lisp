@@ -1,11 +1,11 @@
 ;;;; types.lisp -- named types for the quantities fincl computes with
 ;;;;
-;;;; Each type is an interval or a MEMBER type, so it costs nothing at run time and
-;;;; documents the range of a slot or argument. They are subtypes of DOUBLE-FLOAT
-;;;; (or of a vector of them) and are not distinct from one another beyond their
-;;;; ranges: a volatility and a variance are both NON-NEGATIVE-DOUBLE, so the compiler
-;;;; cannot tell one from the other. A slot type is a check on some implementations
-;;;; only; validation that must happen everywhere goes through CHECK-INPUT.
+;;;; Each type is an interval or a MEMBER type. Thus it costs nothing at run time, and it
+;;;; documents the range of a slot or an argument. The types are subtypes of DOUBLE-FLOAT (or
+;;;; of a vector of them). They are not distinct from one another beyond their ranges. A
+;;;; volatility and a variance are both NON-NEGATIVE-DOUBLE, so the compiler cannot tell one
+;;;; from the other. A slot type is a check on some implementations only. Validation that
+;;;; must happen everywhere goes through CHECK-INPUT.
 
 (in-package #:fincl)
 
@@ -27,13 +27,13 @@ e.g. 0.5d0."
   '(double-float -1d0 1d0))
 
 (deftype market-time ()
-  "A horizon in years from the valuation date, a non-negative DOUBLE-FLOAT,
-e.g. 0.25d0."
+  "A horizon in years from the valuation date. A non-negative DOUBLE-FLOAT, for
+example 0.25d0."
   'non-negative-double)
 
 (deftype year-fraction ()
-  "A day-count fraction of a year. Signed, because a fraction from a later date
-to an earlier one is negative, e.g. -0.5d0."
+  "A day-count fraction of a year. It has a sign: a fraction from a later date to an
+earlier date is negative, for example -0.5d0."
   'double-float)
 
 (deftype volatility ()

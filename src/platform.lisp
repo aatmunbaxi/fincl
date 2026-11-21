@@ -1,23 +1,22 @@
 ;;;; platform.lisp --- implementation- and dependency-conditional definitions
 ;;;;
-;;;; Every use of an implementation extension, a foreign facility or an
-;;;; optional dependency in fincl is defined here under a portable name, and
-;;;; the rest of the library calls only that name. Each name has a
-;;;; branch for SBCL, which is the exact expression the library used
-;;;; before, and a portable branch (`%portable-NAME') that other
-;;;; implementations use and that tests call directly.
+;;;; Every use of an implementation extension, a foreign facility or an optional
+;;;; dependency in fincl is defined here under a portable name. The rest of the library
+;;;; calls only that name. Each name has a branch for SBCL, which is the exact expression
+;;;; that the library used before. Each name also has a portable branch (`%portable-NAME')
+;;;; that other implementations use and that tests call directly.
 ;;;;
 ;;;; A substitute is one of three kinds:
-;;;;   :real      computes the same quantity another way;
-;;;;   :degraded  correct but slower or less accurate;
-;;;;   loud       the feature cannot exist, and an error is signalled.
-;;;; Substitutes of the first two kinds are recorded in `*fallbacks*' when
-;;;; they are chosen, and PORTABILITY-REPORT lists them. A degraded one also
-;;;; signals PORTABILITY-FALLBACK once per image; a real one only does so
-;;;; when `*portability-warnings*' is true.
+;;;;   :real      It computes the same quantity in another way.
+;;;;   :degraded  It is correct but slower or less accurate.
+;;;;   loud       The feature cannot exist, and the code signals an error.
+;;;; The code records substitutes of the first two kinds in `*fallbacks*' when it chooses
+;;;; them. PORTABILITY-REPORT lists them. A degraded substitute also signals
+;;;; PORTABILITY-FALLBACK once for each image. A real substitute does so only when
+;;;; `*portability-warnings*' is true.
 ;;;;
-;;;; An optional backend (a foreign library behind a separate ASDF system)
-;;;; registers itself with REGISTER-OPTIONAL-BACKEND when loaded.
+;;;; An optional backend (a foreign library behind a separate ASDF system) registers itself
+;;;; with REGISTER-OPTIONAL-BACKEND when it is loaded.
 
 (in-package #:fincl)
 
@@ -64,9 +63,8 @@ and `*portability-warnings*' is false. Returns FEATURE."
 
 (declaim (ftype (function (&optional t) (values  &optional)) portability-report))
 (defun portability-report (&optional (stream *standard-output*))
-  "Print the Lisp implementation, the source of the worker count, each active
-fallback with its kind and reason, and the optional backends loaded. It only
-lists.
+  "Print the Lisp implementation, the source of the worker count, each active fallback with
+its kind and reason, and the optional backends that are loaded. The function only lists.
 
   (portability-report)"
   (format stream "~&Implementation: ~A ~A~%" (lisp-implementation-type) (lisp-implementation-version))

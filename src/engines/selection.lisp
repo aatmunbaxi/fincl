@@ -1,17 +1,17 @@
 ;;;; engines/selection.lisp --- engine designators and automatic selection
 ;;;;
-;;;; Wherever an engine is expected (PRICE, GREEKS, IMPLIED-VOLATILITY), a
-;;;; designator may stand in for it:
+;;;; Wherever an engine is expected (PRICE, GREEKS, IMPLIED-VOLATILITY), a designator can
+;;;; replace it:
 ;;;;
 ;;;;   an engine                        itself
-;;;;   :cos, :binomial, ...             the engine class with that designator,
+;;;;   :cos, :binomial, ...             the engine class with that designator, with
 ;;;;                                    default settings (one shared instance)
-;;;;   (:cos :n-terms 512)              settings as data, values not evaluated
-;;;;   a process, e.g. (make-heston)    price under that model with the first
-;;;;                                    engine that can (ENGINE-CANDIDATES)
-;;;;   :auto                            the same, for GBM on the market's vols
+;;;;   (:cos :n-terms 512)              settings as data. The values are not evaluated
+;;;;   a process, e.g. (make-heston)    price under that model with the first engine
+;;;;                                    that can (ENGINE-CANDIDATES)
+;;;;   :auto                            the same, for GBM on the vols of the market
 ;;;;
-;;;; In code, settings go through MAKE-ENGINE, whose arguments are evaluated:
+;;;; In code, settings go through MAKE-ENGINE. It evaluates its arguments:
 ;;;; (make-engine :cos :process (make-heston) :n-terms 512).
 
 (in-package #:fincl)
@@ -40,12 +40,12 @@
 
 (declaim (ftype (function (t &rest t) (values engine &optional)) make-engine))
 (defun make-engine (key &rest settings)
-  "The engine designated by KEY (:black-scholes, :baw, :rgw, :binomial, :cos,
-:fd, :mc, :merton-series, :cev, or any class's (:designator ...)) with SETTINGS, its
-initargs, evaluated. :PROCESS goes to engines that take one; an engine whose
-model is fixed (Black-Scholes, BAW, RGW) accepts a process only of its model,
-with no parameters set (it prices with the market's data), and takes the
-process's DIVIDEND-MODEL setting if it has one of its own.
+  "Make the engine that KEY designates (:black-scholes, :baw, :rgw, :binomial, :cos,
+:fd, :mc, :merton-series, :cev, or the (:designator ...) of any class). SETTINGS are
+its initargs. The function evaluates them. :PROCESS goes to engines that take one. An
+engine with a fixed model (Black-Scholes, BAW, RGW) accepts only a process of its
+model, with no parameters set (it prices with the data of the market). It takes the
+DIVIDEND-MODEL setting of the process if the engine has one of its own.
 
   (make-engine :binomial :n-steps 4000)
   (make-engine :cos :process (make-heston :xi 0.5d0) :n-terms 512)"
@@ -187,9 +187,9 @@ as its PROCESS-FORM. NIL for an engine class without a designator."
 falling back to Monte Carlo."
                      (fallback-instrument c) (fallback-process c)
                      (mapcar #'engine-designator-key (fallback-declined c)))))
-  (:documentation "Automatic selection is about to price by Monte Carlo
-because every faster candidate declined. MUFFLE-WARNING silences it;
-(with-engines ((:fallback nil)) ...) refuses the fallback instead."))
+  (:documentation "Automatic selection is about to price with Monte Carlo, because every faster
+candidate declined. MUFFLE-WARNING silences the warning. (with-engines ((:fallback
+nil)) ...) refuses the fallback instead."))
 
 (define-condition no-suitable-engine (unsupported-combination)
   ((tried :initarg :tried :reader engines-tried))
@@ -200,8 +200,7 @@ because every faster candidate declined. MUFFLE-WARNING silences it;
                      (class-name (class-of (error-path c)))
                      (error-process c)
                      (mapcar #'engine-designator-key (engines-tried c)))))
-  (:documentation "Automatic selection found no candidate that prices the
-instrument under the process."))
+  (:documentation "Automatic selection found no candidate that prices the instrument under the process."))
 
 (defun engine-designator-key (designator)
   (etypecase designator
@@ -221,12 +220,12 @@ designator to fall back to instead of the default Monte Carlo engine.")
 
 (defmacro with-engines (clauses &body body)
   "Run BODY with engine preferences for automatic selection. Each clause is
-(selector designator), the designator evaluated; the selector is an exercise
-style (:european, :american, :bermudan), a process class name, or (style
-class). Matching overrides are tried before the candidates, innermost
-binding first. The clause (:fallback nil) forbids falling back to Monte
-Carlo; (:fallback designator) falls back to that engine instead (a list
-designator gets the process: '(:mc :n-paths 20000)).
+(selector designator). The macro evaluates the designator. The selector is an
+exercise style (:european, :american, :bermudan), a process class name, or (style
+class). The overrides that match are tried before the candidates, the innermost
+binding first. The clause (:fallback nil) forbids a fallback to Monte Carlo. The
+clause (:fallback designator) falls back to that engine instead. A list designator
+receives the process: '(:mc :n-paths 20000).
 
   (with-engines ((:american (make-engine :cos :richardson-dates 8))
                  (merton-jump :cos)

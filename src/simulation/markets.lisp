@@ -7,15 +7,14 @@
 (named-readtables:in-readtable fincl:syntax)
 
 (defgeneric market-at-state (market simulation date states)
-  (:documentation "MARKET as of DATE built from the simulated states: STATES
-is a vector of the legs' state vectors in the order of
-(SIMULATION-UNDERLYINGS SIMULATION). The default, for a composite market,
-ages MARKET to DATE in one copy of its tables, sets each leg's target to
-STRUCTURE-AT-STATE of its state (a spot leg: element 0), then each :DERIVE
-target to its function's value; every other component (curves, dividend
-schedules, vol structures, fixings) is kept. Define a method on your market
-class, or pass :MARKET-FROM-STATE to SIMULATE (a function of the same
-arguments), to build markets otherwise.
+  (:documentation "Return MARKET as of DATE, built from the simulated states. STATES is a vector of the state
+vectors of the legs, in the order of (SIMULATION-UNDERLYINGS SIMULATION). For a composite
+market, the default ages MARKET to DATE in one copy of its tables. It sets the target of
+each leg to STRUCTURE-AT-STATE of its state (a spot leg: element 0). Then it sets each
+:DERIVE target to the value of its function. It keeps every other component (curves,
+dividend schedules, vol structures, fixings). To build markets in another way, define a
+method on your market class, or pass :MARKET-FROM-STATE to SIMULATE (a function with the
+same arguments).
 
   (market-at-state m plan #D\"2027-03-24\" states)")
   (:method ((m composite-market) simulation date states)

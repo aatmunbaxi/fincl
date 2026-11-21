@@ -2,14 +2,11 @@
 ;;;;
 ;;;;   dr = (theta(t) - a r) dt + sigma dW
 ;;;;
-;;;; theta(t) fits the initial curve exactly, so the model's zero-coupon bonds
-;;;; reprice the curve. The model takes its curve from the market at pricing
-;;;; time (an id, by default the instrument currency's discount curve): one
-;;;; curve both forecasts and discounts.
-;;;;
-;;;; Provenance: the formulas follow QuantLib's HullWhite (A, B, discount
-;;;; bonds and bond options), operation for operation
-;;;; (tests/fixtures/hull-white.sexp).
+;;;; theta(t) fits the initial curve exactly, so the zero-coupon bonds of the model reprice
+;;;; the curve. The model takes its curve from the market at pricing time (an id. By
+;;;; default it is the discount curve of the currency of the instrument). One curve both
+;;;; forecasts and discounts. The file tests/fixtures/hull-white.sexp holds the reference
+;;;; values for A, B, discount bonds and bond options.
 
 (in-package #:fincl)
 
@@ -17,11 +14,10 @@
   ((a 0.05d0 :measure-dependent t :type non-negative-double :bounds (0 nil) :reader hull-white-a
              :doc "Mean-reversion speed of the short rate.")
    (sigma 0.01d0 :type volatility :bounds (0 nil) :doc "Normal volatility of the short rate."))
-  (:documentation "Hull-White one-factor short-rate model, fitted to a yield
-curve. Priced through rates engines (:JAMSHIDIAN, :HULL-WHITE-TREE); it does
-not drive an equity spot. In SIMULATE it drives a yield curve, ((:curve id)
-(make-hull-white) :knots tenors), its state the short rate and its integral
-(:SHORT-RATE :INTEGRAL)."))
+  (:documentation "The Hull-White one-factor short-rate model, fitted to a yield curve. Rates engines
+(:JAMSHIDIAN, :HULL-WHITE-TREE) price it. It does not drive an equity spot. In SIMULATE
+it drives a yield curve, ((:curve id) (make-hull-white) :knots tenors). Its state is the
+short rate and its integral (:SHORT-RATE :INTEGRAL)."))
 
 (defmethod simulatable-p ((p hull-white)) nil)
 
@@ -32,7 +28,7 @@ not drive an equity spot. In SIMULATE it drives a yield curve, ((:curve id)
 
 (declaim (ftype (function (t t) (values rate-curve &optional)) make-rate-curve))
 (defun make-rate-curve (market curve)
-  "CURVE (an id in MARKET, or a curve) in MARKET's time."
+  "Return CURVE (an id in MARKET, or a curve) in the time of MARKET."
   (%make-rate-curve market (curve-in-market (if (keywordp curve) (find-yield-curve market curve) curve)
                                             market)))
 
@@ -81,8 +77,8 @@ short rate r.
                     (values double-float &optional))
           hull-white-discount-bond))
 (defun hull-white-discount-bond (process curve t0 t1 rate)
-  "The zero-coupon bond P(T0, T1) when the short rate at T0 is RATE, CURVE a
-RATE-CURVE (times in its market's time).
+  "The zero-coupon bond P(T0, T1) when the short rate at T0 is RATE. CURVE is a RATE-CURVE.
+Times are in the market time of the curve.
 
   (hull-white-discount-bond hw (make-rate-curve m :eur) 1d0 5d0 0.03d0)"
   (multiple-value-bind (a-factor b) (hull-white-bond-terms process curve t0 t1)
@@ -90,16 +86,16 @@ RATE-CURVE (times in its market's time).
 
 (declaim (ftype (function (t t real) (values double-float &optional)) hull-white-discount))
 (defun hull-white-discount (process curve time)
-  "The model's discount factor to TIME: P(0, TIME) at the initial short rate."
+  "The discount factor of the model to TIME: P(0, TIME) at the initial short rate."
   (hull-white-discount-bond process curve 0d0 time (rate-curve-short-rate curve)))
 
 (declaim (ftype (function (t t real real real real real)
                     (values double-float &optional))
           hull-white-bond-option))
 (defun hull-white-bond-option (process curve phi strike maturity bond-start bond-maturity)
-  "A call (PHI 1) or put (PHI -1) expiring at MATURITY on the bond paying 1
-at BOND-MATURITY, per unit of the bond starting at BOND-START, struck at
-STRIKE."
+  "Return the price of a call (PHI 1) or put (PHI -1) that expires at MATURITY on the bond
+that pays 1 at BOND-MATURITY. The price is per unit of the bond that starts at
+BOND-START. The strike is STRIKE."
   (let* ((a (hull-white-a process))
          (sigma (sigma process))
          (v (if (< a (sqrt double-float-epsilon))

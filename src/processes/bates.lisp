@@ -3,13 +3,13 @@
 ;;;;   dS/S = (r - q - lambda k) dt + sqrt(v) dW1 + (e^Y - 1) dN,
 ;;;;   v as in Heston, Y ~ N(mu_J, sigma_J^2), N Poisson(lambda)
 ;;;;
-;;;; D. S. Bates, "Jumps and stochastic volatility: exchange rate processes
-;;;; implicit in Deutsche mark options", Review of Financial Studies 9 (1996).
-;;;; The jumps are independent of the diffusion, so the characteristic
-;;;; function is Heston's times exp(T (psi_J(u) - i u lambda k)), and a step
-;;;; is a Heston step (by its SCHEME) followed by the compensated jumps,
-;;;; sampled as in MERTON-JUMP from two more normals. lambda = 0 is Heston;
-;;;; xi = 0 with v0 = theta is Merton.
+;;;; D. S. Bates, "Jumps and stochastic volatility: exchange rate processes implicit in
+;;;; Deutsche mark options", Review of Financial Studies 9 (1996). The jumps are
+;;;; independent of the diffusion. Thus the characteristic function is the Heston function
+;;;; times exp(T (psi_J(u) - i u lambda k)). A step is a Heston step (by its SCHEME),
+;;;; followed by the compensated jumps. The code samples the jumps from two more normals, as
+;;;; in MERTON-JUMP. With lambda = 0, the process is Heston. With xi = 0 and v0 = theta, it
+;;;; is Merton.
 
 (in-package #:fincl)
 
@@ -17,8 +17,7 @@
   ((intensity 0.5d0 :measure-dependent t :type non-negative-double :bounds (0 nil) :doc "Jumps per unit of market time, lambda.")
    (jump-mean -0.1d0 :measure-dependent t :doc "Mean of the log jump size, mu_J.")
    (jump-vol 0.15d0 :measure-dependent t :type volatility :bounds (0 nil) :doc "Standard deviation of the log jump size, sigma_J."))
-  (:documentation "Bates's model: Heston stochastic volatility plus Merton
-jumps."))
+  (:documentation "The model of Bates: Heston stochastic volatility plus Merton jumps."))
 
 (defun bates-jump-exponent-function (p)
   "A closure (lambda (u)) -> psi_J(u) - i u lambda k, a (complex double-float)

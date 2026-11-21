@@ -1,30 +1,29 @@
 ;;;; time/day-counter.lisp --- day-count conventions
 ;;;;
-;;;; Both generics are antisymmetric: when END precedes START the result is
-;;;; minus the result for (END, START).
+;;;; Both generic functions are antisymmetric: when END precedes START, the result is minus
+;;;; the result for (END, START).
 ;;;;
-;;;; Provenance: the definitions follow QuantLib, and
-;;;; tests/fixtures/day-counters.sexp, generated from QuantLib, is the reference.
+;;;; The file tests/fixtures/day-counters.sexp holds the reference values.
 
 (in-package #:fincl)
 
 (defclass day-counter () ()
-  (:documentation "A convention for counting days and year fractions."))
+  (:documentation "A convention for the count of days and year fractions."))
 
 (defmethod make-load-form ((dc day-counter) &optional environment)
   (make-load-form-saving-slots dc :environment environment))
 
 (defgeneric day-count (day-counter start end)
-  (:documentation "Days from START to END under DAY-COUNTER, as an integer.
+  (:documentation "Return the days from START to END under DAY-COUNTER, as an integer.
 
   (day-count +actual-360+ #D\"2027-01-01\" #D\"2027-07-01\") => 181")
   (:method ((dc day-counter) start end)
     (date- end start)))
 
 (defgeneric year-fraction (day-counter start end &key ref-start ref-end)
-  (:documentation "Years from START to END under DAY-COUNTER, as a
-double-float. REF-START and REF-END are accepted for conventions that need
-a reference period; none of the conventions here use them.
+  (:documentation "Return the years from START to END under DAY-COUNTER, as a double-float. The function accepts
+REF-START and REF-END for conventions that need a reference period. None of the conventions here
+use them.
 
   (year-fraction +actual-365-fixed+ #D\"2027-01-01\" #D\"2028-01-01\") => 1.0d0"))
 
@@ -64,7 +63,7 @@ a reference period; none of the conventions here use them.
   ((variant :initarg :variant :reader thirty-360-variant
             :initform (a:required-argument :variant)
             :type (member :bond-basis :european)))
-  (:documentation "30/360. :BOND-BASIS is the US bond basis; :EUROPEAN is 30E/360.
+  (:documentation "30/360. :BOND-BASIS is the US bond basis. :EUROPEAN is 30E/360.
 
   (make-instance 'thirty-360 :variant :european)"))
 
@@ -89,8 +88,7 @@ a reference period; none of the conventions here use them.
 ;;; --------------------------------------------------------------------
 
 (defclass actual-actual-isda (day-counter) ()
-  (:documentation "ACT/ACT ISDA: days in each calendar year divided by
-that year's length (365 or 366)."))
+  (:documentation "ACT/ACT ISDA: the days in each calendar year, divided by the length of that year (365 or 366)."))
 
 (defmethod year-fraction ((dc actual-actual-isda) start end &key ref-start ref-end)
   (declare (ignore ref-start ref-end))
@@ -113,7 +111,7 @@ that year's length (365 or 366)."))
 (defclass business-252 (day-counter)
   ((calendar :initarg :calendar :reader day-counter-calendar
              :initform (a:required-argument :calendar)))
-  (:documentation "BUS/252: business days of CALENDAR in [start, end) / 252.
+  (:documentation "BUS/252: the business days of CALENDAR in [start, end), divided by 252.
 
   (make-instance 'business-252 :calendar (make-instance 'weekends-only))"))
 
@@ -148,12 +146,11 @@ ROUND rounds halves to even)."
   ((schedule :initarg :schedule :initform nil :reader day-counter-schedule)
    (coupons :initform nil
             :documentation "ICMA-COUPONS of the schedule, made on first use."))
-  (:documentation "ACT/ACT ICMA (ISMA). With a
-SCHEDULE, a period is split along the schedule's coupon dates, stubs
-completed by notional coupon dates, and each piece counts its days over its
-reference period's days times the coupons per year. Without one, the
-reference period is REF-START to REF-END of YEAR-FRACTION (the
-original ISMA algorithm, which also splits long stubs).
+  (:documentation "ACT/ACT ICMA (ISMA). With a SCHEDULE, the counter splits a period along the coupon dates of the
+schedule. Notional coupon dates complete the stubs. Each piece counts its days over the days of
+its reference period, times the coupons for each year. Without a schedule, the reference period
+is REF-START to REF-END of YEAR-FRACTION (the original ISMA algorithm, which also splits long
+stubs).
 
   (make-instance 'actual-actual-icma :schedule (make-schedule ...))"))
 

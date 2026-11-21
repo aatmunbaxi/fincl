@@ -11,7 +11,7 @@
 
 (declaim (ftype (function (double-float) (values double-float &optional)) norm-pdf))
 (defun norm-pdf (x)
-  "Standard normal density.
+  "Return the standard normal density.
 
   (norm-pdf 0d0) => 0.3989422804014327d0"
   (declare (double-float x))
@@ -65,10 +65,10 @@ least positive double works."
 
 (declaim (ftype (function (double-float) (values double-float &optional)) norm-quantile))
 (defun norm-quantile (u)
-  "Inverse standard normal CDF for U in (0, 1): Wichura's AS241, then one
-Halley step on norm-cdf. Computed on the smaller tail, min(U, 1 - U), and
-reflected, so (norm-quantile u) = (- (norm-quantile (- 1 u))) exactly
-whenever 1 - U is exact (U >= 1/2).
+  "Return the inverse standard normal CDF for U in (0, 1). It uses AS241 of Wichura, then
+one Halley step on norm-cdf. It works on the smaller tail, min(U, 1 - U), and reflects.
+Thus (norm-quantile u) = (- (norm-quantile (- 1 u))) exactly whenever 1 - U is exact (U
+>= 1/2).
 
   (norm-quantile 0.975d0) => 1.959963984540054d0
   (norm-quantile 1d-300) => -37.0471...d0"
@@ -87,8 +87,8 @@ whenever 1 - U is exact (U >= 1/2).
 
 (declaim (ftype (function (double-float) (values double-float &optional)) expm1))
 (defun expm1 (x)
-  "e^X - 1, accurate to a few ulps also for |X| near 0, where (- (exp x) 1)
-loses every digit. Kahan's method: with u = e^x rounded, (u - 1) x / log u
+  "Return e^X - 1, accurate to a few ulps also for |X| near 0, where (- (exp x) 1) loses
+every digit. The method is that of Kahan: with u = e^x rounded, (u - 1) x / log u
 cancels the rounding error of u.
 
   (expm1 1d-10) => 1.00000000005d-10"
@@ -105,9 +105,9 @@ cancels the rounding error of u.
                     (values (or double-float (complex double-float)) &optional))
           log1p))
 (defun log1p (x)
-  "log(1 + X) for X > -1, accurate to a few ulps also for |X| near 0, where
-(log (+ 1 x)) loses every digit. Kahan's method: with u = 1 + x rounded,
-log(u) x / (u - 1) cancels the rounding error of u.
+  "Return log(1 + X) for X > -1, accurate to a few ulps also for |X| near 0, where (log (+
+1 x)) loses every digit. The method is that of Kahan: with u = 1 + x rounded, log(u) x /
+(u - 1) cancels the rounding error of u.
 
   (log1p 1d-10) => 9.9999999995d-11"
   (declare (double-float x))
@@ -283,17 +283,17 @@ cancellation in log |Z|.
 
 (declaim (ftype (function (real) (values double-float &optional)) erfcx))
 (defun erfcx (x)
-  "The scaled complementary error function exp(X^2) erfc(X), by Cody's
-rational approximations, without overflow or cancellation for large X.
+  "Return the scaled complementary error function exp(X^2) erfc(X). It uses the rational
+approximations of Cody. It has no overflow and no cancellation for large X.
 
   (erfcx 10d0) => 0.05614099274382259d0"
   (cody-calerf (float x 1d0) 2))
 
 (declaim (ftype (function (double-float) (values double-float &optional)) norm-cdf))
 (defun norm-cdf (x)
-  "Standard normal CDF: Cody's erfc, and below -10 the asymptotic series of
-Abramowitz and Stegun 26.2.12, as in Jäckel's LetsBeRational, so the left
-tail keeps its relative precision.
+  "Return the standard normal CDF. It uses the erfc of Cody. Below -10 it uses the
+asymptotic series of Abramowitz and Stegun 26.2.12, as Jäckel does in LetsBeRational, so
+the left tail keeps its relative precision.
 
   (norm-cdf 1.96d0) => 0.9750021048517795d0"
   (declare (double-float x))
@@ -752,7 +752,7 @@ trivariate normal and t probabilities\", Statistics and Computing 14 (2004)."
 
 (declaim (ftype (function (real real real) (values double-float &optional)) bivariate-norm-cdf))
 (defun bivariate-norm-cdf (a b rho)
-  "P(X <= A, Y <= B) for standard normals X, Y with correlation RHO.
+  "Return P(X <= A, Y <= B) for standard normals X and Y with correlation RHO.
 
   (bivariate-norm-cdf 0d0 0d0 0.5d0) => 0.3333333333333333d0"
   (bivariate-normal-upper (- (float a 1d0)) (- (float b 1d0)) (float rho 1d0)))

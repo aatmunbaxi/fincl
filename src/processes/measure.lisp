@@ -1,18 +1,18 @@
 ;;;; processes/measure.lisp --- physical-measure processes from risk-neutral ones
 ;;;;
-;;;; Every process is specified under the risk-neutral measure Q. By
-;;;; Girsanov's theorem a state X^i driven by a Brownian motion W^i with
-;;;; diffusion coefficient sigma_i has, under the physical measure P,
+;;;; The risk-neutral measure Q specifies every process. By the theorem of Girsanov, a
+;;;; state X^i has a Brownian motion W^i and a diffusion coefficient sigma_i. Under the
+;;;; physical measure P it has
 ;;;;
 ;;;;   dW^Q = dW^P + lambda_i dt,   so   mu^P_i = mu^Q_i + sigma_i lambda_i,
 ;;;;
-;;;; lambda_i the market price of risk of W^i. Diffusion coefficients and
-;;;; correlations are unchanged; jump parts change through their intensity
-;;;; and size law. CHANGE-MEASURE builds a PHYSICAL-PROCESS from a Q process
-;;;; and premia; it steps under P (MEASURE-CHANGE-DYNAMICS gives a stepping
-;;;; process with P parameters and a drift change of the observable, which
-;;;; OBSERVABLE-DRIFT-STEPPER adds after each step) and answers every
-;;;; valuation question with the Q process. No engine prices with it.
+;;;; where lambda_i is the market price of risk of W^i. Diffusion coefficients and
+;;;; correlations do not change. Jump parts change through their intensity and size law.
+;;;; CHANGE-MEASURE builds a PHYSICAL-PROCESS from a Q process and premia. It steps under P.
+;;;; MEASURE-CHANGE-DYNAMICS gives a stepping process with P parameters and a drift change
+;;;; of the observable. OBSERVABLE-DRIFT-STEPPER adds the drift change after each step. The
+;;;; physical process answers every valuation question with the Q process. No engine prices
+;;;; with it.
 
 (in-package #:fincl)
 
@@ -26,10 +26,10 @@
   (:report (lambda (c s)
              (format s "Cannot change the measure of ~A: ~A."
                      (measure-change-process c) (measure-change-reason c))))
-  (:documentation "Arguments to CHANGE-MEASURE that do not describe an
-equivalent physical measure: an unknown or repeated state, a state without
-a Brownian driver, a premium form the process cannot honour, a parameter
-fixed by the change of measure, or a process already physical."))
+  (:documentation "The arguments to CHANGE-MEASURE do not describe an equivalent physical measure. Causes:
+an unknown or repeated state, a state without a Brownian driver, a premium form that the
+process cannot honor, a parameter that the change of measure fixes, or a process that is
+already physical."))
 
 (define-condition risk-neutral-process-required (pricing-error)
   ((process :initarg :process :reader required-process)
@@ -39,8 +39,8 @@ fixed by the change of measure, or a process already physical."))
 expectations under the risk-neutral measure; use (risk-neutral-process p) for the ~
 process the physical one was built from."
                      (required-operation c) (required-process c))))
-  (:documentation "A physical process given where prices are computed: an
-engine, automatic selection or calibration."))
+  (:documentation "A caller gave a physical process where prices are computed: an engine, automatic
+selection or calibration."))
 
 (defun require-risk-neutral (process operation)
   "Signal RISK-NEUTRAL-PROCESS-REQUIRED if PROCESS is a PHYSICAL-PROCESS."
@@ -196,11 +196,10 @@ class with physical parameters whose stepper the physical stepper wraps.")
    (observable-drift :initarg :observable-drift :initform nil :reader observable-drift
                      :documentation "After RESOLVE-PROCESS: (kind spec) of the drift change
 OBSERVABLE-DRIFT-STEPPER adds to state 0, or NIL."))
-  (:documentation "A process under the physical measure P, built by
-CHANGE-MEASURE from a risk-neutral process and its prices of risk. It steps
-under P wherever a process is stepped (SIMULATE legs) and answers every
-valuation question (the date's market, curves, discounting) with
-RISK-NEUTRAL-PROCESS. Engines and calibration refuse it."))
+  (:documentation "A process under the physical measure P. CHANGE-MEASURE builds it from a risk-neutral
+process and its prices of risk. It steps under P wherever a process is stepped (SIMULATE
+legs). It answers every valuation question (the market of the date, curves, discounting)
+with RISK-NEUTRAL-PROCESS. Engines and calibration refuse it."))
 
 (defmethod initialize-instance :after ((p physical-process) &key)
   (let ((q (risk-neutral-process p)))
@@ -223,45 +222,43 @@ RISK-NEUTRAL-PROCESS. Engines and calibration refuse it."))
                     (values physical-process &optional))
           change-measure))
 (defun change-measure (process &key prices-of-risk drift-changes parameters)
-  "A PHYSICAL-PROCESS stepping PROCESS's dynamics under the physical measure.
-PROCESS is a risk-neutral process with a stepper. Premia name the state they
-apply to, from PROCESS-STATE-NAMES; states not named carry none.
+  "Return a PHYSICAL-PROCESS that steps the dynamics of PROCESS under the physical measure.
+PROCESS is a risk-neutral process with a stepper. A premium names the state to which it
+applies, from PROCESS-STATE-NAMES. States that are not named have no premium.
 
-  PRICES-OF-RISK  ((state spec) ...), lambda for the Brownian motion driving
-                  the state: a real (constant lambda); (:scaled c), lambda =
-                  c sigma, a drift change of c sigma^2 (proportional to
-                  variance); or a function (lambda (time state)) returning
-                  lambda, TIME in market time, STATE the state vector (read
-                  only).
-  DRIFT-CHANGES   ((state spec) ...), the drift change delta = sigma lambda
-                  itself, in the state's coordinate: a real or a function
-                  (lambda (time state)). For the observable, delta is the
-                  excess continuously compounded growth over the risk-neutral
-                  carry: E^P[S(t+h)] = E^Q[S(t+h)] exp(delta h) for constant
-                  delta.
-  PARAMETERS      a plist of physical values of PROCESS's measure-dependent
-                  parameters (jump intensities and size laws).
+  PRICES-OF-RISK  ((state spec) ...). The value lambda is for the Brownian motion that
+                  drives the state. SPEC is a real (constant lambda), (:scaled c)
+                  (lambda = c sigma, a drift change of c sigma^2, proportional to
+                  variance), or a function (lambda (time state)) that returns lambda.
+                  TIME is in market time. STATE is the state vector (read only).
+  DRIFT-CHANGES   ((state spec) ...). SPEC is the drift change delta = sigma lambda
+                  itself, in the coordinate of the state: a real, or a function
+                  (lambda (time state)). For the observable, delta is the excess
+                  continuously compounded growth over the risk-neutral carry:
+                  E^P[S(t+h)] = E^Q[S(t+h)] exp(delta h) for constant delta.
+  PARAMETERS      A plist of physical values of the measure-dependent parameters of
+                  PROCESS (jump intensities and size laws).
 
-Latent states take only premia that keep their scheme exact, as physical
-parameters of the stepping process: Heston's :VARIANCE (:SCALED c) gives
-kappa^P = kappa - c xi^2 and theta^P = kappa theta / kappa^P, a constant
-drift change d gives theta^P = (kappa theta + d) / kappa; NGARCH's :SPOT
-takes a real lambda per period (Duan's model, gamma^P = gamma - lambda);
-Hull-White's :SHORT-RATE takes any form, functions being called with STATE
-NIL (a function of time only), as a drift sigma lambda(t) inside its exact
-step. Heston variance premia keep the measures equivalent only when the
-Feller condition 2 kappa theta > xi^2 holds under both; a violation signals
-the warning FELLER-CONDITION-VIOLATED, once per image. Variance gamma and
-NIG take physical parameters only, plus the drift that keeps their drift
-beside the jumps unchanged.
+Latent states accept only premia that keep their scheme exact, as physical parameters of
+the stepping process:
+- Heston :VARIANCE (:SCALED c) gives kappa^P = kappa - c xi^2 and theta^P = kappa theta /
+  kappa^P. A constant drift change d gives theta^P = (kappa theta + d) / kappa.
+- NGARCH :SPOT takes a real lambda for each period (the model of Duan, gamma^P = gamma -
+  lambda).
+- Hull-White :SHORT-RATE takes any form. The function calls a function with STATE NIL (a
+  function of time only). It is a drift sigma lambda(t) inside the exact step.
+- Heston variance premia keep the measures equivalent only when the Feller condition 2
+  kappa theta > xi^2 holds under both measures. A violation signals the warning
+  FELLER-CONDITION-VIOLATED, once for each image.
+- Variance gamma and NIG take physical parameters only, plus the drift that keeps their
+  drift beside the jumps unchanged.
 
-A drift change of the observable is added after each step of the
-risk-neutral scheme, exactly when delta is constant over a step, by the
-trapezoid rule on the states at the step's two ends otherwise. Discrete
-dividends are applied once, after it. With no premia the result steps as
-PROCESS on the same normals. Defaults left to the market (NIL parameters)
-are resolved, and the premia converted, by RESOLVE-PROCESS. Bad arguments
-signal INVALID-MEASURE-CHANGE.
+A drift change of the observable is added after each step of the risk-neutral scheme. It
+is exact when delta is constant over a step. Otherwise it uses the trapezoid rule on the
+states at the two ends of the step. Discrete dividends apply once, after it. With no
+premia, the result steps as PROCESS on the same normals. RESOLVE-PROCESS resolves the
+defaults that are left to the market (NIL parameters) and converts the premia. Bad
+arguments signal INVALID-MEASURE-CHANGE.
 
   (change-measure (make-gbm) :drift-changes '((:spot 0.03d0)))
   (change-measure (make-merton-jump) :prices-of-risk '((:spot 0.2d0))

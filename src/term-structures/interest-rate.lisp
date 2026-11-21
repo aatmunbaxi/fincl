@@ -1,18 +1,15 @@
 ;;;; term-structures/interest-rate.lisp --- quoted interest rates
 ;;;;
-;;;; A rate is a number plus the convention that turns it into growth: a day
-;;;; counter (time between dates), a compounding rule and, for compounded
-;;;; rules, a frequency.
-;;;;
-;;;; Provenance: the arithmetic follows QuantLib's InterestRate exactly
-;;;; (tests/fixtures/rates.sexp is generated from it).
+;;;; A rate is a number plus the convention that turns it into growth: a day counter (time
+;;;; between dates), a compounding rule and, for compounded rules, a frequency. The file
+;;;; tests/fixtures/rates.sexp holds the reference values.
 
 (in-package #:fincl)
 
 (deftype compounding ()
-  "How a rate grows: :SIMPLE 1 + r t; :COMPOUNDED (1 + r/f)^(f t);
-:CONTINUOUS e^(r t); :SIMPLE-THEN-COMPOUNDED simple up to t = 1/f, then
-compounded; :COMPOUNDED-THEN-SIMPLE the reverse."
+  "How a rate grows. :SIMPLE gives 1 + r t. :COMPOUNDED gives (1 + r/f)^(f t).
+:CONTINUOUS gives e^(r t). :SIMPLE-THEN-COMPOUNDED is simple up to t = 1/f and
+compounded after that. :COMPOUNDED-THEN-SIMPLE is the reverse."
   '(member :simple :compounded :continuous :simple-then-compounded :compounded-then-simple))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
@@ -23,8 +20,8 @@ compounded; :COMPOUNDED-THEN-SIMPLE the reverse."
   "Frequency keywords and the number of periods per year."))
 
 (deftype frequency ()
-  "Periods per year, named: :ANNUAL, :SEMIANNUAL, :QUARTERLY, :MONTHLY,
-:WEEKLY, :DAILY and the others of *FREQUENCIES*."
+  "Periods per year, as a keyword: :ANNUAL, :SEMIANNUAL, :QUARTERLY, :MONTHLY,
+:WEEKLY, :DAILY, or another keyword in *FREQUENCIES*."
   `(member ,@(mapcar #'car *frequencies*)))
 
 (defun frequency-periods (frequency)
@@ -41,7 +38,7 @@ compounded; :COMPOUNDED-THEN-SIMPLE the reverse."
   (member compounding '(:compounded :simple-then-compounded :compounded-then-simple)))
 
 (defstruct (interest-rate (:constructor %make-interest-rate (rate day-counter compounding frequency)))
-  "RATE quoted under DAY-COUNTER, COMPOUNDING and FREQUENCY. Read-only."
+  "RATE quoted under DAY-COUNTER, COMPOUNDING and FREQUENCY. It is read-only."
   (rate 0d0 :type rate :read-only t)
   (day-counter nil :type day-counter :read-only t)
   (compounding :continuous :type compounding :read-only t)
@@ -52,8 +49,7 @@ compounded; :COMPOUNDED-THEN-SIMPLE the reverse."
           make-interest-rate))
 (defun make-interest-rate (rate &key (day-counter +actual-365-fixed+) (compounding :continuous)
                                      (frequency :annual))
-  "A quoted rate. Compounded rules need a frequency of at least one period
-a year.
+  "Make a quoted rate. Compounded rules need a frequency of at least one period for each year.
 
   (make-interest-rate 0.05d0 :day-counter +actual-360+ :compounding :compounded
                              :frequency :semiannual)"
@@ -87,9 +83,9 @@ fraction from TIME-OR-START to END."
 
 (declaim (ftype (function (t t &optional t t t) (values double-float &optional)) compound-factor))
 (defun compound-factor (rate time-or-start &optional end ref-start ref-end)
-  "The growth of one unit at RATE (an INTEREST-RATE) over TIME-OR-START years,
-or over the dates TIME-OR-START to END under the rate's day counter (with
-optional reference period dates).
+  "Return the growth of one unit at RATE (an INTEREST-RATE) over TIME-OR-START years, or over
+the dates TIME-OR-START to END under the day counter of the rate (with optional reference
+period dates).
 
   (compound-factor (make-interest-rate 0.05d0) 1d0) => 1.0512710963760241d0"
   (check-input rate interest-rate "an INTEREST-RATE")
@@ -114,8 +110,8 @@ optional reference period dates).
                     (values double-float &optional))
           discount-factor-of))
 (defun discount-factor-of (rate time-or-start &optional end ref-start ref-end)
-  "1 / COMPOUND-FACTOR: the value now of one unit paid after the time or
-between the dates."
+  "Return 1 / COMPOUND-FACTOR: the value now of one unit that is paid after the time or between
+the dates."
   (/ 1d0 (compound-factor rate time-or-start end ref-start ref-end)))
 
 (declaim (ftype (function (t t t t t &optional t t t)
@@ -123,9 +119,9 @@ between the dates."
           implied-rate))
 (defun implied-rate (compound day-counter compounding frequency time-or-start
                      &optional end ref-start ref-end)
-  "The INTEREST-RATE under DAY-COUNTER, COMPOUNDING and FREQUENCY whose
-compound factor over the time (or the dates TIME-OR-START to END) is
-COMPOUND. A factor of exactly 1 is the zero rate.
+  "Return the INTEREST-RATE under DAY-COUNTER, COMPOUNDING and FREQUENCY whose compound factor
+over the time (or the dates TIME-OR-START to END) is COMPOUND. A factor of exactly 1 gives
+the zero rate.
 
   (implied-rate 1.05d0 +actual-365-fixed+ :simple :annual 1d0) => 5% simple"
   (check-input compound (real (0)) "a positive compound factor")
@@ -156,9 +152,9 @@ COMPOUND. A factor of exactly 1 is the zero rate.
           equivalent-rate))
 (defun equivalent-rate (rate compounding frequency start end
                         &key (day-counter (interest-rate-day-counter rate)) ref-start ref-end)
-  "RATE re-quoted with COMPOUNDING and FREQUENCY: over START years when END is
-NIL, or between the dates START and END, measuring time with RATE's day
-counter for the growth and DAY-COUNTER (default the same) for the result.
+  "Return RATE quoted again with COMPOUNDING and FREQUENCY. The period is START years when END
+is NIL, or between the dates START and END. The growth uses the day counter of RATE to
+measure time. The result uses DAY-COUNTER (default: the same).
 
   (equivalent-rate r :continuous :no-frequency 2d0 nil)
   (equivalent-rate r :compounded :annual #D\"2027-01-15\" #D\"2028-01-15\"

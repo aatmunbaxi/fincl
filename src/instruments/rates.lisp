@@ -1,22 +1,17 @@
 ;;;; instruments/rates.lisp --- bonds, swaps and forward rate agreements
 ;;;;
-;;;; Interest-rate instruments are terms only, like options. They are priced
-;;;; on a composite market's curves (no underlying, so no market view): a
-;;;; floating coupon is forecast on its index's curve, and every cash flow is
-;;;; discounted on the curve of its currency unless a curve is named.
-;;;;
-;;;; Provenance: the bond analytics follow QuantLib's BondFunctions and
-;;;; CashFlows, the swaps its VanillaSwap, OvernightIndexedSwap and
-;;;; DiscountingSwapEngine, and the FRA its ForwardRateAgreement;
-;;;; tests/fixtures/bonds-swaps.sexp is the reference.
+;;;; Interest-rate instruments are terms only, like options. They are priced on the curves
+;;;; of a composite market (no underlying, so no market view). A floating coupon is
+;;;; forecast on the curve of its index. Every cash flow is discounted on the curve of its
+;;;; currency, unless a curve is named. The file tests/fixtures/bonds-swaps.sexp holds the
+;;;; reference values.
 
 (in-package #:fincl)
 
 (defclass rates-instrument (instrument) ()
   (:metaclass component-class)
-  (:documentation "An interest-rate instrument. It is priced on a composite
-market as a whole: its curves are named by currency and index, not reached
-through an underlying."))
+  (:documentation "An interest-rate instrument. A composite market prices it as a whole. The instrument
+names its curves by currency and index. It does not reach them through an underlying."))
 
 (defun rates-discount-curve (market currency discount-curve)
   "DISCOUNT-CURVE (a curve or a curve id), or the curve MARKET discounts
@@ -43,9 +38,8 @@ the reference date is excluded)."
    (cashflows :initarg :cashflows :reader bond-cashflows
               :documentation "The coupons, then the redemption, by payment date."))
   (:metaclass component-class)
-  (:documentation "A bond: cash flows on a face amount, settling
-SETTLEMENT-DAYS business days after a trade (not before the issue date).
-Prices are per 100 of face, as quoted."))
+  (:documentation "A bond: cash flows on a face amount. It settles SETTLEMENT-DAYS business days after a
+trade, but not before the issue date. Prices are per 100 of face, as quoted."))
 
 (defclass fixed-rate-bond (bond)
   ((schedule :initarg :schedule :reader bond-schedule)
@@ -54,18 +48,17 @@ Prices are per 100 of face, as quoted."))
    (redemption :initarg :redemption :reader bond-redemption :type double-float
                :documentation "Paid at maturity, per 100 of face."))
   (:metaclass component-class)
-  (:documentation "A bond paying a fixed coupon on each period of its
-schedule and REDEMPTION per 100 of face with the last coupon. Build with
-MAKE-FIXED-RATE-BOND."))
+  (:documentation "A bond that pays a fixed coupon on each period of its schedule. It pays REDEMPTION per
+100 of face with the last coupon. Build it with MAKE-FIXED-RATE-BOND."))
 
 (declaim (ftype (function (t) (values date &optional)) bond-maturity-date))
 (defun bond-maturity-date (bond)
-  "The date of BOND's redemption."
+  "The date of the redemption of BOND."
   (payment-date (a:lastcar (bond-cashflows bond))))
 
 (declaim (ftype (function (t t) (values date &optional)) bond-settlement-date))
 (defun bond-settlement-date (bond date)
-  "The date a trade of BOND on DATE settles: SETTLEMENT-DAYS business days
+  "The date on which a trade of BOND on DATE settles. It is SETTLEMENT-DAYS business days
 later, but not before the issue date."
   (let ((settlement (advance (bond-calendar bond) date (make-tenor (bond-settlement-days bond) :days)))
         (issue (bond-issue-date bond)))
@@ -73,8 +66,8 @@ later, but not before the issue date."
 
 (declaim (ftype (function (t t) (values double-float &optional)) bond-notional))
 (defun bond-notional (bond date)
-  "BOND's outstanding face on DATE: the face before the redemption date, 0
-from it on."
+  "The outstanding face of BOND on DATE. It is the face before the redemption date and 0
+from that date."
   (if (date< date (bond-maturity-date bond)) (bond-face bond) 0d0))
 
 (defun resolve-settlement (bond settlement valuation-date)
@@ -102,8 +95,8 @@ to fall before BOND's maturity."
                     (values double-float &optional))
           bond-accrued-amount))
 (defun bond-accrued-amount (bond &key settlement valuation-date)
-  "Interest accrued at SETTLEMENT (default: the settlement of a trade on
-VALUATION-DATE) per 100 of face."
+  "The interest that accrued at SETTLEMENT per 100 of face. The default is the settlement
+of a trade on VALUATION-DATE."
   (let ((settlement (resolve-settlement bond settlement valuation-date)))
     (per-100 bond (money-amount (accrued-amount (bond-cashflows bond) settlement)) settlement)))
 
@@ -115,9 +108,9 @@ VALUATION-DATE) per 100 of face."
                     (values double-float &optional))
           bond-dirty-price))
 (defun bond-dirty-price (bond market &key discount-curve settlement)
-  "Value at SETTLEMENT (default: of a trade on MARKET's valuation date) of
-BOND's later cash flows, per 100 of face, discounted on DISCOUNT-CURVE (a
-curve or curve id; default the curve of BOND's currency).
+  "The value of the later cash flows of BOND at SETTLEMENT, per 100 of face. The default
+SETTLEMENT is that of a trade on the valuation date of MARKET. DISCOUNT-CURVE (a curve
+or a curve id) discounts them. The default is the curve of the currency of BOND.
 
   (bond-dirty-price bond market)"
   (let* ((settlement (bond-market-settlement bond market settlement))
@@ -142,9 +135,9 @@ curve or curve id; default the curve of BOND's currency).
                     (values double-float &optional))
           bond-bps))
 (defun bond-bps (bond market &key discount-curve settlement)
-  "Value of one basis point of coupon at SETTLEMENT, per 100 of face: 1e-4
-times the sum of each later coupon's nominal, accrual period and discount
-factor."
+  "The value of one basis point of coupon at SETTLEMENT, per 100 of face. It is 1e-4
+times the sum of the nominal, the accrual period and the discount factor of each later
+coupon."
   (let* ((settlement (bond-market-settlement bond market settlement))
          (curve (rates-discount-curve market (instrument-currency bond) discount-curve)))
     (per-100 bond
@@ -211,9 +204,9 @@ period."
           bond-price-from-yield))
 (defun bond-price-from-yield (bond yield day-counter compounding frequency
                               &key settlement valuation-date (clean t))
-  "BOND's clean price (dirty if CLEAN is NIL) at YIELD, a rate under
-DAY-COUNTER, COMPOUNDING and FREQUENCY (or an INTEREST-RATE, the three then
-ignored). The settlement date is SETTLEMENT, or that of a trade on
+  "The clean price of BOND at YIELD (the dirty price if CLEAN is NIL). YIELD is a rate
+under DAY-COUNTER, COMPOUNDING and FREQUENCY, or an INTEREST-RATE (the function then
+ignores the other three). The settlement date is SETTLEMENT, or that of a trade on
 VALUATION-DATE.
 
   (bond-price-from-yield bond 0.033d0 dc :compounded :semiannual :valuation-date today)"
@@ -228,10 +221,9 @@ VALUATION-DATE.
           bond-yield))
 (defun bond-yield (bond clean-price day-counter compounding frequency
                    &key settlement valuation-date (tolerance 1d-15))
-  "The yield at which BOND's clean price is CLEAN-PRICE, as a rate under
-DAY-COUNTER, COMPOUNDING and FREQUENCY, solved by Brent's method to
-TOLERANCE. The settlement date is SETTLEMENT, or that of a trade on
-VALUATION-DATE.
+  "The yield at which the clean price of BOND is CLEAN-PRICE. It is a rate under
+DAY-COUNTER, COMPOUNDING and FREQUENCY. The method of Brent solves it to TOLERANCE.
+The settlement date is SETTLEMENT, or that of a trade on VALUATION-DATE.
 
   (bond-yield bond 101.25d0 dc :compounded :semiannual :valuation-date today)"
   (check-input clean-price real "a real clean price")
@@ -248,9 +240,9 @@ VALUATION-DATE.
           bond-duration))
 (defun bond-duration (bond yield day-counter compounding frequency
                       &key (type :modified) settlement valuation-date)
-  "BOND's duration at YIELD (a rate under DAY-COUNTER, COMPOUNDING and
-FREQUENCY, or an INTEREST-RATE): TYPE :MODIFIED (-P'/P), :MACAULAY
-(compounded yields only) or :SIMPLE (the present-value-weighted time).
+  "The duration of BOND at YIELD. YIELD is a rate under DAY-COUNTER, COMPOUNDING and
+FREQUENCY, or an INTEREST-RATE. TYPE is :MODIFIED (-P'/P), :MACAULAY (compounded
+yields only) or :SIMPLE (the time that is weighted by present value).
 
   (bond-duration bond 0.033d0 dc :compounded :semiannual :type :macaulay :valuation-date today)"
   (check-input type (member :modified :macaulay :simple) ":MODIFIED, :MACAULAY or :SIMPLE")
@@ -287,8 +279,8 @@ FREQUENCY, or an INTEREST-RATE): TYPE :MODIFIED (-P'/P), :MACAULAY
                     (values double-float &optional))
           bond-convexity))
 (defun bond-convexity (bond yield day-counter compounding frequency &key settlement valuation-date)
-  "BOND's convexity P''/P at YIELD (a rate under DAY-COUNTER, COMPOUNDING
-and FREQUENCY, or an INTEREST-RATE)."
+  "The convexity P''/P of BOND at YIELD. YIELD is a rate under DAY-COUNTER, COMPOUNDING
+and FREQUENCY, or an INTEREST-RATE."
   (let* ((settlement (resolve-settlement bond settlement valuation-date))
          (rate (bond-rate yield day-counter compounding frequency))
          (r (interest-rate-rate rate))
@@ -343,8 +335,8 @@ rate quoted with COMPOUNDING and FREQUENCY, both in market time."
           bond-price-from-z-spread))
 (defun bond-price-from-z-spread (bond spread market compounding frequency
                                  &key discount-curve settlement (clean t))
-  "BOND's clean price (dirty if CLEAN is NIL) with SPREAD over the discount
-curve's zero rates, quoted with COMPOUNDING and FREQUENCY."
+  "The clean price of BOND (the dirty price if CLEAN is NIL) with SPREAD over the zero
+rates of the discount curve. COMPOUNDING and FREQUENCY quote the spread."
   (let* ((settlement (bond-market-settlement bond market settlement))
          (curve (rates-discount-curve market (instrument-currency bond) discount-curve))
          (dirty (per-100 bond (z-spread-npv bond market curve spread compounding frequency settlement)
@@ -356,8 +348,8 @@ curve's zero rates, quoted with COMPOUNDING and FREQUENCY."
           z-spread))
 (defun z-spread (bond clean-price market compounding frequency
                  &key discount-curve settlement (tolerance 1d-15))
-  "The spread over the discount curve's zero rates (quoted with COMPOUNDING
-and FREQUENCY) at which BOND's clean price is CLEAN-PRICE.
+  "The spread over the zero rates of the discount curve at which the clean price of BOND
+is CLEAN-PRICE. COMPOUNDING and FREQUENCY quote the spread.
 
   (z-spread bond 101.25d0 market :compounded :semiannual)"
   (check-input clean-price real "a real clean price")
@@ -372,7 +364,8 @@ and FREQUENCY) at which BOND's clean price is CLEAN-PRICE.
 
 (declaim (ftype (function (t t &key (:discount-curve t)) (values double-float &optional)) bond-npv))
 (defun bond-npv (bond market &key discount-curve)
-  "Value on MARKET's valuation date of BOND's cash flows paying after it."
+  "The value of the cash flows of BOND that pay after the valuation date of MARKET, on
+that date."
   (let ((curve (market-discount-curve market (rates-discount-curve market (instrument-currency bond) discount-curve)))
         (today (valuation-date market)))
     ;; MARKET-CURVE-DISCOUNT's operations, with the curve resolved once.
@@ -385,7 +378,7 @@ and FREQUENCY) at which BOND's clean price is CLEAN-PRICE.
 ;;; --------------------------------------------------------------------
 
 (deftype swap-type ()
-  "Which side of the fixed leg: a :PAYER swap pays it, a :RECEIVER receives it."
+  "The side of the fixed leg. A :PAYER swap pays it. A :RECEIVER swap receives it."
   '(member :payer :receiver))
 
 (defclass swap (rates-instrument)
@@ -393,8 +386,8 @@ and FREQUENCY) at which BOND's clean price is CLEAN-PRICE.
    (signs :initarg :signs :reader swap-signs
           :documentation "+1d0 for a leg received, -1d0 for a leg paid."))
   (:metaclass component-class)
-  (:documentation "An exchange of legs. Its value is the sum of the received
-legs' values less the paid legs'."))
+  (:documentation "An exchange of legs. Its value is the sum of the values of the received legs less the
+values of the paid legs."))
 
 (defclass fixed-vs-floating-swap (swap)
   ((type :initarg :type :reader swap-type :type swap-type)
@@ -419,14 +412,13 @@ same nominal. A payer swap pays the fixed leg."))
 
 (defclass vanilla-swap (fixed-vs-floating-swap) ()
   (:metaclass component-class)
-  (:documentation "Fixed against Ibor coupons. Build
-with MAKE-SWAP and an Ibor index (or MAKE-VANILLA-SWAP)."))
+  (:documentation "A swap of fixed coupons against Ibor coupons. Build it with MAKE-SWAP and an Ibor index
+(or MAKE-VANILLA-SWAP)."))
 
 (defclass ois-swap (fixed-vs-floating-swap) ()
   (:metaclass component-class)
-  (:documentation "Fixed against daily compounded overnight coupons on one
-schedule. Build with MAKE-SWAP and an
-overnight index (or MAKE-OIS-SWAP)."))
+  (:documentation "A swap of fixed coupons against daily compounded overnight coupons on one schedule.
+Build it with MAKE-SWAP and an overnight index (or MAKE-OIS-SWAP)."))
 
 (defun swap-signs-for (type)
   (check-input type swap-type ":PAYER (pays the fixed leg) or :RECEIVER")
@@ -436,7 +428,7 @@ overnight index (or MAKE-OIS-SWAP)."))
                     (values double-float &optional))
           swap-leg-npv))
 (defun swap-leg-npv (swap i market &key discount-curve)
-  "Signed value of SWAP's leg I on MARKET: positive for a leg received."
+  "The signed value of leg I of SWAP on MARKET. It is positive for a leg that is received."
   (* (nth i (swap-signs swap))
      (money-amount (leg-npv (nth i (swap-legs swap)) market
                             :discount-curve (rates-discount-curve market (instrument-currency swap)
@@ -446,7 +438,7 @@ overnight index (or MAKE-OIS-SWAP)."))
                     (values double-float &optional))
           swap-leg-bps))
 (defun swap-leg-bps (swap i market &key discount-curve)
-  "Signed value of one basis point on the coupons of SWAP's leg I."
+  "The signed value of one basis point on the coupons of leg I of SWAP."
   (* (nth i (swap-signs swap))
      (money-amount (leg-bps (nth i (swap-legs swap)) market
                             :discount-curve (rates-discount-curve market (instrument-currency swap)
@@ -454,7 +446,7 @@ overnight index (or MAKE-OIS-SWAP)."))
 
 (declaim (ftype (function (t t &key (:discount-curve t)) (values double-float &optional)) swap-npv))
 (defun swap-npv (swap market &key discount-curve)
-  "SWAP's value on MARKET: the sum of its signed leg values."
+  "The value of SWAP on MARKET: the sum of the signed values of its legs."
   (iter (for i below (length (swap-legs swap)))
         (sum (swap-leg-npv swap i market :discount-curve discount-curve))))
 
@@ -493,13 +485,13 @@ overnight index (or MAKE-OIS-SWAP)."))
             :documentation "T: the rate is the index fixing; NIL: the forward from
 the value date to the maturity date."))
   (:metaclass component-class)
-  (:documentation "A forward rate agreement: on the value date the long side receives
-notional (F - K) T / (1 + F T), F the rate for the period and T its length
-under the index's day counter. Build with MAKE-FORWARD-RATE-AGREEMENT."))
+  (:documentation "A forward rate agreement. On the value date, the long side receives notional (F - K) T
+/ (1 + F T). F is the rate for the period. T is its length under the day counter of
+the index. Build it with MAKE-FORWARD-RATE-AGREEMENT."))
 
 (declaim (ftype (function (t t) (values double-float &optional)) fra-forward-rate))
 (defun fra-forward-rate (fra market)
-  "The rate FRA settles on: the index fixing, or the forecast forward."
+  "The rate that FRA settles on: the fixing of the index, or the forecast forward."
   (let ((index (fra-index fra)))
     (if (fra-indexed-p fra)
         (index-fixing index market (index-fixing-date index (fra-value-date fra)))
@@ -507,7 +499,7 @@ under the index's day counter. Build with MAKE-FORWARD-RATE-AGREEMENT."))
 
 (declaim (ftype (function (t t) (values double-float &optional)) fra-amount))
 (defun fra-amount (fra market)
-  "What FRA pays on its value date."
+  "The amount that FRA pays on its value date."
   (let ((f (fra-forward-rate fra market))
         (k (fra-strike fra))
         (tau (year-fraction (index-day-counter (fra-index fra)) (fra-value-date fra)
@@ -517,7 +509,7 @@ under the index's day counter. Build with MAKE-FORWARD-RATE-AGREEMENT."))
 
 (declaim (ftype (function (t t &key (:discount-curve t)) (values double-float &optional)) fra-npv))
 (defun fra-npv (fra market &key discount-curve)
-  "FRA-AMOUNT discounted from the value date."
+  "FRA-AMOUNT, discounted from the value date."
   (* (fra-amount fra market)
      (market-curve-discount market (rates-discount-curve market (instrument-currency fra) discount-curve)
                             (fra-value-date fra))))
@@ -534,10 +526,10 @@ under the index's day counter. Build with MAKE-FORWARD-RATE-AGREEMENT."))
    (floor-rates :initarg :floor-rates :reader floor-rates
                 :documentation "One floor rate per coupon, or NIL for a cap."))
   (:metaclass component-class)
-  (:documentation "A strip of caplets or floorlets on a leg of Ibor coupons.
-A caplet pays max(rate - cap, 0), a floorlet
-max(floor - rate, 0), on the coupon's nominal and accrual; a collar is long
-the cap and short the floor. Build with MAKE-CAP-FLOOR."))
+  (:documentation "A strip of caplets or floorlets on a leg of Ibor coupons. A caplet pays max(rate -
+cap, 0). A floorlet pays max(floor - rate, 0). Both use the nominal and the accrual of
+the coupon. A collar is long the cap and short the floor. Build it with
+MAKE-CAP-FLOOR."))
 
 (defun caplet-forward (coupon market)
   "The rate COUPON's optionlet is struck on: its fixing net of spread and
@@ -554,11 +546,11 @@ gearing."
    (settlement :initarg :settlement :reader swaption-settlement
                :type (member :physical :cash-annuity)))
   (:metaclass component-class)
-  (:documentation "The right to enter SWAP (a fixed-vs-floating swap; a
-payer swaption enters a payer swap) on an exercise date: European, or
-Bermudan for lattice engines. SETTLEMENT :PHYSICAL enters the swap;
-:CASH-ANNUITY pays its value with the fixed leg discounted at the swap rate
-(the par yield curve method). Build with MAKE-SWAPTION."))
+  (:documentation "The right to enter SWAP (a fixed-versus-floating swap) on an exercise date. A payer
+swaption enters a payer swap. The exercise is European, or Bermudan for lattice
+engines. SETTLEMENT :PHYSICAL enters the swap. :CASH-ANNUITY pays the value of the
+swap, with the fixed leg discounted at the swap rate (the par yield curve method).
+Build it with MAKE-SWAPTION."))
 
 ;;; --------------------------------------------------------------------
 ;;; Callable bonds
@@ -569,10 +561,9 @@ Bermudan for lattice engines. SETTLEMENT :PHYSICAL enters the swap;
                   :documentation "Entries (date clean-price type), TYPE :CALL (the
 issuer may redeem at the price) or :PUT (the holder may), by date."))
   (:metaclass component-class)
-  (:documentation "A fixed-rate bond with call or put dates: on each, the
-bond may be redeemed at a clean price per 100 of face plus accrued interest.
-Build with
-MAKE-CALLABLE-FIXED-RATE-BOND; price with a lattice engine."))
+  (:documentation "A fixed-rate bond with call or put dates. On each date the bond can be redeemed at a
+clean price per 100 of face plus accrued interest. Build it with
+MAKE-CALLABLE-FIXED-RATE-BOND. Price it with a lattice engine."))
 
 ;;; --------------------------------------------------------------------
 ;;; Fixing dates
@@ -595,10 +586,10 @@ MAKE-CALLABLE-FIXED-RATE-BOND; price with a lattice engine."))
 
 (declaim (ftype (function (t &optional t) (values list &optional)) fixing-dates))
 (defun fixing-dates (instrument &optional market)
-  "The dates the floating rates of the rates INSTRUMENT fix on, ascending
-and distinct; with MARKET, only those after its valuation date. A SIMULATE
-run that prices INSTRUMENT along its paths needs them among its dates, with
-the index in :FIX.
+  "Return the dates on which the floating rates of the rates INSTRUMENT fix, ascending
+and distinct. With MARKET, the list has only the dates after the valuation date. A
+SIMULATE run that prices INSTRUMENT along its paths needs these dates among its dates,
+and the index in :FIX.
 
   (fixing-dates swap m)  ; => (#D\"2027-03-24\" #D\"2027-09-23\" ...)"
   (check-input instrument rates-instrument "a rates instrument")

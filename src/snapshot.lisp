@@ -1,25 +1,22 @@
 ;;;; snapshot.lisp --- markets and portfolios as readable forms
 ;;;;
-;;;; A snapshot is the constructor form that rebuilds an object: MAKE-MARKET
-;;;; with its curves, surfaces and dividends, MAKE-PORTFOLIO with its
-;;;; positions. WRITE-SNAPSHOT prints it under standard syntax and
-;;;; FINCL:SYNTAX (dates as #D); READ-SNAPSHOT reads it back without
-;;;; *READ-EVAL* and evaluates it with a small evaluator that only calls the
-;;;; constructors below, so reading a snapshot runs no other code. Rebuilt
-;;;; structures are made from the same numbers, so prices are = to the
-;;;; originals.
+;;;; A snapshot is the constructor form that rebuilds an object: MAKE-MARKET with its
+;;;; curves, surfaces and dividends, or MAKE-PORTFOLIO with its positions. WRITE-SNAPSHOT
+;;;; prints it under standard syntax and FINCL:SYNTAX (dates as #D). READ-SNAPSHOT reads it
+;;;; back without *READ-EVAL*. It evaluates the form with a small evaluator that calls only
+;;;; the constructors below. Thus reading a snapshot runs no other code. The rebuilt
+;;;; structures are made from the same numbers, so prices are = to the originals.
 
 (in-package #:fincl)
 (named-readtables:in-readtable fincl:syntax)
 
 (defgeneric snapshot-form (object)
-  (:documentation "A form that rebuilds OBJECT, made only of literals (numbers,
-strings, keywords, dates), QUOTE, LIST and the constructors READ-SNAPSHOT
-allows. Defined for composite markets, the flat, interpolated and
-dividend-schedule term structures, smile, grid, SVI and SSVI surfaces, day
-counters, options, holdings, positions, portfolios and physical processes
-whose premia are data; anything else
-(bootstrapped curves among them) signals INVALID-ARGUMENT.
+  (:documentation "Return a form that rebuilds OBJECT. The form has only literals (numbers, strings, keywords,
+dates), QUOTE, LIST and the constructors that READ-SNAPSHOT allows. The function supports
+composite markets, flat, interpolated and dividend-schedule term structures, smile, grid, SVI
+and SSVI surfaces, day counters, options, holdings, positions, portfolios, and physical
+processes whose premia are data. For anything else (bootstrapped curves, for example) it
+signals INVALID-ARGUMENT.
 
   (snapshot-form (make-holding :underlying :spx)) => (MAKE-HOLDING :UNDERLYING :SPX)")
   (:method (object)
@@ -170,9 +167,8 @@ or calls a function or class the kind did not register."
 
 (declaim (ftype (function (t &optional t) (values t &optional)) write-snapshot))
 (defun write-snapshot (object &optional (stream *standard-output*))
-  "Print OBJECT's SNAPSHOT-FORM to STREAM under standard I/O syntax, with
-FINCL:SYNTAX dates, symbols qualified as needed. READ-SNAPSHOT reads it
-back.
+  "Print the SNAPSHOT-FORM of OBJECT to STREAM under standard I/O syntax, with FINCL:SYNTAX
+dates and symbols that are qualified as needed. READ-SNAPSHOT reads it back.
 
   (with-open-file (s \"book.sexp\" :direction :output) (write-snapshot book s))"
   (let ((form (snapshot-form object)))
@@ -258,9 +254,9 @@ INVALID-ARGUMENT."
 
 (declaim (ftype (function (&optional t) (values t &optional)) read-snapshot))
 (defun read-snapshot (&optional (stream *standard-input*))
-  "The object WRITE-SNAPSHOT wrote to STREAM: read under standard syntax with
-FINCL:SYNTAX and *READ-EVAL* NIL, then evaluated by SNAPSHOT-EVAL, which
-calls only the snapshot constructors.
+  "Return the object that WRITE-SNAPSHOT wrote to STREAM. The function reads it under standard
+syntax with FINCL:SYNTAX and *READ-EVAL* NIL. Then SNAPSHOT-EVAL evaluates it. It calls only
+the snapshot constructors.
 
   (with-open-file (s \"book.sexp\") (read-snapshot s))"
   (snapshot-eval

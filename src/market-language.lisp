@@ -1,10 +1,10 @@
 ;;;; market-language.lisp --- the market construction language
 ;;;;
 ;;;; (make-market (valued-on d) (underlying :spx (spot 5000) (vol 0.18d0)) ...)
-;;;; builds a COMPOSITE-MARKET from clauses. MAKE-MARKET-FROM-CLAUSES takes the
-;;;; same clauses as data. A call whose first argument is a keyword is the
-;;;; keyword shape and goes to MAKE-MARKET-FROM-SPECS, which does the building
-;;;; for both shapes, so the checks and conditions are the same.
+;;;; builds a COMPOSITE-MARKET from clauses. MAKE-MARKET-FROM-CLAUSES takes the same
+;;;; clauses as data. A call whose first argument is a keyword is the keyword shape. It
+;;;; goes to MAKE-MARKET-FROM-SPECS, which builds the market for both shapes. Thus the
+;;;; checks and the conditions are the same.
 
 (in-package #:fincl)
 
@@ -19,18 +19,18 @@ NIL for a call written as clauses."
          `(make-market-from-specs ,@clauses))))
 
 (define-construction-language market
-  (:documentation "Build a composite market from clauses: the date it is valued on,
-underlyings with their spot, currency, dividends and vol, yield curves, the curve
-each currency discounts on, and past index fixings.
+  (:documentation "Build a composite market from clauses. The clauses give the date on
+which the market is valued, underlyings with their spot, currency, dividends and vol,
+yield curves, the curve on which each currency discounts, and past index fixings.
 
   (make-market (valued-on #D\"2026-09-24\")
                (underlying :spx (spot 5000) (currency :usd) (dividend 0.015d0) (vol 0.18d0))
                (curve :usd-ois (rate 0.04d0))
                (discounting :usd :usd-ois))
 
-A call whose first argument is a keyword is the keyword shape of
+A call whose first argument is a keyword has the keyword shape of
 MAKE-MARKET-FROM-SPECS: (make-market :valuation-date d :underlyings '((:spx :spot 5000)) ...).
-With one curve and no discounting clause, every currency discounts on it.")
+With one curve and no discounting clause, every currency discounts on that curve.")
   (:macro make-market)
   (:function make-market-from-clauses)
   (:other-shape market-keyword-shape)

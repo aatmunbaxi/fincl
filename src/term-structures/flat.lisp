@@ -1,8 +1,7 @@
 ;;;; term-structures/flat.lisp --- constant rates and vols
 ;;;;
-;;;; The expressions are the ones the flat Black-Scholes market used (exp(-r
-;;;; h), vol * vol * h), so prices on a flat composite market are bit-identical
-;;;; to it.
+;;;; The expressions are the same as those that the flat Black-Scholes market used (exp(-r
+;;;; h), vol * vol * h). Thus prices on a flat composite market are bit-identical to it.
 
 (in-package #:fincl)
 
@@ -15,7 +14,7 @@
 
 (declaim (ftype (function (&key (:rate t)) (values flat-yield-curve &optional)) make-flat-yield-curve))
 (defun make-flat-yield-curve (&key (rate (required make-flat-yield-curve :rate)))
-  "A FLAT-YIELD-CURVE at the continuously compounded RATE (a real).
+  "Make a FLAT-YIELD-CURVE at the continuously compounded RATE (a real).
 
   (make-flat-yield-curve :rate 0.04d0)"
   (make-instance 'flat-yield-curve :rate rate))
@@ -28,7 +27,7 @@
 
 (declaim (ftype (function (&key (:rate t)) (values flat-dividend-curve &optional)) make-flat-dividend-curve))
 (defun make-flat-dividend-curve (&key (rate (required make-flat-dividend-curve :rate)))
-  "A FLAT-DIVIDEND-CURVE at the continuous dividend yield RATE (a real).
+  "Make a FLAT-DIVIDEND-CURVE at the continuous dividend yield RATE (a real).
 
   (make-flat-dividend-curve :rate 0.015d0)"
   (make-instance 'flat-dividend-curve :rate rate))
@@ -42,7 +41,7 @@
 
 (declaim (ftype (function (&key (:vol t)) (values flat-black-vol &optional)) make-flat-black-vol))
 (defun make-flat-black-vol (&key (vol (required make-flat-black-vol :vol)))
-  "A FLAT-BLACK-VOL: the Black volatility VOL (a real) at every strike and horizon.
+  "Make a FLAT-BLACK-VOL: the Black volatility VOL (a real) at every strike and horizon.
 
   (make-flat-black-vol :vol 0.2d0)"
   (make-instance 'flat-black-vol :vol vol))

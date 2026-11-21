@@ -1,10 +1,9 @@
 ;;;; engines/discounting.lisp --- rates engines; discounting bonds, swaps, FRAs
 ;;;;
-;;;; RATES-ENGINE is the root of every engine for interest-rate instruments.
-;;;; They price on a composite market as a whole (see PRICE :AROUND in
-;;;; pricing.lisp), so they read curves by id rather than through the
-;;;; single-underlying protocol. The discounting engine values cash flows
-;;;; that need no model: bonds, swaps and FRAs.
+;;;; RATES-ENGINE is the root of every engine for interest-rate instruments. These
+;;;; engines price on a composite market as a whole (see PRICE :AROUND in pricing.lisp).
+;;;; They read curves by id. They do not use the single-underlying protocol. The
+;;;; discounting engine values cash flows that need no model: bonds, swaps and FRAs.
 
 (in-package #:fincl)
 
@@ -19,9 +18,8 @@
 curve of the instrument's currency."))
   (:metaclass engine-class)
   (:designator :discounting)
-  (:documentation "Values an instrument's cash flows by discounting: a bond
-(its flows after the valuation date), a swap (the sum of its signed legs) or
-an FRA.
+  (:documentation "Values the cash flows of an instrument by discounting. It prices a bond (the flows
+after the valuation date), a swap (the sum of its signed legs) or an FRA.
 
   (price swap :discounting market)
   (price bond (make-engine :discounting :discount-curve :usd-ois) market)"))

@@ -134,165 +134,176 @@ clause; CASH is NIL without :CASH."
                   (getf options :collect :all)))))))
 
 (defmacro simulate ((process market dates &rest options) &body clauses)
-  "Simulate paths of PROCESS from MARKET's valuation date through DATES, run
-the clauses' logic on every path, and return a SIMULATION-RESULT. DATES is an
-ascending list of dates after the valuation date; the last is the end of every
-path.
+  "Simulate paths of PROCESS from the valuation date of MARKET through DATES. Run
+the logic of the clauses on every path. Return a SIMULATION-RESULT. DATES is an
+ascending list of dates after the valuation date. The last date is the end of
+every path.
 
-PROCESS is a process, or a literal list of legs (target process &rest
-options), each leg's process driving one market component, its target:
-(:spot u) the spot of underlying U, (:vol u), (:dividend u),
-(:dividend-schedule u) or (:curve id). A bare keyword U is (:spot u), so
-((:spx (make-gbm)) (:vix (make-heston))) simulates two spots. The leg options
-go to STRUCTURE-AT-STATE. A process given alone drives the market's only
-underlying's spot. OPTIONS:
-  :n-paths 10000     paths simulated.
-  :seed 42           the random seed.
-  :rng :counter      :counter (a path's draws do not depend on N-PATHS, chunks
-                     or workers), :sobol, or a random-state designator.
-  :antithetic NIL    pair each path with its mirror image; statistics and
+PROCESS is a process, or a literal list of legs (target process &rest options).
+Each process drives one market component, its target: (:spot u) is the spot of
+underlying U. The other targets are (:vol u), (:dividend u), (:dividend-schedule u)
+and (:curve id). A bare keyword U means (:spot u), so ((:spx (make-gbm)) (:vix
+(make-heston))) simulates two spots. The leg options go to STRUCTURE-AT-STATE. A
+process that is given alone drives the spot of the only underlying of the market.
+
+OPTIONS:
+  :n-paths 10000     The number of paths.
+  :seed 42           The random seed.
+  :rng :counter      :counter (the draws of a path do not depend on N-PATHS,
+                     chunks or workers), :sobol, or a random-state designator.
+  :antithetic NIL    Pair each path with its mirror image. Statistics and
                      SIMULATION-SUMMARY then work on pair means.
-  :n-steps :max-dt   fill the gaps between DATES with extra steps (default one
-                     step per gap); the clauses still run only on DATES.
-  :correlation       correlations between legs, a list of (leg leg rho) naming
-                     legs by target or underlying, e.g. ((:spx :ndx 0.6d0)),
-                     or a factor matrix, as in MAP-SIMULATED-PATHS.
-  :keep              what to store for later: :QUANTILES (per-date quantiles of
-                     every recorded name), (:PATHS k) (states and held values of
-                     the first k paths; k is evaluated), :STATES, or a list of
-                     these.
-  :market-from-state a function building a date's market from the simulated
-                     states, replacing MARKET-AT-STATE.
-  :fix               a list of rate indexes, e.g. (list (euribor #T\"6M\")). On
-                     each date the index fixes, its fixing is read from that
-                     date's simulated curve, and the markets of later dates
-                     hold it, so instruments priced there use the path's own
-                     past fixings. Pricing needs every fixing date among DATES
-                     (FIXING-DATES lists an instrument's).
+  :n-steps :max-dt   Fill the gaps between DATES with extra steps. The default
+                     is one step for each gap. The clauses still run only on
+                     DATES.
+  :correlation       The correlations between legs. A list of (leg leg rho) that
+                     names legs by target or underlying, for example
+                     ((:spx :ndx 0.6d0)), or a factor matrix as in
+                     MAP-SIMULATED-PATHS.
+  :keep              What to store for later: :QUANTILES (quantiles by date of
+                     every recorded name), (:PATHS k) (states and held values
+                     of the first k paths, with k evaluated), :STATES, or a list
+                     of these.
+  :market-from-state A function that builds the market of a date from the
+                     simulated states. It replaces MARKET-AT-STATE.
+  :fix               A list of rate indexes, for example (list (euribor #T\"6M\")).
+                     On each date that the index fixes, the simulator reads its
+                     fixing from the simulated curve of that date. The markets
+                     of later dates hold the fixing. Then an instrument that is
+                     priced there uses the past fixings of the path. Each fixing
+                     date must be among DATES (FIXING-DATES lists the dates of
+                     an instrument).
 
-Optional clauses. :ACCUMULATE and :HOLD may repeat, :PORTFOLIO once per
-variable, and :FINAL appears once; the logic clauses run in the order
+The clauses are optional. :ACCUMULATE and :HOLD can repeat. :PORTFOLIO can appear
+once for each variable. :FINAL appears once. The logic clauses run in the order
 written.
   (:accumulate (var init) ...)
-                     per-path DOUBLE-FLOAT variables, reset to INIT on every
-                     path (an integer INIT is coerced; assigning a non-double
-                     is an error).
+                     Per-path DOUBLE-FLOAT variables. Each path resets them to
+                     INIT. An integer INIT is coerced. To assign a non-double is
+                     an error.
   (:hold (var init) ...)
-                     per-path variables of any type; INIT is evaluated afresh
-                     on every path, so (:hold (v (make-array 5))) gives each
-                     path its own array. Readable later with SIMULATION-HELD
-                     for the kept paths.
+                     Per-path variables of any type. INIT is evaluated again on
+                     every path, so (:hold (v (make-array 5))) gives each path
+                     its own array. SIMULATION-HELD reads them for the kept
+                     paths.
   (:portfolio var [init] &key record engine cash cash-curve collect)
-                     VAR is a per-path PORTFOLIO (INIT, default empty), changed
-                     with ADJUST-POSITION and priced with ENGINE. RECORD lists
-                     :VALUE, :CASH and Greek keys; each is recorded every date
-                     under the name (var-keyword key), e.g. (:book :delta).
-                     Several clauses simulate several books on the same
-                     paths, each with its own cash. Without :FINAL the
-                     outputs are the books' values: :VALUE for one book,
-                     (var-keyword) for each of several.
-                     CASH (a real, evaluated per path), or a CASH-ACCOUNT
-                     position in INIT, makes the book self-financing: on each
-                     date after the first, before the clauses, its cash grows
-                     by D(t_k-1)/D(t_k) (the path's discount on the
-                     currency's discount curve, or CASH-CURVE's; the initial
-                     curve's when no leg simulates it), then each position's
-                     income over the interval (dividends, coupons and
-                     redemptions, option payoffs at expiry; COLLECT lists the
-                     kinds paid, default :ALL of :DISCRETE-DIVIDEND
-                     :CONTINUOUS-DIVIDEND :COUPON :REDEMPTION :EXPIRY) is paid
-                     into it, and matured bonds and expired options leave
-                     the book. An option held must expire on a date of DATES.
+                     VAR is a per-path PORTFOLIO (INIT, default empty). ADJUST-
+                     POSITION changes it. ENGINE prices it. RECORD lists :VALUE,
+                     :CASH and Greek keys. The simulator records each one on
+                     every date under the name (var-keyword key), for example
+                     (:book :delta). Several clauses simulate several books on
+                     the same paths. Each book has its own cash. Without :FINAL
+                     the outputs are the values of the books: :VALUE for one
+                     book, (var-keyword) for each of several books.
+                     CASH (a real, evaluated for each path), or a CASH-ACCOUNT
+                     position in INIT, makes the book self-financing. On each
+                     date after the first, before the clauses, the cash grows by
+                     D(t_k-1)/D(t_k). D is the discount of the path on the
+                     discount curve of the currency, or on CASH-CURVE. If no leg
+                     simulates the curve, D is the discount of the initial
+                     curve. Then the income of each position over the interval
+                     is paid into the cash: dividends, coupons, redemptions and
+                     option payoffs at expiry. COLLECT lists the kinds that are
+                     paid. The default is :ALL, which means :DISCRETE-DIVIDEND
+                     :CONTINUOUS-DIVIDEND :COUPON :REDEMPTION :EXPIRY. Matured
+                     bonds and expired options leave the book. An option that is
+                     held must expire on a date of DATES.
   (:state var name [leg])
                      VAR is bound to the double-float state component NAME
                      (:spot, :variance, ... see SIMULATION-STATE-NAMES) of the
                      leg (an underlying, or a target) at the current date.
   (:derive target ([market [date]]) form ...)
-                     sets TARGET's component in every market built from the
-                     paths to the value of the forms, computed from DATE,
-                     MARKET (that date's market, with the legs' components
-                     and earlier :DERIVE targets already set) and the :STATE
-                     variables. The forms cannot see :ACCUMULATE or :HOLD
-                     variables, RECORD or STOP, so the component depends only
-                     on the date and the simulated states. TARGET may not be
-                     a leg's. For example, a flat implied vol that
-                     follows the spot S (a :STATE variable):
+                     Set the component of TARGET in every market that is built
+                     from the paths. The value is the value of the forms. They
+                     use DATE, MARKET (the market of that date, with the
+                     components of the legs and of earlier :DERIVE targets
+                     already set) and the :STATE variables. The forms cannot see
+                     :ACCUMULATE or :HOLD variables, RECORD or STOP. Thus the
+                     component depends only on the date and on the simulated
+                     states. TARGET must not be the target of a leg. This
+                     example makes a flat implied vol that follows the spot S (a
+                     :STATE variable):
                        (:derive (:vol :spx) ()
                          (make-flat-black-vol :vol (* 0.002d0 s)))
   (:start [([market] &key time)] form ...)
-                     at the valuation date, before the first step. The optional
-                     (market) binds that date's market, TIME 0. RECORD here
-                     goes to the valuation date, the first of SIMULATION-DATES.
+                     Runs at the valuation date, before the first step. The
+                     optional (market) binds the market of that date, with TIME
+                     0. RECORD here goes to the valuation date. This is the
+                     first date of SIMULATION-DATES.
   (:every (date [market] &key time dt) form ...)
-                     at every date of DATES. DATE is bound to the date, MARKET
-                     to the market on it built from the simulated states, TIME
-                     to its market time and DT to TIME less the previous
-                     date's (doubles).
+                     Runs at every date of DATES. DATE is bound to the date.
+                     MARKET is bound to the market on that date, built from the
+                     simulated states. TIME is its market time. DT is TIME less
+                     the time of the previous date. TIME and DT are doubles.
   (:on date-list (i [market] &key time dt) form ...)
-                     at the dates of DATE-LIST (a subset of DATES), I being the
-                     date's position in the list.
+                     Runs at the dates of DATE-LIST (a subset of DATES). I is
+                     the position of the date in the list.
   (:final (name form) ...)
-                     one clause: named per-path outputs, evaluated after the
-                     last date (or after STOP) from the final state; NAME is a
-                     keyword. (:final form) is (:final (:value form)). MARKET
-                     in the forms is the market of the path's last date.
-MARKET is built only if the
-clause uses it, and a global special variable may serve as its name. Clause code runs in
- serial. An error in a clause is re-signalled in the caller.
+                     One clause. It gives named per-path outputs. The simulator
+                     evaluates them from the final state, after the last date
+                     or after STOP. NAME is a keyword. (:final form) means
+                     (:final (:value form)). In the forms, MARKET is the market
+                     of the last date of the path.
+The simulator builds MARKET only if the clause uses it. A global special variable
+can serve as its name. Clause code runs in serial. The caller receives again each
+error that a clause signals.
 
-Inside :START, :EVERY and :ON bodies these local operators are available,
-matched by name in any package:
-  (record name value)  adds the real VALUE to the statistic NAME at the current
-                       date. NAME is a keyword. The statistic at a date is
-                       over all the values recorded under NAME at it. The
-                       streamed statistics are the mean, standard deviation, minimum,
-                       maximum and count (quantiles also with :KEEP :QUANTILES);
-                       individual values are not stored. It returns VALUE.
-  (stop)               ends the path: its later dates run no clauses and
-                       record nothing, and :FINAL still runs.
+These local operators are available inside :START, :EVERY and :ON bodies. They
+match by name in any package:
+  (record name value)  Add the real VALUE to the statistic NAME at the current
+                       date. NAME is a keyword. The statistic at a date covers
+                       all values that are recorded under NAME at that date. The
+                       streamed statistics are the mean, the standard deviation,
+                       the minimum, the maximum and the count. Quantiles are
+                       also available with :KEEP :QUANTILES. The simulator does
+                       not store individual values. RECORD returns VALUE.
+  (stop)               End the path. Its later dates run no clauses and record
+                       nothing. :FINAL still runs.
   (path-discount [curve])
-                       the discount from the valuation date to the current
-                       date along this path, on CURVE ((:curve id); default the
-                       discount curve of the market's only currency). When a
-                       leg simulates that curve it is exp(-integral of the
-                       short rate) on the path; otherwise it is the initial
-                       market's discount factor. Also available in :FINAL.
-  (previous var)       the :STATE variable VAR's value at the previous date
-                       (the valuation date's at the first).
-With :PORTFOLIO clauses, also, BOOK being one of their variables and
-holding cash:
+                       The discount from the valuation date to the current date
+                       along this path, on CURVE ((:curve id)). The default is
+                       the discount curve of the only currency of the market. If
+                       a leg simulates that curve, the value is exp(-integral of
+                       the short rate) on the path. Otherwise it is the discount
+                       factor of the initial market. It is also available in
+                       :FINAL.
+  (previous var)       The value of the :STATE variable VAR at the previous date
+                       (at the first date, its value at the valuation date).
+These operators are also available with :PORTFOLIO clauses. BOOK is one of the
+variables of those clauses, and it holds cash:
   (trade book instrument &key by to engine)
-                       buys or sells INSTRUMENT in BOOK to quantity TO, or BY
-                       a change, at its price on the date's market (ENGINE,
-                       else the position's, else the book's), paid from
-                       BOOK's cash; returns the cash paid. A position sold
-                       to 0 leaves the book.
+                       Buy or sell INSTRUMENT in BOOK. TO is the target
+                       quantity. BY is a change of quantity. The price is the
+                       price on the market of the date. ENGINE prices it, else
+                       the engine of the position, else the engine of the book.
+                       The cash of BOOK pays for it. It returns the cash that is
+                       paid. A position that is sold to 0 leaves the book.
   (deposit book amount) (withdraw book amount)
-                       move a non-negative AMOUNT into or out of BOOK's
-                       cash; return the balance.
+                       Move a non-negative AMOUNT into or out of the cash of
+                       BOOK. They return the balance.
 
-A leg's process may be a PHYSICAL-PROCESS (CHANGE-MEASURE): its state then
-evolves under the physical measure, while each date's market is built from
-that state with the risk-neutral process, so prices in the clauses stay
-arbitrage-free. Legs under both measures form one physical model in which
-the risk-neutral legs carry no premium. SIMULATION-MEASURE is then
-:PHYSICAL, and discounted means of outputs are physical expectations, not
-prices.
+The process of a leg can be a PHYSICAL-PROCESS (see CHANGE-MEASURE). Its state then
+evolves under the physical measure. The market of each date is built from that
+state with the risk-neutral process, so prices in the clauses stay free of
+arbitrage. Legs under both measures form one physical model. In it, the
+risk-neutral legs carry no premium. SIMULATION-MEASURE is then :PHYSICAL.
+Discounted means of outputs are then physical expectations, not prices.
 
-Results of simulation in SIMULATION-RESULT:
-  :final outputs   SIMULATION-VALUES (one number per path), SIMULATION-MEAN,
-                   SIMULATION-STANDARD-ERROR, SIMULATION-QUANTILE. Differences
-                   of outputs are paired estimates on common random numbers.
-  recorded names   SIMULATION-STATISTIC (a vector over SIMULATION-DATES),
+SIMULATION-RESULT gives these results:
+  :final outputs   SIMULATION-VALUES (one number for each path), SIMULATION-MEAN,
+                   SIMULATION-STANDARD-ERROR and SIMULATION-QUANTILE. A
+                   difference of outputs is a paired estimate on common random
+                   numbers.
+  recorded names   SIMULATION-STATISTIC (a vector over SIMULATION-DATES) and
                    SIMULATION-RECORDED-NAMES.
   kept paths       SIMULATION-PATH-STATE, SIMULATION-HELD, SIMULATION-PATH-RECORD
-                   (each RECORD of the path, by date), PATH-MARKETS.
-  any vector       SIMULATION-SUMMARY gives the mean and standard error.
-The function underneath is MAP-SIMULATED-PATHS.
+                   (each RECORD of the path, by date) and PATH-MARKETS.
+  any vector       SIMULATION-SUMMARY gives the mean and the standard error.
+MAP-SIMULATED-PATHS is the function that SIMULATE uses.
 
-  ;; A short CALL delta-hedged on DATES, which end on its EXPIRY. The 
-  ;; balance is recorded each date (read it with SIMULATION-STATISTIC) and the
-  ;; terminal P&L is a :final output (read it with SIMULATION-VALUES).
+  ;; A short CALL, delta-hedged on DATES. The dates end on its EXPIRY. Each date
+  ;; records the balance (read it with SIMULATION-STATISTIC). The terminal P&L is
+  ;; a :final output (read it with SIMULATION-VALUES).
   (simulate ((make-gbm) market dates :n-paths 20000)
     (:accumulate (shares 0d0) (cash 0d0) (premium 0d0))
     (:state s :spot)
@@ -308,8 +319,8 @@ The function underneath is MAP-SIMULATED-PATHS.
     (:final (:hedged (+ cash (* shares s) (- (payoff-value (option-payoff call) s))))
             (:unhedged (- premium (payoff-value (option-payoff call) s)))))
 
-  ;; The same hedge as a self-financing book: the short call's payoff is
-  ;; paid from cash at EXPIRY, so the book's final value is the P&L.
+  ;; The same hedge as a self-financing book. The cash pays the payoff of the
+  ;; short call at EXPIRY, so the final value of the book is the P&L.
   (simulate ((make-gbm) market dates :n-paths 20000)
     (:portfolio book (make-portfolio \"hedge\" (make-position call :quantity -1))
                 :cash (price call :black-scholes market) :engine :black-scholes)
@@ -318,9 +329,9 @@ The function underneath is MAP-SIMULATED-PATHS.
         (trade book (make-holding) :to (getf (greeks call :black-scholes market :which '(:delta)) :delta))))
     (:final (:pnl (price book :black-scholes market))))
 
-  ;; The exposure of a SWAP when the curve it prices on follows Hull-White:
-  ;; its INDEX fixes along each path on the simulated curve, and
-  ;; PATH-DISCOUNT discounts along the path.
+  ;; The exposure of a SWAP when the curve that it prices on follows Hull-White.
+  ;; Its INDEX fixes along each path on the simulated curve. PATH-DISCOUNT
+  ;; discounts along the path.
   (simulate ((make-hull-white :a 0.03d0 :sigma 0.008d0) market
              (sort (append dates (fixing-dates swap market)) #'date<)
              :n-paths 5000 :fix (list index) :keep :quantiles)

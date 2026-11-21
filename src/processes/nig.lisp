@@ -3,12 +3,12 @@
 ;;;;   L(t) = beta V(t) + W(V(t)),   V an inverse Gaussian subordinator with
 ;;;;   E[V(t)] = delta t / gamma,  gamma = sqrt(alpha^2 - beta^2)
 ;;;;
-;;;; O. E. Barndorff-Nielsen, "Processes of normal inverse Gaussian type",
-;;;; Finance and Stochastics 2 (1998). psi(u) = -delta (sqrt(alpha^2 - (beta +
-;;;; i u)^2) - gamma). E[e^L] is finite when |beta + 1| < alpha. An increment
-;;;; over dt is sampled exactly: V ~ IG(delta dt / gamma, (delta dt)^2) by
-;;;; Michael, Schucany and Haas's method from two normals, then a normal given
-;;;; V. The density of L(t), which involves K_1, is NIG-DENSITY.
+;;;; O. E. Barndorff-Nielsen, "Processes of normal inverse Gaussian type", Finance and
+;;;; Stochastics 2 (1998). psi(u) = -delta (sqrt(alpha^2 - (beta + i u)^2) - gamma). E[e^L]
+;;;; is finite when |beta + 1| < alpha. The code samples an increment over dt exactly.
+;;;; First, V ~ IG(delta dt / gamma, (delta dt)^2) by the method of Michael, Schucany and
+;;;; Haas, from two normals. Then it samples a normal given V. NIG-DENSITY gives the density
+;;;; of L(t), which involves K_1.
 
 (in-package #:fincl)
 
@@ -16,14 +16,14 @@
   ((alpha 15d0 :measure-dependent t :type positive-double :bounds ((0) nil) :doc "Tail heaviness: larger is lighter.")
    (beta -5d0 :measure-dependent t :doc "Asymmetry, |beta| < alpha.")
    (delta 0.5d0 :type positive-double :bounds ((0) nil) :doc "Scale per unit of market time."))
-  (:documentation "Barndorff-Nielsen's normal inverse Gaussian process.
+  (:documentation "The normal inverse Gaussian process of Barndorff-Nielsen.
 
-Under a change of measure ALPHA and BETA may take physical values and DELTA
-may not: the Levy density (DELTA ALPHA / pi) e^(BETA x) K_1(ALPHA |x|) / |x|
-behaves as DELTA / (pi x^2) near 0, so two NIG measures are equivalent only
-with the same DELTA (Sato, Theorem 33.1), and then for any ALPHA > |BETA|.
-A drift change is refused: a pure-jump process has no Brownian driver, and
-its drift beside the jumps is fixed by equivalence."))
+Under a change of measure, ALPHA and BETA can take physical values. DELTA cannot. The
+Levy density (DELTA ALPHA / pi) e^(BETA x) K_1(ALPHA |x|) / |x| behaves as DELTA / (pi
+x^2) near 0. Thus two NIG measures are equivalent only with the same DELTA (Sato, Theorem
+33.1), and then for any ALPHA > |BETA|. The change of measure refuses a drift change. A
+pure-jump process has no Brownian driver, and equivalence fixes its drift beside the
+jumps."))
 
 (defun nig-gamma (p)
   (sqrt (- (expt (alpha p) 2) (expt (beta p) 2))))

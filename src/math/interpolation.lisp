@@ -1,18 +1,17 @@
 ;;;; math/interpolation.lisp --- one- and two-dimensional interpolation
 ;;;;
-;;;; An interpolator is a funcallable instance: (funcall interp x) evaluates
-;;;; it through a closure built once for its method, while
-;;;; INTERPOLATOR-DERIVATIVE, INTERPOLATOR-SECOND-DERIVATIVE and
-;;;; INTERPOLATOR-KNOTS give its other faces. Knots live in typed vectors and
-;;;; are found by binary search.
+;;;; An interpolator is a funcallable instance. (funcall interp x) evaluates it through a
+;;;; closure that the code builds once for its method. INTERPOLATOR-DERIVATIVE,
+;;;; INTERPOLATOR-SECOND-DERIVATIVE and INTERPOLATOR-KNOTS give its other views. The knots
+;;;; live in typed vectors. A binary search finds them.
 ;;;;
-;;;; Every cubic is stored as per-segment coefficients of
-;;;; y_i + c1 t + c2 t^2 + c3 t^3, t = x - x_i, so natural and monotone cubics
-;;;; differ only in how the coefficients are built.
+;;;; The code stores every cubic as coefficients for each segment of y_i + c1 t + c2 t^2 +
+;;;; c3 t^3, with t = x - x_i. Thus natural and monotone cubics differ only in how the code
+;;;; builds the coefficients.
 ;;;;
-;;;; Provenance: the monotone-convex forwards port QuantLib's ConvexMonotone
-;;;; (ql/math/interpolations/convexmonotoneinterpolation.hpp) section by
-;;;; section, so that bootstrapped curves agree with QuantLib's.
+;;;; The monotone-convex forwards follow the ConvexMonotone method (Hagan and West) section
+;;;; by section. Thus bootstrapped curves agree with the reference curves in
+;;;; tests/fixtures/bootstrap.sexp.
 
 (in-package #:fincl)
 
@@ -24,8 +23,8 @@
              (format s "~F is outside the interpolator's domain [~F, ~F], and it was ~
 built with :EXTRAPOLATION :ERROR; use :FLAT or :LINEAR to extrapolate."
                      (extrapolation-x c) (extrapolation-lo c) (extrapolation-hi c))))
-  (:documentation "An interpolator built with :EXTRAPOLATION :ERROR was asked
-for a value outside its knots."))
+  (:documentation "A caller asked an interpolator that was built with :EXTRAPOLATION :ERROR for a value
+outside its knots."))
 
 (defclass interpolator (c2mop:funcallable-standard-object)
   ((method :initarg :method :reader interpolator-method)
@@ -36,19 +35,20 @@ for a value outside its knots."))
    (second-derivative :initarg :second-derivative :reader %interpolator-second-derivative
                       :type function))
   (:metaclass c2mop:funcallable-standard-class)
-  (:documentation "A one-dimensional interpolant, called as a function of x.
-Made by MAKE-INTERPOLATOR."))
+  (:documentation "A one-dimensional interpolant. A caller calls it as a function of x. MAKE-INTERPOLATOR
+makes it."))
 
 (declaim (ftype (function (function real) (values double-float &optional)) interpolator-derivative))
 (defun interpolator-derivative (interpolator x)
-  "dy/dx of INTERPOLATOR at X (extrapolated as its values are)."
+  "dy/dx of INTERPOLATOR at X. Outside the knots, the extrapolation of the values applies."
   (funcall (%interpolator-derivative interpolator) (float x 1d0)))
 
 (declaim (ftype (function (function real)
                     (values double-float &optional))
           interpolator-second-derivative))
 (defun interpolator-second-derivative (interpolator x)
-  "d2y/dx2 of INTERPOLATOR at X (extrapolated as its values are)."
+  "d2y/dx2 of INTERPOLATOR at X. Outside the knots, the extrapolation of the values
+applies."
   (funcall (%interpolator-second-derivative interpolator) (float x 1d0)))
 
 (defmethod print-object ((i interpolator) stream)
@@ -82,26 +82,25 @@ Made by MAKE-INTERPOLATOR."))
                     (values function &optional))
           make-interpolator))
 (defun make-interpolator (method xs ys &key (extrapolation :flat) (end-second-derivatives '(0 . 0)))
-  "An interpolator through the knots (XS[i], YS[i]), called as (funcall
-interpolator x). XS must be strictly increasing, with at least two knots.
-METHOD is
+  "Make an interpolator through the knots (XS[i], YS[i]). A caller calls it as (funcall
+interpolator x). XS must be strictly increasing, with at least two knots. METHOD is
 
   :linear          piecewise linear
-  :log-linear      linear in log y (positive y): for discount factors
-  :natural-cubic   C2 cubic spline with second derivatives at the ends
-                   END-SECOND-DERIVATIVES, a cons (left . right), by default
-                   (0 . 0): the natural spline. Given a cubic's own end values
-                   it reproduces that cubic.
-  :monotone-cubic  C1 Hermite cubic with three-point knot slopes (exact for
-                   quadratics) passed through Hyman's filter: monotone
-                   wherever the data are, no overshoot
+  :log-linear      linear in log y (positive y). Use it for discount factors
+  :natural-cubic   a C2 cubic spline with the second derivatives END-SECOND-
+                   DERIVATIVES at the ends. It is a cons (left . right). The
+                   default is (0 . 0): the natural spline. Given the end values
+                   of a cubic, it reproduces that cubic
+  :monotone-cubic  a C1 Hermite cubic with three-point knot slopes (exact for
+                   quadratics) that pass through the filter of Hyman. It is
+                   monotone wherever the data are, with no overshoot
   :flat-forward    YS are zero rates and x y is piecewise linear, so the
                    instantaneous forward d(x y)/dx is constant between knots
-                   (non-negative XS)
+                   (XS must be non-negative)
 
-EXTRAPOLATION is :flat (the end value), :linear (the end segment continued:
-linear, log-linear or flat-forward in its own form, the tangent line for
-cubics) or :error (signals EXTRAPOLATION-ERROR).
+EXTRAPOLATION is :flat (the end value), :linear (the end segment continues: linear,
+log-linear or flat-forward in its own form, the tangent line for cubics) or :error
+(signals EXTRAPOLATION-ERROR).
 
   (funcall (make-interpolator :natural-cubic '(0 1 2 3) '(0 1 8 27)) 1.5d0)"
   (let ((xs (as-double-vector xs)) (ys (as-double-vector ys)))
@@ -354,18 +353,18 @@ c3 t^3; :LINEAR extrapolation is the tangent line at the end knot."
    (xs :initarg :xs :reader interpolator-x-knots)
    (ys :initarg :ys :reader interpolator-y-knots))
   (:metaclass c2mop:funcallable-standard-class)
-  (:documentation "A two-dimensional interpolant, called as (funcall interp x y).
-Made by MAKE-INTERPOLATOR-2D."))
+  (:documentation "A two-dimensional interpolant. A caller calls it as (funcall interp x y).
+MAKE-INTERPOLATOR-2D makes it."))
 
 (declaim (ftype (function (t sequence sequence (or array list) &key (:extrapolation t))
                     (values function &optional))
           make-interpolator-2d))
 (defun make-interpolator-2d (method xs ys zs &key (extrapolation :flat))
-  "An interpolator through Z[i, j] at (XS[i], YS[j]), called as (funcall
-interpolator x y). ZS is a 2-D array (or list of rows) of NX x NY values.
-METHOD is :bilinear, or :bicubic: a natural cubic spline in y along each row
-of knots, then a natural cubic spline in x through those values.
-EXTRAPOLATION is :flat (clamp to the knot rectangle) or :error.
+  "Make an interpolator through Z[i, j] at (XS[i], YS[j]). A caller calls it as (funcall
+interpolator x y). ZS is a 2-D array (or a list of rows) of NX x NY values. METHOD is
+:bilinear, or :bicubic: a natural cubic spline in y along each row of knots, then a
+natural cubic spline in x through those values. EXTRAPOLATION is :flat (clamp to the
+knot rectangle) or :error.
 
   (funcall (make-interpolator-2d :bilinear '(0 1) '(0 1) '((0 1) (1 2))) 0.5 0.5) => 1.0d0"
   (let* ((xs (as-double-vector xs)) (ys (as-double-vector ys))

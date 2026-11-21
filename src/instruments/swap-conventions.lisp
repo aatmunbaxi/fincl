@@ -1,11 +1,10 @@
 ;;;; instruments/swap-conventions.lisp --- the terms of standard swaps, as data
 ;;;;
-;;;; One table holds the terms that OIS-HELPER and SWAP-HELPER default to and
-;;;; the terms of the named conventions of the swap language (loaded after
-;;;; this file, in rates-language.lisp), so a bootstrapped curve and a swap
-;;;; written with the same convention agree by construction. A named
-;;;; convention extends one of the two base conventions, which carry the
-;;;; defaults of the helpers.
+;;;; One table holds the terms that OIS-HELPER and SWAP-HELPER use as defaults. It also
+;;;; holds the terms of the named conventions of the swap language (loaded after this
+;;;; file, in rates-language.lisp). Thus a bootstrapped curve and a swap that is written
+;;;; with the same convention agree by construction. A named convention extends one of the
+;;;; two base conventions, which carry the defaults of the helpers.
 
 (in-package #:fincl)
 

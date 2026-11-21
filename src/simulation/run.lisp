@@ -116,35 +116,35 @@ column-major output vector, and each chunk's DONE value in chunk order."
 (defun map-simulated-paths (visitor process market dates
                             &key (n-paths 10000) (seed 42) (rng :counter) (sampler :box-muller)
                                  antithetic n-steps max-dt every-step (outputs 1) correlation derive)
-  "Simulate N-PATHS paths of PROCESS from MARKET's valuation date to the last
-of DATES and show each to VISITOR; returns the per-path outputs, an n-paths x
-OUTPUTS column-major DOUBLE-VECTOR (output k of path i at i + k n-paths; with
-one output, the per-path values in path order).
+  "Simulate N-PATHS paths of PROCESS from the valuation date of MARKET to the last of DATES.
+Show each path to VISITOR. Return the per-path outputs as an n-paths x OUTPUTS column-major
+DOUBLE-VECTOR (output k of path i is at i + k n-paths). With one output, the result is the
+per-path values in path order.
 
-PROCESS is a stochastic process, or a list of legs (target process &rest
-options) on the composite MARKET, each stepped on its own view; a target is
-(:spot u), (:vol u), (:dividend u), (:dividend-schedule u) or (:curve id), a
-bare keyword U meaning (:spot u), and the options go to STRUCTURE-AT-STATE.
-CORRELATION correlates the legs' first factors, a list of (leg1 leg2 rho)
-naming legs by target or underlying, or every factor, a square 2-D array in
-leg order. DERIVE is as for MAKE-SIMULATION-PLAN; it sets components of
-the markets MARKET-AT-STATE builds from the plan. The grid (MAKE-TIME-GRID) holds
-DATES, the dividend ex-dates before the last date, and steps of at most the
-span over N-STEPS (or MAX-DT); with neither, one step per gap. Normals come
-from the Monte Carlo engine's generators (RNG, SEED, SAMPLER), so path i is
-the engine's path i on the same grid and does not depend on N-PATHS or the
-number of workers; under ANTITHETIC the second half of the paths are the
-first half's partners.
+PROCESS is a stochastic process, or a list of legs (target process &rest options) on the
+composite MARKET. Each leg steps on its own view. A target is (:spot u), (:vol u),
+(:dividend u), (:dividend-schedule u) or (:curve id). A bare keyword U means (:spot u). The
+options go to STRUCTURE-AT-STATE. CORRELATION correlates the first factors of the legs. It
+is a list of (leg1 leg2 rho) that names legs by target or underlying. It can also correlate
+every factor, with a square 2-D array in leg order. DERIVE is as for MAKE-SIMULATION-PLAN.
+It sets components of the markets that MARKET-AT-STATE builds from the plan. The grid
+(MAKE-TIME-GRID) holds DATES, the dividend ex-dates before the last date, and steps of at
+most the span over N-STEPS (or MAX-DT). With neither, there is one step for each gap.
+Normals come from the generators of the Monte Carlo engine (RNG, SEED, SAMPLER). Path i is
+then the path i of the engine on the same grid. It does not depend on N-PATHS or on the
+number of workers. Under ANTITHETIC, the second half of the paths are the partners of the
+first half.
 
-VISITOR is called once per chunk of paths with the chunk index and returns
-(values start step finish), closures called for one path at a time:
-  (start path-index state)       at the valuation date; NIL stops the path
-  (step path-index k state)      at the K-th date of DATES (1-based; with
-                                 EVERY-STEP, at every grid index K); NIL stops
+The function calls VISITOR once for each chunk of paths, with the chunk index. VISITOR
+returns (values start step finish), closures that the function calls for one path at a
+time:
+  (start path-index state)       At the valuation date. NIL stops the path
+  (step path-index k state)      At the K-th date of DATES (1-based. With EVERY-STEP, at
+                                 every grid index K). NIL stops the path
   (finish path-index state values)
-                                 writes the path's OUTPUTS doubles into VALUES
-STATE is the process's state vector (a vector of them, one per leg, for a
-list of legs); it is reused, so copy what you keep.
+                                 Writes the OUTPUTS doubles of the path into VALUES
+STATE is the state vector of the process (for a list of legs, a vector of state vectors,
+one for each leg). The function reuses it, so copy what you keep.
 
   (map-simulated-paths (lambda (chunk)
                          (declare (ignore chunk))

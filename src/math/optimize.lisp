@@ -2,23 +2,22 @@
 ;;;;
 ;;;; (minimize method f x0 &key bounds tolerance max-iterations jacobian)
 ;;;;
-;;;;   :nelder-mead             derivative-free simplex search (adaptive
-;;;;                            parameters, Gao and Han 2012)
-;;;;   :levenberg-marquardt     nonlinear least squares: F returns a residual
-;;;;                            vector; damped Gauss-Newton steps solved by QR
-;;;;                            (Nielsen's damping update)
-;;;;   :differential-evolution  global search, DE/rand/1/bin, population
-;;;;                            evaluated in parallel
+;;;;   :nelder-mead             A derivative-free simplex search (adaptive parameters,
+;;;;                            Gao and Han 2012)
+;;;;   :levenberg-marquardt     Nonlinear least squares. F returns a residual vector.
+;;;;                            The steps are damped Gauss-Newton steps that QR solves
+;;;;                            (damping update of Nielsen)
+;;;;   :differential-evolution  A global search, DE/rand/1/bin. The code evaluates the
+;;;;                            population in parallel
 ;;;;
-;;;; Box bounds are a list of (lo . hi) conses, either end possibly NIL. The
-;;;; local methods work in unconstrained coordinates u with x = lo + (hi - lo)
-;;;; / (1 + exp(-u)) for two-sided bounds, lo + exp(u) or hi - exp(u) for one
-;;;; side; convergence is judged in x, where the bounds' approach is
-;;;; visible. Differential evolution samples the box itself, so it needs
-;;;; both ends of every bound.
+;;;; Box bounds are a list of (lo . hi) conses. Either end can be NIL. The local methods
+;;;; work in unconstrained coordinates u. For two-sided bounds, x = lo + (hi - lo) / (1 +
+;;;; exp(-u)). For one side, x = lo + exp(u) or x = hi - exp(u). The methods judge
+;;;; convergence in x, where the approach to the bounds is visible. Differential evolution
+;;;; samples the box itself, so it needs both ends of every bound.
 ;;;;
-;;;; Failure to converge signals CONVERGENCE-FAILURE with restarts USE-VALUE
-;;;; (return a point) and USE-BEST (return the best point found).
+;;;; When the search does not converge, the code signals CONVERGENCE-FAILURE with the
+;;;; restarts USE-VALUE (return a point) and USE-BEST (return the best point found).
 
 (in-package #:fincl)
 
@@ -42,9 +41,9 @@ point found has f = ~,6G" method iterations best-f))
 
 (declaim (ftype (function (&optional t) (values t &optional)) use-best))
 (defun use-best (&optional condition)
-  "Invoke the USE-BEST restart for CONDITION, if there is one, returning the
-best point a minimizer found; otherwise return NIL. MINIMIZE offers it when
-it does not converge."
+  "Invoke the USE-BEST restart for CONDITION, if it exists. It returns the best point that
+a minimizer found. Otherwise return NIL. MINIMIZE offers the restart when it does not
+converge."
   (let ((restart (find-restart 'use-best condition)))
     (when restart (invoke-restart restart))))
 
@@ -116,28 +115,28 @@ it does not converge."
           minimize))
 (defun minimize (method f x0 &key bounds (tolerance 1d-10) (max-iterations 1000) jacobian
                                    (seed 1) population)
-  "Minimize F from X0 (a sequence) by METHOD; returns (values x fx
-iterations), X a DOUBLE-VECTOR.
+  "Minimize F from X0 (a sequence) by METHOD. Return (values x fx iterations). X is a
+DOUBLE-VECTOR.
 
-  :nelder-mead             F maps a DOUBLE-VECTOR to a real. Converged when
-                           the simplex spans less than TOLERANCE in x and in f.
-  :levenberg-marquardt     F maps a DOUBLE-VECTOR to a DOUBLE-VECTOR of
-                           residuals; fx is their sum of squares. JACOBIAN, a
-                           function (x out) filling OUT column-major (as
-                           JACOBIAN!), replaces finite differences. Converged
-                           when the gradient or the step is below TOLERANCE.
-  :differential-evolution  F as for Nelder-Mead; BOUNDS must give both ends of
-                           every coordinate; X0 joins the initial population.
-                           POPULATION (default 15 n) members, a fixed SEED,
-                           F evaluated in parallel under lp:*kernel* (so F
-                           must be safe to call from several threads); the
-                           result does not depend on the thread count.
-                           Converged when the population's f spans less than
-                           TOLERANCE.
+  :nelder-mead             F maps a DOUBLE-VECTOR to a real. The method converges
+                           when the simplex spans less than TOLERANCE in x and in f.
+  :levenberg-marquardt     F maps a DOUBLE-VECTOR to a DOUBLE-VECTOR of residuals.
+                           fx is their sum of squares. JACOBIAN is a function (x
+                           out) that fills OUT column-major (as JACOBIAN!). It
+                           replaces finite differences. The method converges when
+                           the gradient or the step is below TOLERANCE.
+  :differential-evolution  F is as for Nelder-Mead. BOUNDS must give both ends of
+                           every coordinate. X0 joins the initial population.
+                           POPULATION (default 15 n) is the number of members.
+                           SEED is fixed. The method evaluates F in parallel under
+                           lp:*kernel*, so F must be safe to call from several
+                           threads. The result does not depend on the thread
+                           count. The method converges when the f values of the
+                           population span less than TOLERANCE.
 
-BOUNDS is a list of (lo . hi) per coordinate, either end NIL; X0 must lie
-strictly inside. MAX-ITERATIONS counts iterations (generations for DE).
-Without convergence, signals CONVERGENCE-FAILURE with restarts USE-BEST and
+BOUNDS is a list of (lo . hi) for each coordinate. Either end can be NIL. X0 must be
+strictly inside. MAX-ITERATIONS counts iterations (generations for DE). Without
+convergence, the function signals CONVERGENCE-FAILURE with the restarts USE-BEST and
 USE-VALUE.
 
   (minimize :nelder-mead (lambda (x) (+ (expt (- (aref x 0) 1) 2) (expt (aref x 1) 2)))

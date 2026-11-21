@@ -4,12 +4,12 @@
 ;;;;            (fixed-leg (pays) (schedule s) (rate 0.033d0) (day-counter +actual-360+))
 ;;;;            (floating-leg (index (sofr)) (schedule s)))
 ;;;;
-;;;; builds a swap, (make-bond ...) a fixed-rate bond (callable with a
-;;;; (callable ...) clause) and (make-fra ...) a forward rate agreement. The
-;;;; floating leg's index decides whether a swap is vanilla or overnight
-;;;; indexed. A clause that applies to one kind only is checked against the
-;;;; kind the index produced. The old constructors (MAKE-VANILLA-SWAP and the
-;;;; others) call the data functions of these languages.
+;;;; builds a swap. (make-bond ...) builds a fixed-rate bond (callable with a (callable
+;;;; ...) clause). (make-fra ...) builds a forward rate agreement. The index of the
+;;;; floating leg decides if a swap is vanilla or overnight indexed. The code checks a
+;;;; clause that applies to one kind only against the kind that the index produced. The
+;;;; old constructors (MAKE-VANILLA-SWAP and the others) call the data functions of these
+;;;; languages.
 
 (in-package #:fincl)
 
@@ -240,11 +240,12 @@ swap have the same dates."
                (when ois `(:payment-lag ,lag :payment-calendar ,calendar)))))))
 
 (define-construction-language swap
-  (:documentation "Build a swap of a fixed leg against a floating leg: the nominal, the
-two legs with their schedules, the fixed rate and day counter, and the index. An
-overnight index on the floating leg makes an overnight indexed swap (schedule,
-payment lag and calendar shared by the legs); an Ibor index makes a vanilla swap
-(each leg with its own schedule). A clause given outside a leg applies to both legs.
+  (:documentation "Build a swap of a fixed leg against a floating leg. The clauses give the
+nominal, the two legs with their schedules, the fixed rate, the day counter and the
+index. An overnight index on the floating leg makes an overnight indexed swap. The legs
+share the schedule, the payment lag and the calendar. An Ibor index makes a vanilla
+swap. Each leg has its own schedule. A clause that is given outside a leg applies to both
+legs.
 
   (make-swap (nominal 1d6)
              (fixed-leg (pays) (schedule s) (rate 0.033d0) (day-counter +actual-360+))
@@ -408,9 +409,10 @@ terms the helpers read from the same table."
     `(,date ,(float price 1d0) ,type)))
 
 (define-construction-language bond
-  (:documentation "Build a fixed-rate bond: its coupon and day counter, its schedule, its
-face, and optionally redemption, settlement days, issue date and call dates. A callable
-clause makes it a callable bond, priced by a lattice engine.
+  (:documentation "Build a fixed-rate bond. The clauses give its coupon, day counter,
+schedule and face. They can also give the redemption, the settlement days, the issue
+date and the call dates. A callable clause makes the bond callable. A lattice engine
+prices it.
 
   (make-bond (coupon 0.04375d0) (day-counter dc) (schedule s) (currency :usd)
              (settlement-days 1))")
@@ -479,10 +481,10 @@ clause makes it a callable bond, priced by a lattice engine.
                      :indexed (null maturity-date) :currency (index-currency index)))))
 
 (define-construction-language fra
-  (:documentation "Build a forward rate agreement on an Ibor index: the value date, the
-side, the strike and the notional. Without a maturity clause the period is the index
-tenor and the rate the index fixing; with it, the period ends there and the rate is the
-forward over it.
+  (:documentation "Build a forward rate agreement on an Ibor index. The clauses give the
+value date, the side, the strike and the notional. Without a maturity clause, the period
+is the tenor of the index and the rate is the fixing of the index. With a maturity
+clause, the period ends on that date and the rate is the forward over the period.
 
   (make-fra (index (euribor #T\"6M\")) (value-date #D\"2026-12-29\") (long) (strike 0.02d0)
             (notional 1d6))")
@@ -528,12 +530,12 @@ forward over it.
 (defun make-vanilla-swap (type nominal fixed-schedule fixed-rate fixed-day-counter
                           float-schedule index
                           &key (spread 0) floating-day-counter payment-convention)
-  "A vanilla swap: fixed coupons at FIXED-RATE under FIXED-DAY-COUNTER on
-FIXED-SCHEDULE against par Ibor coupons on INDEX plus SPREAD on FLOAT-SCHEDULE
-(FLOATING-DAY-COUNTER, default the index's), both on NOMINAL in the index's
-currency. TYPE is :PAYER or :RECEIVER of the fixed leg. Payment dates are
-adjusted by PAYMENT-CONVENTION, default the floating schedule's. Calls
-MAKE-SWAP-FROM-CLAUSES.
+  "Make a vanilla swap. It pays fixed coupons at FIXED-RATE under FIXED-DAY-COUNTER on
+FIXED-SCHEDULE. It receives par Ibor coupons on INDEX plus SPREAD on FLOAT-SCHEDULE
+(FLOATING-DAY-COUNTER, default: the day counter of the index). Both legs use NOMINAL
+in the currency of the index. TYPE is :PAYER or :RECEIVER of the fixed leg.
+PAYMENT-CONVENTION adjusts the payment dates. The default is the convention of the
+floating schedule. The function calls MAKE-SWAP-FROM-CLAUSES.
 
   (make-vanilla-swap :payer 1d6 fixed 0.024d0 (make-instance 'thirty-360 :variant :bond-basis)
                      floating (euribor #T\"6M\"))"
@@ -552,11 +554,11 @@ MAKE-SWAP-FROM-CLAUSES.
           make-ois-swap))
 (defun make-ois-swap (type nominal schedule fixed-rate fixed-day-counter index
                       &key (spread 0) (payment-lag 0) (payment-convention :following) payment-calendar)
-  "An overnight indexed swap: fixed coupons at FIXED-RATE under
-FIXED-DAY-COUNTER against daily compounded coupons on the overnight INDEX plus
-SPREAD, both on SCHEDULE and NOMINAL, paid PAYMENT-LAG business days after
-each period on PAYMENT-CALENDAR (default the schedule's), adjusted by
-PAYMENT-CONVENTION. Calls MAKE-SWAP-FROM-CLAUSES.
+  "Make an overnight indexed swap. It pays fixed coupons at FIXED-RATE under
+FIXED-DAY-COUNTER. It receives daily compounded coupons on the overnight INDEX plus
+SPREAD. Both legs use SCHEDULE and NOMINAL. Each period pays PAYMENT-LAG business days
+after its end, on PAYMENT-CALENDAR (default: the calendar of the schedule), adjusted
+by PAYMENT-CONVENTION. The function calls MAKE-SWAP-FROM-CLAUSES.
 
   (make-ois-swap :payer 1d6 schedule 0.033d0 +actual-360+ (sofr) :payment-lag 2)"
   (check-input type swap-type ":PAYER (pays the fixed leg) or :RECEIVER")
@@ -585,11 +587,11 @@ PAYMENT-CONVENTION. Calls MAKE-SWAP-FROM-CLAUSES.
                              &key (face 100) currency (settlement-days 2)
                                   (payment-convention :following) (redemption 100) issue-date
                                   payment-calendar)
-  "A fixed-rate bond: COUPON, a simple annual rate under DAY-COUNTER (or an
-INTEREST-RATE), on FACE (a real, with CURRENCY, or MONEY) over SCHEDULE's
-periods, paid on dates adjusted by PAYMENT-CONVENTION on PAYMENT-CALENDAR
-(default the schedule's, also the settlement calendar). REDEMPTION per 100 of
-face is paid with the last coupon. Calls MAKE-BOND-FROM-CLAUSES.
+  "Make a fixed-rate bond. COUPON is a simple annual rate under DAY-COUNTER (or an
+INTEREST-RATE). FACE is a real (with CURRENCY) or MONEY. The bond pays over the periods
+of SCHEDULE, on dates that PAYMENT-CONVENTION adjusts on PAYMENT-CALENDAR (default: the
+calendar of the schedule, which is also the settlement calendar). REDEMPTION per 100
+of face is paid with the last coupon. The function calls MAKE-BOND-FROM-CLAUSES.
 
   (make-fixed-rate-bond (make-schedule :effective #D\"2024-05-15\" :termination #D\"2034-05-15\" :tenor #T\"6M\"
                                        :calendar +united-states-government-bond+
@@ -624,10 +626,10 @@ not among VALID."
                                            (payment-convention :following) (redemption 100)
                                            issue-date payment-calendar
                                       &allow-other-keys)
-  "A fixed-rate bond as MAKE-FIXED-RATE-BOND (same keys, and only those: any
-other key signals INVALID-ARGUMENT)
-callable or puttable on CALL-SCHEDULE, a list of (date clean-price) or (date
-clean-price type), TYPE :CALL (default) or :PUT, prices per 100 of face. Calls
+  "Make a fixed-rate bond like MAKE-FIXED-RATE-BOND, with the same keys and no others. Any
+other key signals INVALID-ARGUMENT. The holder can call or put the bond on
+CALL-SCHEDULE, a list of (date clean-price) or (date clean-price type). TYPE is :CALL
+(default) or :PUT. The prices are per 100 of face. The function calls
 MAKE-BOND-FROM-CLAUSES.
 
   (make-callable-fixed-rate-bond schedule 0.03d0 dc `((,#D\"2029-09-28\" 100) (,#D\"2030-09-30\" 100))
@@ -643,11 +645,11 @@ MAKE-BOND-FROM-CLAUSES.
                     (values forward-rate-agreement &optional))
           make-forward-rate-agreement))
 (defun make-forward-rate-agreement (index value-date position strike notional &key maturity-date)
-  "An FRA on the Ibor INDEX from VALUE-DATE, POSITION :LONG (receives the
-rate) or :SHORT, at the simple STRIKE on NOTIONAL. Without MATURITY-DATE the
-period is the index tenor and the rate the index fixing; with it, the period
-ends there (adjusted) and the rate is the forward over it. Calls
-MAKE-FRA-FROM-CLAUSES.
+  "Make an FRA on the Ibor INDEX from VALUE-DATE. POSITION is :LONG (receives the rate)
+or :SHORT. The simple STRIKE applies to NOTIONAL. Without MATURITY-DATE, the period
+is the tenor of the index and the rate is the fixing of the index. With it, the period
+ends on that date (adjusted) and the rate is the forward over the period. The function
+calls MAKE-FRA-FROM-CLAUSES.
 
   (make-forward-rate-agreement (euribor #T\"6M\") #D\"2026-12-29\" :long 0.02d0 1d6)"
   (check-input position (member :long :short) ":LONG or :SHORT")
@@ -707,9 +709,10 @@ MAKE-FRA-FROM-CLAUSES.
                    :currency (cashflow-currency (first leg)))))
 
 (define-construction-language cap-floor
-  (:documentation "Build caplets, floorlets or both on a leg of Ibor coupons: the cap and
-floor rates, and the leg, given built or by its clauses. A cap clause alone makes a cap,
-a floor clause alone a floor, both a collar (long the cap, short the floor).
+  (:documentation "Build caplets, floorlets or both on a leg of Ibor coupons. The clauses
+give the cap and floor rates, and the leg. The leg is already built, or the clauses build
+it. A cap clause alone makes a cap. A floor clause alone makes a floor. Both clauses make
+a collar (long the cap, short the floor).
 
   (make-cap-floor (cap 0.025d0)
                   (floating-leg (nominal 1d6) (index (euribor #T\"6M\")) (schedule s)))
@@ -782,9 +785,10 @@ written without it."
                              :currency (instrument-currency swap))))
 
 (define-construction-language swaption
-  (:documentation "Build the right to enter a swap on an exercise date: the swap, given built
-or by its clauses, a European or Bermudan exercise, and how exercise settles. The exercise
-clauses are those of the option language: expires, european, bermudan.
+  (:documentation "Build the right to enter a swap on an exercise date. The clauses give
+the swap, a European or Bermudan exercise, and how exercise settles. The swap is already
+built, or the clauses build it. The exercise clauses are those of the option language:
+expires, european, bermudan.
 
   (make-swaption (on-swap swap) (expires #D\"2027-09-24\"))
   (make-swaption (on-swap swap) (bermudan :dates dates) (settlement :cash-annuity))")

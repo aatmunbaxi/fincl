@@ -1,20 +1,19 @@
 ;;;; construction/fact-tables.lisp --- scoped fact tables
 ;;;;
-;;;; While an object is built, clauses publish facts into a table. Each entry
-;;;; is keyed by (scope . fact): the root scope is (), and a nested clause such
-;;;; as (leg :pay ...) works in the scope (:PAY). A read falls back from a scope
-;;;; to its parents, so a leg sees the swap's calendar unless it sets its own.
+;;;; While the library builds an object, clauses publish facts into a table. Each entry
+;;;; has the key (scope . fact). The root scope is (). A nested clause such as (leg :pay
+;;;; ...) works in the scope (:PAY). A read falls back from a scope to its parents. Thus
+;;;; a leg sees the calendar of the swap unless it sets its own.
 ;;;;
-;;;; Every entry records a priority. A higher priority replaces a lower one
-;;;; whatever the clause order, and a lower never replaces a higher; two
-;;;; settings at the same priority conflict (except defaults, where the last
-;;;; one wins):
+;;;; Every entry records a priority. A higher priority replaces a lower priority, in any
+;;;; clause order. A lower priority never replaces a higher priority. Two settings at the
+;;;; same priority conflict. The exception is defaults: the last default wins.
 ;;;;
 ;;;;   :DEFAULT    language defaults
-;;;;   :CONVENTION clauses applied from a convention bundle
-;;;;   :EXPLICIT   clauses the user wrote
+;;;;   :CONVENTION clauses that a convention bundle applies
+;;;;   :EXPLICIT   clauses that the user wrote
 ;;;;
-;;;; Derived facts (rules.lisp) are recorded only where no entry exists.
+;;;; The library records derived facts (rules.lisp) only where no entry exists.
 
 (in-package #:fincl)
 
@@ -44,8 +43,8 @@
     (:explicit 2)))
 
 (defmacro with-fact-table ((&key language) &body body)
-  "Run BODY with a fresh fact table in the root scope. Construction
-languages do this for every object they build."
+  "Run BODY with a new fact table in the root scope. Construction languages do this
+for every object that they build."
   `(let ((*fact-table* (make-fact-table))
          (*language* ,language)
          (*scope* '())
@@ -55,8 +54,8 @@ languages do this for every object they build."
      ,@body))
 
 (defmacro with-scope ((key) &body body)
-  "Run BODY one scope deeper, under KEY. Facts published in BODY belong to
-the new scope; reads fall back to the enclosing scopes.
+  "Run BODY one scope deeper, under KEY. The facts that BODY publishes belong to the
+new scope. Reads fall back to the enclosing scopes.
 
   (with-scope (:pay) (make-from-facts 'leg))"
   `(let ((*scope* `(,@*scope* ,,key)))
@@ -109,8 +108,8 @@ replaces an earlier default of equal rank; other equal priorities conflict."
 
 (declaim (ftype (function (t t) (values t &optional)) publish))
 (defun publish (fact value)
-  "Set FACT to VALUE in the current scope, from the running clause. FACT must
-be defined (DEFINE-FACT) and declared in the clause's :PUBLISHES.
+  "Set FACT to VALUE in the current scope, from the running clause. DEFINE-FACT must
+define FACT. The :PUBLISHES form of the clause must declare it.
 
   (publish :expiry #D\"2027-09-24\")"
   (unless (or (eq *publishable* :any) (member fact *publishable*))
@@ -134,10 +133,10 @@ in an enclosing one. Does not derive and does not mark the fact used."
 
 (declaim (ftype (function (t) (values t &rest t)) fact))
 (defun fact (fact)
-  "The value of FACT seen from the current scope, deriving it by rule if no
-clause gave it: (values value t). If neither works, (values nil nil
-missing-inputs), MISSING-INPUTS being the facts a rule lacked. Marks the
-fact used.
+  "Return the value of FACT as seen from the current scope. If no clause gave it, the
+function derives it by rule. It returns (values value t). If neither works, it
+returns (values nil nil missing-inputs). MISSING-INPUTS are the facts that a rule
+lacked. The function marks the fact as used.
 
   (fact :calendar) => #<WEEKENDS-ONLY>, T"
   (let ((entry (find-fact-entry fact)))
@@ -159,14 +158,13 @@ but another clause superseded does not raise an UNUSED-FACT warning."
 
 (declaim (ftype (function (t) (values boolean &optional)) fact-present-p))
 (defun fact-present-p (fact)
-  "True if a clause or default gave FACT, seen from the current scope. Does
-not derive and does not mark the fact used."
+  "True if a clause or a default gave FACT, as seen from the current scope. The function
+does not derive the fact and does not mark it as used."
   (and (find-fact-entry fact) t))
 
 (declaim (ftype (function (t) (values t &optional t)) fact-provenance))
 (defun fact-provenance (fact)
-  "Return (values provenance priority) for FACT as seen from the current
-scope, or NIL."
+  "Return (values provenance priority) for FACT as seen from the current scope, or NIL."
   (let ((entry (find-fact-entry fact)))
     (and entry (values (fact-entry-provenance entry) (fact-entry-priority entry)))))
 
@@ -175,9 +173,9 @@ scope, or NIL."
 
 (declaim (ftype (function (t &key (:class t) (:slot t)) (values t &optional)) require-fact))
 (defun require-fact (fact &key class slot)
-  "The value of FACT, as FACT; signals MISSING-FACT (or FACT-RULE-CYCLE) if
-no clause gave it and no rule could derive it. CLASS and SLOT name the
-component that needed it, for the report."
+  "Return the value of FACT, as FACT does. If no clause gave it and no rule can derive
+it, the function signals MISSING-FACT (or FACT-RULE-CYCLE). CLASS and SLOT name the
+component that needed the fact, for the report."
   (let ((*cycles* '())
         (class (if (symbolp class) (and class (find-class class)) class)))
     (multiple-value-bind (value found missing) (fact fact)

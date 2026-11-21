@@ -2,19 +2,19 @@
 ;;;;
 ;;;;   dS/S = (r - q) dt + sigma_loc(S, t) dW
 ;;;;
-;;;; sigma_loc comes from the implied total variance w(k, T), k = ln(K/F(T)),
-;;;; by Gatheral's form of Dupire's formula:
+;;;; sigma_loc comes from the implied total variance w(k, T), with k = ln(K/F(T)). The
+;;;; formula is the form of Gatheral of the formula of Dupire:
 ;;;;
 ;;;;   sigma_loc^2 = dw/dT / (1 - k/w dw/dk + 1/4 (-1/4 - 1/w + k^2/w^2) (dw/dk)^2
 ;;;;                          + 1/2 d2w/dk2)
 ;;;;
-;;;; The stepper integrates the numerator over each step: the variance of ln S
-;;;; over [t_j, t_j+1] at moneyness k is (w(k, t_j+1) - w(k, t_j)) / D(k,
-;;;; t_mid), D the denominator at mid-step. It is tabulated on a k grid per
-;;;; step when the stepper is built and read by linear interpolation at the
-;;;; step's starting moneyness (Euler in ln S). Each grid step is SUBSTEPS
-;;;; Euler steps, each with its own normal. On a surface flat in k, D = 1,
-;;;; and with one substep the steps are GBM's forward variances exactly.
+;;;; The stepper integrates the numerator over each step. The variance of ln S over
+;;;; [t_j, t_j+1] at moneyness k is (w(k, t_j+1) - w(k, t_j)) / D(k, t_mid). D is the
+;;;; denominator at mid-step. The code tabulates it on a k grid for each step when it
+;;;; builds the stepper. It reads the table by linear interpolation at the starting
+;;;; moneyness of the step (Euler in ln S). Each grid step is SUBSTEPS Euler steps, each
+;;;; with its own normal. On a surface that is flat in k, D = 1. With one substep, the
+;;;; steps are exactly the forward variances of GBM.
 
 (in-package #:fincl)
 
@@ -27,8 +27,8 @@ NIL uses the market's vol structure for the underlying.")
              :doc "Euler steps per grid step, each with its own normal: the
 weak error is O(dt) in the substep. With 1, a surface flat in strike gives
 GBM's paths exactly."))
-  (:documentation "Dupire local volatility consistent with an implied-vol
-surface: Monte Carlo prices of Europeans reproduce the surface."))
+  (:documentation "Dupire local volatility that is consistent with an implied-vol surface. Monte Carlo
+prices of Europeans reproduce the surface."))
 
 (defparameter *local-vol-k-points* 401
   "Log-moneyness points per step on which local variances are tabulated.")

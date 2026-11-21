@@ -1,9 +1,11 @@
 ;;;; calibration.lisp --- option quotes, smile fitting and model calibration
 ;;;;
-;;;; Quotes are instruments with a market price or implied vol. From a set
-;;;; of them: QUOTES-VOL-SURFACE interpolates a grid surface, FIT-SVI,
-;;;; FIT-SSVI and FIT-SABR fit parametric smiles, and CALIBRATE fits any
-;;;; process's parameters by repricing the quotes with an engine.
+;;;; Quotes are instruments with a market price or an implied vol. A set of quotes
+;;;; gives these results:
+;;;; - QUOTES-VOL-SURFACE interpolates a grid surface.
+;;;; - FIT-SVI, FIT-SSVI and FIT-SABR fit parametric smiles.
+;;;; - CALIBRATE fits the parameters of any process. It reprices the quotes with an
+;;;;   engine.
 
 (in-package #:fincl)
 
@@ -16,15 +18,15 @@
    (price :initarg :price :reader %quote-price :initform nil :type (or null non-negative-double))
    (vol :initarg :vol :reader %quote-vol :initform nil :type (or null volatility))
    (weight :initarg :weight :reader quote-weight :initform 1d0 :type non-negative-double))
-  (:documentation "A market quote for a European vanilla option: its price or
-its Black implied vol, and a weight for fitting."))
+  (:documentation "A market quote for a European vanilla option. It holds a price or a Black implied
+vol, and a weight for fitting."))
 
 (declaim (ftype (function (t &key (:price t) (:vol t) (:weight t))
                     (values option-quote &optional))
           make-option-quote))
 (defun make-option-quote (instrument &key price vol (weight 1))
-  "A quote for INSTRUMENT, a European vanilla option, by PRICE or by Black
-implied VOL (exactly one), with WEIGHT in fits.
+  "Make a quote for INSTRUMENT, a European vanilla option. Give the quote by PRICE or
+by Black implied VOL (exactly one). WEIGHT is the weight in fits.
 
   (make-option-quote (make-option (call 100) (expires d)) :vol 0.21)"
   (check-input instrument option "an option")
@@ -42,11 +44,11 @@ implied VOL (exactly one), with WEIGHT in fits.
 
 (defclass quote-set ()
   ((quotes :initarg :quotes :reader quote-set-quotes :type list))
-  (:documentation "Quotes fitted together."))
+  (:documentation "Quotes that a fit uses together."))
 
 (declaim (ftype (function (t) (values quote-set &optional)) quote-set))
 (defun quote-set (quotes)
-  "A QUOTE-SET of QUOTES, a non-empty list of OPTION-QUOTEs."
+  "Make a QUOTE-SET of QUOTES, a non-empty list of OPTION-QUOTEs."
   (check-input quotes (and list (not null)) "a non-empty list of option quotes")
   (dolist (q quotes) (check-input q option-quote "an option quote"))
   (make-instance 'quote-set :quotes (copy-list quotes)))
@@ -67,14 +69,15 @@ implied VOL (exactly one), with WEIGHT in fits.
 
 (declaim (ftype (function (option-quote t) (values double-float &optional)) quote-implied-vol))
 (defun quote-implied-vol (q market)
-  "Q's Black implied vol on MARKET: its vol, or the vol of its price."
+  "The Black implied vol of Q on MARKET. It is the vol of Q, or the vol of the price of
+Q."
   (or (%quote-vol q)
       (multiple-value-bind (f k d tau phi) (quote-terms q market)
         (implied-black-vol phi (%quote-price q) f k d tau))))
 
 (declaim (ftype (function (option-quote t) (values double-float &optional)) quote-price))
 (defun quote-price (q market)
-  "Q's price on MARKET: its price, or Black's price at its vol."
+  "The price of Q on MARKET. It is the price of Q, or the Black price at the vol of Q."
   (or (%quote-price q)
       (multiple-value-bind (f k d tau phi) (quote-terms q market)
         (black-formula phi f k d (* (%quote-vol q) (%quote-vol q) tau)))))
@@ -102,9 +105,9 @@ moneyness, total variance, weight, implied vol."
                     (values grid-vol-surface &optional))
           quotes-vol-surface))
 (defun quotes-vol-surface (quotes market &key (interpolation :natural-cubic))
-  "A GRID-VOL-SURFACE through QUOTES (a QUOTE-SET or list of quotes) on
-MARKET: at each expiry, total variance interpolated in log-forward
-moneyness by INTERPOLATION; between expiries linear in total variance.
+  "Make a GRID-VOL-SURFACE through QUOTES (a QUOTE-SET or a list of quotes) on
+MARKET. At each expiry, INTERPOLATION interpolates total variance in log-forward
+moneyness. Between expiries, total variance is linear.
 
   (quotes-vol-surface (quote-set quotes) market)"
   (make-smile-surface
@@ -199,12 +202,12 @@ constraints; the best feasible face solution is the optimum."
 
 (declaim (ftype (function (t t &key (:initial t)) (values svi-slice real &optional)) fit-svi))
 (defun fit-svi (quotes market &key initial)
-  "A raw SVI-SLICE fitted to QUOTES (all at one expiry) on MARKET, in total
-variance with the quotes' weights: Zeletskii and De Marco's quasi-explicit
-reduction (a 2-D Nelder-Mead search over m and sigma, with a, b and rho from
-a constrained linear least-squares step), then a Levenberg-Marquardt polish
-of all five parameters. INITIAL, an SVI-SLICE, replaces the search's start.
-Returns (values slice rmse), RMSE that of the implied vols.
+  "Fit a raw SVI-SLICE to QUOTES (all at one expiry) on MARKET. The fit is in total
+variance with the weights of the quotes. It uses the quasi-explicit reduction of
+Zeletskii and De Marco: a 2-D Nelder-Mead search over m and sigma, with a, b and rho
+from a constrained linear least-squares step. Then a Levenberg-Marquardt step
+polishes all five parameters. INITIAL, an SVI-SLICE, replaces the start of the
+search. Return (values slice rmse). RMSE is the error of the implied vols.
 
   (fit-svi (quote-set quotes) market)"
   (let* ((points (quote-points quotes market))
@@ -248,12 +251,12 @@ Returns (values slice rmse), RMSE that of the implied vols.
                     (values ssvi-surface real &optional))
           fit-ssvi))
 (defun fit-ssvi (quotes market &key (rho -0.3d0) (gamma 0.4d0))
-  "An SSVI-SURFACE fitted to QUOTES (several expiries) on MARKET by
-Levenberg-Marquardt on implied-vol residuals: rho, gamma in (0, 1/2], eta =
-2u/(1 + |rho|) with u in (0, 1] (so eta (1 + |rho|) <= 2, free of static
-arbitrage), and the ATM total variance at each expiry, kept increasing.
-RHO and GAMMA start the search; the ATM variances start from the quotes.
-Returns (values surface rmse)."
+  "Fit an SSVI-SURFACE to QUOTES (several expiries) on MARKET. The fit is a
+Levenberg-Marquardt fit on implied-vol residuals. The fitted values are rho, gamma
+in (0, 1/2], eta = 2u/(1 + |rho|) with u in (0, 1] (so eta (1 + |rho|) <= 2, free
+of static arbitrage), and the ATM total variance at each expiry, kept increasing.
+RHO and GAMMA are the start of the search. The ATM variances start from the quotes.
+Return (values surface rmse)."
   (let* ((points (quote-points quotes market))
          (groups (points-by-expiry points))
          (times (mapcar (lambda (g) (first (first g))) groups))
@@ -305,9 +308,9 @@ Returns (values surface rmse)."
                     (values sabr-smile real &optional))
           fit-sabr))
 (defun fit-sabr (quotes market &key beta (approximation :obloj))
-  "A SABR-SMILE fitted to QUOTES (one expiry) on MARKET by
-Levenberg-Marquardt on implied-vol residuals: alpha, rho, nu, and beta
-unless BETA fixes it. Returns (values smile rmse).
+  "Fit a SABR-SMILE to QUOTES (one expiry) on MARKET. The fit is a Levenberg-Marquardt
+fit on implied-vol residuals. The fitted values are alpha, rho, nu, and beta unless
+BETA fixes it. Return (values smile rmse).
 
   (fit-sabr (quote-set quotes) market :beta 0.5)"
   (let* ((points (quote-points quotes market))
@@ -363,26 +366,27 @@ PROCESS, or PROCESS itself (automatic selection) when ENGINE is NIL."
 (defun calibrate (process market quotes &key engine (objective :implied-vol-rmse)
                                              (method :levenberg-marquardt) fixed
                                              (tolerance 1d-12) (max-iterations 200))
-  "Fit PROCESS's parameters to QUOTES (a QUOTE-SET or list of option quotes)
-on MARKET. Returns (values calibrated-process report).
+  "Fit the parameters of PROCESS to QUOTES (a QUOTE-SET or a list of option quotes)
+on MARKET. Return (values calibrated-process report).
 
-  ENGINE     prices each quote with the trial process: an engine, a keyword
-             or a (keyword settings...) list, given :PROCESS; NIL selects an
+  ENGINE     Prices each quote with the trial process. An engine, a keyword or
+             a (keyword settings...) list, given :PROCESS. NIL selects an
              engine automatically for the process.
-  OBJECTIVE  :IMPLIED-VOL-RMSE (residuals are model minus quoted Black vols)
-             or :PRICE-RMSE (prices), each times sqrt(weight).
+  OBJECTIVE  :IMPLIED-VOL-RMSE (the residuals are model minus quoted Black vols)
+             or :PRICE-RMSE (prices). Each is multiplied by sqrt(weight).
   METHOD     :LEVENBERG-MARQUARDT, or :NELDER-MEAD or :DIFFERENTIAL-EVOLUTION
              on the sum of squares (see MINIMIZE).
-  FIXED      parameters held: names (keeping PROCESS's value, or the market
-             default if it has none), or (name value) lists.
+  FIXED      The parameters that stay fixed: names (they keep the value of
+             PROCESS, or the market default if it has none), or (name value)
+             lists.
 
-Parameters, their order and bounds come from PROCESS-PARAMETERS and
-PARAMETER-BOUNDS; the search starts from PROCESS's values, market defaults
-resolved at the longest quote's expiry. Quotes are repriced in parallel
-under lp:*kernel* (serially for Monte Carlo engines, which are parallel
-themselves); the result does not depend on the worker count. The report is
-a plist: :RMSE, :MAX-ERROR, :ITERATIONS, :RESIDUALS (one per quote, in
-order) and :PARAMETERS (name value ...).
+PROCESS-PARAMETERS and PARAMETER-BOUNDS give the parameters, their order and their
+bounds. The search starts from the values of PROCESS. The market defaults are
+resolved at the expiry of the longest quote. The function reprices the quotes in
+parallel under lp:*kernel*. It reprices them in serial for Monte Carlo engines,
+which are parallel themselves. The result does not depend on the worker count.
+The report is a plist: :RMSE, :MAX-ERROR, :ITERATIONS, :RESIDUALS (one for each
+quote, in order) and :PARAMETERS (name value ...).
 
   (calibrate (make-heston) market (quote-set quotes) :engine :cos)"
   (require-risk-neutral process "CALIBRATE")
@@ -478,11 +482,11 @@ order) and :PARAMETERS (name value ...).
 
 (declaim (ftype (function (t t t &key (:weight real)) (values quote-set &optional)) surface-quotes))
 (defun surface-quotes (market underlying options &key (weight 1))
-  "A QUOTE-SET quoting each of OPTIONS (European vanillas) at its Black vol
-on MARKET's vol structure for UNDERLYING, at its strike and expiry, with
-WEIGHT. Options expiring on or before MARKET's valuation date are left out,
-so one list serves every date of a simulation; none left signals
-INVALID-ARGUMENT.
+  "Make a QUOTE-SET that quotes each of OPTIONS (European vanillas) at its Black vol on
+the vol structure of MARKET for UNDERLYING. The quote has the strike and the expiry
+of the option, and WEIGHT. The function leaves out options that expire on or before
+the valuation date of MARKET. Thus one list serves every date of a simulation. If no
+option is left, it signals INVALID-ARGUMENT.
 
   (calibrate desk market (surface-quotes market :spx options) :engine :cos)"
   (check-input market composite-market "a composite market")

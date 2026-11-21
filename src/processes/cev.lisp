@@ -2,20 +2,20 @@
 ;;;;
 ;;;;   dS = (r - q) S dt + sigma S^beta dW
 ;;;;
-;;;; beta = 1 is GBM; beta < 1 gives the leverage effect (local vol rises as
-;;;; the spot falls), which produces a negatively skewed implied vol smile
-;;;; with one parameter. beta = 0 is the (Gaussian) Bachelier model.
+;;;; With beta = 1, the process is GBM. With beta < 1, there is a leverage effect (the local
+;;;; vol rises as the spot falls). It produces a negatively skewed implied vol smile with
+;;;; one parameter. With beta = 0, the process is the (Gaussian) Bachelier model.
 ;;;;
-;;;; For beta < 1 the process can reach zero in finite time, where it is
-;;;; absorbed (bankruptcy); CEV-ENGINE prices Europeans in closed form under
-;;;; that absorbing boundary. Two path schemes, chosen by the SCHEME slot:
+;;;; For beta < 1, the process can reach zero in finite time. The process is then absorbed
+;;;; (bankruptcy). CEV-ENGINE prices Europeans in closed form under that absorbing
+;;;; boundary. The SCHEME slot chooses between two path schemes.
 ;;;;
-;;;; :LOG-EULER (the default) steps ln S with the local vol sigma S^(beta-1),
-;;;; so beta = 1 reproduces GBM exactly and S stays positive. It cannot reach
-;;;; zero, which biases deep out-of-the-money puts for beta < 1.
+;;;; :LOG-EULER (the default) steps ln S with the local vol sigma S^(beta-1). Thus beta = 1
+;;;; reproduces GBM exactly, and S stays positive. The scheme cannot reach zero. For beta <
+;;;; 1, this biases deep out-of-the-money puts.
 ;;;;
-;;;; :ABSORBING-EULER steps S itself, S + drift + sigma S^beta sqrt(dt) Z,
-;;;; and absorbs a path at 0 the first time a step lands at or below 0.
+;;;; :ABSORBING-EULER steps S itself: S + drift + sigma S^beta sqrt(dt) Z. It absorbs a
+;;;; path at 0 the first time that a step lands at or below 0.
 
 (in-package #:fincl)
 

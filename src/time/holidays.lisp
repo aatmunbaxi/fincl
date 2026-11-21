@@ -8,14 +8,14 @@
 ;;;;     (:easter -2 :from 2000)
 ;;;;     ...)
 ;;;;
-;;;; DEFINE-CALENDAR makes a class, a singleton (+TARGET+) and the class's
-;;;; holiday rules. BUSINESS-DAY-P then reads a per-year bit vector, built
-;;;; once per year from the weekend and the rules, and COUNT-BUSINESS-DAYS
-;;;; reads per-year prefix counts, so counting over a century costs O(years).
+;;;; DEFINE-CALENDAR makes a class, a singleton (+TARGET+) and the holiday rules of the
+;;;; class. BUSINESS-DAY-P then reads a bit vector for each year. The code builds it once for
+;;;; each year from the weekend and the rules. COUNT-BUSINESS-DAYS reads prefix counts for
+;;;; each year. Thus counting over a century costs O(years).
 ;;;;
-;;;; Calendars are shared across lparallel workers. A year is built under the
-;;;; calendar's lock and installed into a simple vector by a single store
-;;;; after a write barrier; reads take no lock.
+;;;; Calendars are shared across lparallel workers. The code builds a year under the lock of
+;;;; the calendar. It installs the year into a simple vector with one store, after a write
+;;;; barrier. Reads take no lock.
 
 (in-package #:fincl)
 
@@ -25,8 +25,8 @@
 
 (declaim (ftype (function (integer) (values date &optional)) easter))
 (defun easter (year)
-  "Easter Sunday of YEAR in the Gregorian calendar, by the anonymous
-Gregorian computus (Meeus/Jones/Butcher).
+  "Return Easter Sunday of YEAR in the Gregorian calendar. It uses the anonymous Gregorian computus
+(Meeus/Jones/Butcher).
 
   (easter 2027) => #D\"2027-03-28\""
   (let* ((a (mod year 19))
@@ -56,8 +56,8 @@ Gregorian computus (Meeus/Jones/Butcher).
                     (values (or date null) &optional))
           nth-weekday))
 (defun nth-weekday (n weekday month year)
-  "The N-th WEEKDAY of MONTH in YEAR; negative N counts from the month's
-end (-1 is the last). NIL if there is no such day.
+  "Return the N-th WEEKDAY of MONTH in YEAR. A negative N counts from the end of the month (-1 is
+the last). Return NIL if there is no such day.
 
   (nth-weekday 3 :monday 1 2027) => #D\"2027-01-18\"
   (nth-weekday -1 :monday 5 2027) => #D\"2027-05-31\""
@@ -82,8 +82,8 @@ end (-1 is the last). NIL if there is no such day.
 observed on, or NIL if it is not observed.")
 
 (defmacro define-observance (name (date) &body body)
-  "Define the observance rule NAME: BODY maps the holiday's DATE to the date
-it is observed on, or NIL if it is not observed that year.
+  "Define the observance rule NAME. BODY maps the DATE of a holiday to the date on
+which it is observed. It returns NIL if the holiday is not observed that year.
 
   (define-observance :sunday-to-monday (date)
     (if (= (day-of-week date) 7) (date+ date 1) date))"
@@ -180,17 +180,16 @@ observance (which can move a date into a neighbouring year)."
           :reader calendar-years
           :documentation "Year index -> CALENDAR-YEAR, filled on first use.")
    (lock :initform (bt:make-lock "holiday calendar") :reader calendar-lock))
-  (:documentation "A calendar whose holidays come from rules (DEFINE-CALENDAR),
-with a per-year cache of business days."))
+  (:documentation "A calendar whose holidays come from rules (DEFINE-CALENDAR), with a cache of business days for
+each year."))
 
 (defmethod make-load-form ((c holiday-calendar) &optional environment)
   (declare (ignore environment))
   `(make-instance ',(class-name (class-of c))))
 
 (defgeneric calendar-holidays (calendar year)
-  (:documentation "The dates of YEAR that CALENDAR's rules make holidays
-(weekends aside). A calendar defined on another holiday calendar adds its
-rules to those it inherits.")
+  (:documentation "Return the dates of YEAR that the rules of CALENDAR make holidays (weekends excluded). A calendar
+that is defined on another holiday calendar adds its rules to the rules that it inherits.")
   (:method ((c holiday-calendar) year)
     (declare (ignore year))
     '()))
@@ -236,7 +235,7 @@ calendar's lock on first use; outside that range built afresh."
 
 (declaim (ftype (function (calendar) (values t &optional)) clear-calendar-cache))
 (defun clear-calendar-cache (calendar)
-  "Forget CALENDAR's cached years (after its rules are redefined)."
+  "Forget the cached years of CALENDAR. Use it after its rules are redefined."
   (bt:with-lock-held ((calendar-lock calendar))
     (fill (calendar-years calendar) nil))
   calendar)
@@ -268,24 +267,23 @@ calendar's lock on first use; outside that range built afresh."
     "Names of classes made by DEFINE-CALENDAR, known at macroexpansion."))
 
 (defmacro define-calendar (name (superclass) &body body)
-  "Define the holiday calendar NAME: a class on SUPERCLASS (WEEKENDS-ONLY,
-or another holiday calendar, whose rules NAME inherits), the singleton
-+NAME+, and the holiday rules in BODY (after an optional docstring). Each
-rule is one of
+  "Define the holiday calendar NAME. The macro makes a class on SUPERCLASS, the
+singleton +NAME+, and the holiday rules in BODY (after an optional docstring).
+SUPERCLASS is WEEKENDS-ONLY or another holiday calendar. NAME inherits the rules
+of a holiday calendar. The weekend comes from SUPERCLASS. Each rule is one of:
 
   (:fixed month day)              a date every year
-  (:nth-weekday n weekday month)  e.g. 3 :monday 1; negative N counts from
-                                  the month's end (-1 :monday 5: last Monday
-                                  of May)
-  (:easter offset)                days from Easter Sunday (-2 Good Friday,
-                                  1 Easter Monday)
-  (:dates \"YYYY-MM-DD\" ...)     one-off closures
-  (:when predicate)               PREDICATE, evaluated, of (year month day)
+  (:nth-weekday n weekday month)  for example 3 :monday 1. A negative N counts
+                                  from the end of the month: (-1 :monday 5) is
+                                  the last Monday of May
+  (:easter offset)                days from Easter Sunday: -2 is Good Friday,
+                                  1 is Easter Monday
+  (:dates \"YYYY-MM-DD\" ...)       one-off closures
+  (:when predicate)               PREDICATE is evaluated. It takes (year month day)
 
-and :FIXED, :NTH-WEEKDAY, :EASTER and :WHEN take the options :OBSERVE
-keyword (:none, :next-monday, :nearest-weekday, :sunday-to-monday, or one
-from DEFINE-OBSERVANCE), :FROM year, :TO year and :EXCEPT (years...). The
-weekend comes from SUPERCLASS.
+The rules :FIXED, :NTH-WEEKDAY, :EASTER and :WHEN take these options:
+:OBSERVE keyword (:none, :next-monday, :nearest-weekday, :sunday-to-monday, or a
+keyword from DEFINE-OBSERVANCE), :FROM year, :TO year and :EXCEPT (years...).
 
   (define-calendar my-exchange (weekends-only)
     \"An exchange closed on New Year's Day and Good Friday.\"

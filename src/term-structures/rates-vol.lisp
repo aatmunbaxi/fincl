@@ -1,23 +1,21 @@
 ;;;; term-structures/rates-vol.lisp --- volatilities of interest rates
 ;;;;
-;;;; A rates vol structure gives the total variance of a rate (a caplet's
-;;;; fixing, a swap rate) from a reference date to an option's expiry date,
-;;;; under its own day counter. The engine reading it decides what kind of
-;;;; vol it is: lognormal (possibly shifted) for BLACK-RATES-ENGINE, normal
-;;;; for BACHELIER-RATES-ENGINE. Only expiry matters: no smile, no swap
-;;;; tenor (SABR and cubes are later work).
+;;;; A rates vol structure gives the total variance of a rate (the fixing of a caplet, a
+;;;; swap rate) from a reference date to the expiry date of an option, under its own day
+;;;; counter. The engine that reads it decides what kind of vol it is: lognormal (possibly
+;;;; shifted) for BLACK-RATES-ENGINE, normal for BACHELIER-RATES-ENGINE. Only the expiry
+;;;; matters. There is no smile and no swap tenor.
 
 (in-package #:fincl)
 
 (defclass rates-vol-structure (term-structure)
   ((day-counter :initarg :day-counter :initform +actual-365-fixed+ :reader rates-vol-day-counter
                 :documentation "Measures the time from the reference date to an expiry."))
-  (:documentation "Volatility of a rate as a function of the option's
-expiry: RATES-VOL-VARIANCE."))
+  (:documentation "The volatility of a rate as a function of the expiry of the option: RATES-VOL-VARIANCE."))
 
 (defgeneric rates-vol-variance (structure reference-date date)
-  (:documentation "Total variance (vol squared times time) of the rate from
-REFERENCE-DATE to the expiry DATE.
+  (:documentation "Return the total variance (vol squared times time) of the rate from REFERENCE-DATE to the
+expiry DATE.
 
   (rates-vol-variance (make-flat-rates-vol :vol 0.2d0) today #D\"2027-09-24\")"))
 
@@ -34,8 +32,8 @@ REFERENCE-DATE to the expiry DATE.
           make-flat-rates-vol))
 (defun make-flat-rates-vol (&key (vol (required make-flat-rates-vol :vol))
                                  (day-counter +actual-365-fixed+))
-  "A FLAT-RATES-VOL: the volatility VOL (a non-negative real) of a rate at every
-expiry, with times measured by DAY-COUNTER.
+  "Make a FLAT-RATES-VOL: the volatility VOL (a non-negative real) of a rate at every expiry.
+DAY-COUNTER measures time.
 
   (make-flat-rates-vol :vol 0.25d0)"
   (make-instance 'flat-rates-vol :vol vol :day-counter day-counter))
@@ -51,9 +49,8 @@ expiry, with times measured by DAY-COUNTER.
 (defclass expiry-rates-vol (rates-vol-structure)
   ((dates :initarg :dates :reader rates-vol-dates)
    (vols :initarg :vols :reader rates-vol-vols))
-  (:documentation "Volatilities by expiry date: total variance is linear in
-time between the knots and from zero at the reference date, and the vol is
-flat beyond the last date.
+  (:documentation "Volatilities by expiry date. Total variance is linear in time between the knots, and from
+zero at the reference date. The vol is flat beyond the last date.
 
   (make-expiry-rates-vol :dates (list #D\"2027-03-24\" #D\"2027-09-24\")
                          :vols '(0.32d0 0.28d0))"))
@@ -63,8 +60,8 @@ flat beyond the last date.
 (defun make-expiry-rates-vol (&key (dates (required make-expiry-rates-vol :dates))
                                    (vols (required make-expiry-rates-vol :vols))
                                    (day-counter +actual-365-fixed+))
-  "An EXPIRY-RATES-VOL: one non-negative volatility in VOLS per expiry date in
-DATES (increasing), with times measured by DAY-COUNTER.
+  "Make an EXPIRY-RATES-VOL: one non-negative volatility in VOLS for each expiry date in DATES
+(increasing). DAY-COUNTER measures time.
 
   (make-expiry-rates-vol :dates (list #D\"2027-03-24\" #D\"2027-09-24\")
                          :vols '(0.32d0 0.28d0))"

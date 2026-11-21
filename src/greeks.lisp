@@ -1,20 +1,19 @@
 ;;;; greeks.lisp --- sensitivities from any engine
 ;;;;
-;;;; (greeks instrument engine market) returns a plist of sensitivities,
-;;;; each by the best method the engine supports:
+;;;; (greeks instrument engine market) returns a plist of sensitivities. Each one uses the
+;;;; best method that the engine supports:
 ;;;;
 ;;;;   Black-Scholes   closed form (European vanillas)
-;;;;   binomial        delta, gamma and theta from the tree's step-1 and
-;;;;                   step-2 nodes, extrapolated like the price; the rest by
-;;;;                   bumping
-;;;;   anything else   central differences of prices on bumped markets
-;;;;                   (BUMP-GREEKS); Monte Carlo averages independent batches
-;;;;                   and reports standard errors
+;;;;   binomial        delta, gamma and theta from the nodes of step 1 and step 2,
+;;;;                   extrapolated like the price. The other Greeks use bumps
+;;;;   anything else   central differences of prices on bumped markets (BUMP-GREEKS).
+;;;;                   Monte Carlo averages independent batches and reports standard
+;;;;                   errors
 ;;;;
-;;;; Conventions: vega and volga per unit of vol, rho and dividend rho per
-;;;; unit of rate (parallel shifts of the curve), theta per calendar day: the
-;;;; price change from aging the market one day. Every finite difference
-;;;; goes through FINITE-DIFFERENCE-WEIGHTS and APPLY-STENCIL.
+;;;; Conventions: vega and volga are per unit of vol. Rho and dividend rho are per unit of
+;;;; rate (parallel shifts of the curve). Theta is per calendar day: the price change from
+;;;; aging the market one day. Every finite difference uses FINITE-DIFFERENCE-WEIGHTS and
+;;;; APPLY-STENCIL.
 
 (in-package #:fincl)
 
@@ -36,11 +35,11 @@ smooth at that scale.")
     '(:spot 1d-3 :vol 1d-3 :rate 1d-4 :dividend 1d-4)))
 
 (defgeneric greeks (instrument engine market &key which bumps)
-  (:documentation "Sensitivities of INSTRUMENT's price under ENGINE in MARKET, as
-a plist with the keys in WHICH (default every key of *GREEK-KEYS*: :delta
-:gamma :vega :theta :rho :dividend-rho :vanna :volga). BUMPS overrides
-*DEFAULT-GREEK-BUMPS* for the methods that bump. Monte Carlo results also
-carry :standard-errors, a plist with the same keys.
+  (:documentation "Return the sensitivities of the price of INSTRUMENT under ENGINE in MARKET as a
+plist. The keys are in WHICH. The default is every key of *GREEK-KEYS*: :delta
+:gamma :vega :theta :rho :dividend-rho :vanna :volga. BUMPS overrides
+*DEFAULT-GREEK-BUMPS* for the methods that bump. The results of Monte Carlo also
+have :standard-errors, a plist with the same keys.
 
   (greeks call (make-instance 'black-scholes-engine) m :which '(:delta :vega))
   => (:DELTA 0.6368... :VEGA 37.52...)"))
@@ -78,14 +77,14 @@ weight is non-zero."
                     (values list &optional))
           bump-greeks))
 (defun bump-greeks (instrument engine market &key (which *greek-keys*) bumps)
-  "Greeks by central differences of prices on bumped copies of MARKET, a
-COMPOSITE-MARKET: the spot, vol and dividend of INSTRUMENT's underlying and
-the curve it discounts on, by the sizes in BUMPS (see DEFAULT-GREEK-BUMPS).
-Delta, gamma, vega, volga, rho and dividend rho use the stencil (-1 0 1);
-vanna the product of two; theta the one-sided (0 1) in calendar days, by
-aging the market. Prices are shared between Greeks. Engines with fixed
-seeds (Monte Carlo) get common random numbers; LSM Greeks remain noisy,
-because the fitted exercise boundary moves discontinuously with the bumps.
+  "Compute Greeks by central differences of prices on bumped copies of MARKET, a
+COMPOSITE-MARKET. The bumps move the spot, the vol and the dividend of the
+underlying of INSTRUMENT, and the curve that it discounts on. BUMPS gives the sizes
+(see DEFAULT-GREEK-BUMPS). Delta, gamma, vega, volga, rho and dividend rho use the
+stencil (-1 0 1). Vanna uses the product of two. Theta uses the one-sided stencil (0
+1) in calendar days, by aging the market. Greeks share prices. Engines with fixed
+seeds (Monte Carlo) get common random numbers. LSM Greeks remain noisy, because the
+fitted exercise boundary moves in jumps with the bumps.
 
   (bump-greeks aput (make-instance 'barone-adesi-whaley-engine) m :which '(:delta))"
   (check-input market composite-market "a composite market, whose named factors can be bumped")

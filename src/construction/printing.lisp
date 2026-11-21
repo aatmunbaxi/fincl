@@ -1,14 +1,14 @@
 ;;;; construction/printing.lisp --- objects as the clauses that build them
 ;;;;
-;;;; An object built by a language prints as its clauses, and with
-;;;; *PRINT-READABLY* as the language macro form, which reads (with
-;;;; FINCL:SYNTAX for dates) and evaluates back to an equivalent object.
+;;;; An object that a language built prints as its clauses. Under *PRINT-READABLY* it
+;;;; prints as the macro form of the language. The reader reads that form (with
+;;;; FINCL:SYNTAX for dates) and evaluates it back to an equivalent object.
 
 (in-package #:fincl)
 
 (defgeneric object-clauses (language object)
-  (:documentation "The clauses (as data, (head . arguments)) that LANGUAGE's
-data function turns back into an object equivalent to OBJECT.
+  (:documentation "Return the clauses (as data, (head . arguments)) that the data function of LANGUAGE
+turns back into an object equivalent to OBJECT.
 
   (object-clauses 'option o) => ((:PUT 95d0) (:AMERICAN) (:EXPIRES #D\"2027-09-24\"))"))
 
@@ -31,8 +31,8 @@ data function turns back into an object equivalent to OBJECT.
 
 (declaim (ftype (function (t t t) (values t &optional)) print-clause-form))
 (defun print-clause-form (language object stream)
-  "Print OBJECT as its clauses: readably as the language macro form under
-*PRINT-READABLY*, otherwise as #<TYPE clause...>."
+  "Print OBJECT as its clauses. Under *PRINT-READABLY* the output is the macro form of
+the language that can be read again. Otherwise it is #<TYPE clause...>."
   (let ((clauses (object-clauses language object)))
     (if *print-readably*
         (prin1 `(,(construction-language-macro (find-language language))
@@ -43,8 +43,8 @@ data function turns back into an object equivalent to OBJECT.
 
 (declaim (ftype (function (t t &key (:test t)) (values t &optional)) round-trip-p))
 (defun round-trip-p (language object &key (test #'equalp))
-  "True if rebuilding OBJECT from its clauses gives an object with the same
-clauses, under TEST."
+  "True if a rebuild of OBJECT from its clauses gives an object with the same clauses,
+under TEST."
   (let* ((clauses (object-clauses language object))
          (rebuilt (funcall (construction-language-function (find-language language)) clauses)))
     (funcall test clauses (object-clauses language rebuilt))))

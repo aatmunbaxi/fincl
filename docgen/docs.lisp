@@ -38,10 +38,9 @@ is pricing a European option with the Black-Scholes formula.
 ```cl
 (defconstant +today+ #D\"2026-10-01\")
 (defparameter *market*
-  (make-bs-market :valuation-date +today+
-                  :spot 100 :rate 0.04d0
-                  :dividend 0.01d0
-                  :vol 0.2d0))
+  (make-market (valued-on +today+)
+               (underlying :spx (spot 100) (dividend 0.01d0) (vol 0.2d0))
+               (curve :usd-ois (rate 0.04d0))))
 (defparameter *option*
   (make-option (call 110) (expires #T\"1Y\" :from +today+)))
 (price *option* (make-engine :black-scholes) *market*)
@@ -60,13 +59,16 @@ read. It has a valuation date, there is no hidden \"today\", and it is
 immutable: a scenario is a new market (see `bump`). `make-market` builds one
 from clauses, with several underlyings and curves; `make-bs-market` builds the
 common case of one underlying, one currency and one curve, with flat inputs.
-Discrete cash and proportional dividends are given as a `dividend-schedule`,
-a list of `(ex-date amount [:kind :cash|:proportional] [:pay-date date])`.
+The `dividends` clause of an underlying gives discrete cash and proportional
+dividends. Its argument is a quoted list of
+`(ex-date amount [:kind :cash|:proportional] [:pay-date date])`, or a
+`dividend-schedule`. The clause `(fixings index entries)` gives past index fixings.
 
 ```cl
 (make-market (valued-on #D\"2026-10-01\")
              (underlying :spx (spot 5000) (currency :usd)
-                         (dividend 0.015d0) (vol 0.18d0))
+                         (dividend 0.015d0) (vol 0.18d0)
+                         (dividends '((\"2027-02-10\" 0.82d0))))
              (curve :usd-ois (rate 0.04d0))
              (discounting :usd :usd-ois))
 ```

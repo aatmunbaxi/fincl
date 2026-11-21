@@ -3,12 +3,11 @@
 ;;;;   dS/S = (r - q - lambda k) dt + sigma dW + (e^Y - 1) dN,
 ;;;;   N Poisson with intensity lambda, Y ~ N(mu_J, sigma_J^2), k = E[e^Y] - 1
 ;;;;
-;;;; R. C. Merton, "Option pricing when underlying stock returns are
-;;;; discontinuous", J. Financial Economics 3 (1976). With lambda = 0 it is
-;;;; GBM. Over an interval the jump part is a Poisson count n and, given n, a
-;;;; normal with mean n mu_J and variance n sigma_J^2, so an increment is
-;;;; sampled exactly from three normals: the Brownian shock, the count (its
-;;;; quantile at Phi(z)) and the sum of the jumps.
+;;;; R. C. Merton, "Option pricing when underlying stock returns are discontinuous", J.
+;;;; Financial Economics 3 (1976). With lambda = 0, the process is GBM. Over an interval,
+;;;; the jump part is a Poisson count n and, given n, a normal with mean n mu_J and variance
+;;;; n sigma_J^2. Thus the code samples an increment exactly from three normals: the
+;;;; Brownian shock, the count (its quantile at Phi(z)) and the sum of the jumps.
 
 (in-package #:fincl)
 
@@ -16,8 +15,7 @@
   ((intensity 0.5d0 :measure-dependent t :type non-negative-double :bounds (0 nil) :doc "Jumps per unit of market time, lambda.")
    (jump-mean -0.1d0 :measure-dependent t :doc "Mean of the log jump size, mu_J.")
    (jump-vol 0.15d0 :measure-dependent t :type volatility :bounds (0 nil) :doc "Standard deviation of the log jump size, sigma_J."))
-  (:documentation "Merton's jump diffusion: GBM plus normally distributed
-log jumps at Poisson times."))
+  (:documentation "The jump diffusion of Merton: GBM plus normally distributed log jumps at Poisson times."))
 
 (defmethod levy-exponent ((p merton-jump) u)
   (let ((mu (jump-mean p)) (s (jump-vol p)))

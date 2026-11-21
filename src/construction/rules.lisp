@@ -1,14 +1,14 @@
 ;;;; construction/rules.lisp --- facts derived from other facts
 ;;;;
-;;;; A rule computes a fact that no clause gave, on demand, from other facts:
-;;;; Bermudan exercise dates from a tenor, a start and the expiry; an expiry
-;;;; from the last exercise date. Rules run lazily, only when the fact is read
-;;;; and absent, and the result is recorded with the rule as its provenance.
+;;;; A rule computes a fact that no clause gave. It uses other facts, when the fact is
+;;;; read. Examples: Bermudan exercise dates from a tenor, a start and the expiry, and an
+;;;; expiry from the last exercise date. Rules run lazily, only when a caller reads a
+;;;; fact that is absent. The library records the result with the rule as its provenance.
 ;;;;
-;;;; Rules may be mutually recursive (dates from expiry, expiry from dates):
-;;;; a fact being derived is treated as absent if a derivation reaches it
-;;;; again. If that leaves the wanted fact underivable, REQUIRE-FACT reports
-;;;; the cycle (FACT-RULE-CYCLE) with the clauses that would break it.
+;;;; Rules can be mutually recursive (dates from expiry, expiry from dates). If a
+;;;; derivation reaches a fact that is being derived, the library treats that fact as
+;;;; absent. If the wanted fact then cannot be derived, REQUIRE-FACT reports the cycle
+;;;; (FACT-RULE-CYCLE) with the clauses that break it.
 
 (in-package #:fincl)
 
@@ -19,11 +19,11 @@
   (function nil :read-only t))
 
 (defmacro define-fact-rule (language fact inputs &body body)
-  "Define how LANGUAGE derives FACT when no clause gave it. INPUTS is a list
-of (variable fact) pairs, then optionally &OPTIONAL and (variable fact
-default) triples; BODY computes the value from them. Required inputs are
-read in order, and the first missing one leaves the fact absent, so list the
-inputs least likely to be derivable first.
+  "Define how LANGUAGE derives FACT when no clause gives it. INPUTS is a list of
+(variable fact) pairs. After &OPTIONAL it has (variable fact default) triples.
+BODY computes the value from the inputs. The rule reads the required inputs in
+order. If one is missing, the fact stays absent. List first the inputs that are
+least likely to be derivable.
 
   (define-fact-rule option :expiry ((dates :exercise-dates))
     (a:lastcar dates))"

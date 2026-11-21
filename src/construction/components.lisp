@@ -1,22 +1,22 @@
 ;;;; construction/components.lisp --- classes built from facts
 ;;;;
-;;;; A slot of a COMPONENT-CLASS may name the fact that fills it:
+;;;; A slot of a COMPONENT-CLASS can name the fact that fills it:
 ;;;;
 ;;;;   (defclass bermudan-exercise (exercise)
 ;;;;     ((dates :initarg :dates :fact :exercise-dates))
 ;;;;     (:metaclass component-class))
 ;;;;
-;;;; MAKE-FROM-FACTS then builds the class from the current fact table, so a
-;;;; language's assembly code never routes facts to initargs by hand, and a
-;;;; class defined outside fincl receives the facts it declares.
+;;;; MAKE-FROM-FACTS builds the class from the current fact table. Thus the assembly
+;;;; code of a language never routes facts to initargs by hand. A class that is defined
+;;;; outside fincl receives the facts that it declares.
 
 (in-package #:fincl)
 
 (define-slot-option :fact "The construction fact that fills the slot.")
 
 (defclass component-class (annotated-class) ()
-  (:documentation "Metaclass whose slots accept :FACT. Subclasses must use
-it too to keep their facts: a plain DEFCLASS subclass keeps no annotations.
+  (:documentation "A metaclass whose slots accept :FACT. Subclasses must use it too to keep their
+facts. A subclass from a plain DEFCLASS keeps no annotations.
 
   (defclass leg () ((rate :initarg :rate :fact :rate)) (:metaclass component-class))"))
 
@@ -32,10 +32,10 @@ it too to keep their facts: a plain DEFCLASS subclass keeps no annotations.
 
 (declaim (ftype (function (t &rest t) (values t &optional)) make-from-facts))
 (defun make-from-facts (class &rest explicit-initargs)
-  "Make an instance of CLASS (a COMPONENT-CLASS or its name), filling every
-slot that names a fact from the current fact table. EXPLICIT-INITARGS win
-over facts. A required slot whose fact is missing signals MISSING-FACT, naming
-the class, the slot and the clauses that supply the fact.
+  "Make an instance of CLASS (a COMPONENT-CLASS or its name). Fill every slot that
+names a fact from the current fact table. EXPLICIT-INITARGS win over facts. If a
+required slot has a missing fact, the function signals MISSING-FACT. The report
+names the class, the slot and the clauses that supply the fact.
 
   (make-from-facts 'european-exercise)          ; :EXPIRY from the table
   (make-from-facts 'vanilla-payoff :strike 95)  ; :STRIKE given explicitly"

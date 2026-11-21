@@ -1,17 +1,11 @@
 ;;;; instruments/rate-helpers.lisp --- rate helpers and curve bootstrapping
 ;;;;
-;;;; A rate helper is a quoted instrument (deposit, FRA, future, OIS, swap)
-;;;; with a pillar date and a function giving the quote it implies on a
-;;;; curve. BOOTSTRAP-CURVE finds the curve on which every helper reprices
-;;;; its quote: pillar by pillar with Brent's method, repeating whole passes
-;;;; for interpolations that are not local (monotone-convex) until no node
-;;;; moves by more than the accuracy.
-;;;;
-;;;; Provenance: instruments and dates follow QuantLib's DepositRateHelper,
-;;;; FraRateHelper, FuturesRateHelper, OISRateHelper and SwapRateHelper
-;;;; (through MakeOIS and MakeVanillaSwap), and the traits and node at the
-;;;; reference date follow its PiecewiseYieldCurve, so the curves agree with
-;;;; QuantLib's (tests/fixtures/bootstrap.sexp).
+;;;; A rate helper is a quoted instrument (deposit, FRA, future, OIS, swap). It has a
+;;;; pillar date and a function that gives the quote that it implies on a curve.
+;;;; BOOTSTRAP-CURVE finds the curve on which every helper reprices its quote. It works
+;;;; pillar by pillar with the method of Brent. For interpolations that are not local
+;;;; (monotone-convex), it repeats whole passes until no node moves by more than the
+;;;; accuracy. The file tests/fixtures/bootstrap.sexp holds the reference curves.
 
 (in-package #:fincl)
 
@@ -24,13 +18,12 @@
           :documentation "The tenor that names the helper (BUMP's (:quote id tenor)).")
    (arguments :initarg :arguments :reader helper-arguments
               :documentation "The constructor call, to rebuild with another quote."))
-  (:documentation "A quoted instrument that pins one node of a bootstrapped
-curve."))
+  (:documentation "A quoted instrument that fixes one node of a bootstrapped curve."))
 
 (defgeneric helper-implied-quote (helper curve &optional discount-curve)
-  (:documentation "The quote HELPER implies when CURVE forecasts and
-DISCOUNT-CURVE (default CURVE) discounts. Both are dated curves measured
-from the helper's valuation date."))
+  (:documentation "Return the quote that HELPER implies when CURVE forecasts and DISCOUNT-CURVE (default:
+CURVE) discounts. Both are dated curves, measured from the valuation date of the
+helper."))
 
 (defgeneric helper-shifted-quote (helper shift)
   (:documentation "HELPER's quote after moving its rate by SHIFT ((:relative
@@ -72,14 +65,14 @@ rate for a futures price.")
   ((index :initarg :index :reader helper-index)
    (start :reader helper-start)
    (maturity :reader helper-maturity))
-  (:documentation "A deposit at INDEX's conventions from spot for its tenor;
-the quote is the simple rate."))
+  (:documentation "A deposit with the conventions of INDEX, from spot for its tenor. The quote is the
+simple rate."))
 
 (declaim (ftype (function (t t &key (:valuation-date t))
                     (values deposit-helper &optional))
           deposit-helper))
 (defun deposit-helper (quote index &key valuation-date)
-  "A deposit quoting QUOTE for INDEX's tenor from spot.
+  "Make a deposit helper that quotes QUOTE for the tenor of INDEX from spot.
 
   (deposit-helper 0.0245d0 (euribor #T\"6M\") :valuation-date today)"
   (check-input quote real "a real rate")
@@ -101,16 +94,16 @@ the quote is the simple rate."))
   (simple-forward curve (helper-start h) (helper-maturity h) (index-day-counter (helper-index h))))
 
 (defclass fra-helper (deposit-helper) ()
-  (:documentation "A forward rate agreement on INDEX starting a number of
-months after spot; the quote is the index's forward rate."))
+  (:documentation "A forward rate agreement on INDEX that starts some months after spot. The quote is the
+forward rate of the index."))
 
 (declaim (ftype (function (t t t &key (:valuation-date t))
                     (values fra-helper &optional))
           fra-helper))
 (defun fra-helper (quote months-to-start index &key valuation-date)
-  "An FRA starting MONTHS-TO-START months after spot on INDEX (a 3x9 on a 6M
-index has MONTHS-TO-START 3), quoting QUOTE. Its pillar is the index
-maturity from the start.
+  "Make an FRA helper that starts MONTHS-TO-START months after spot on INDEX and quotes
+QUOTE. A 3x9 on a 6M index has MONTHS-TO-START 3. Its pillar is the maturity of the
+index from the start.
 
   (fra-helper 0.0251d0 3 (euribor #T\"6M\") :valuation-date today)"
   (check-input quote real "a real rate")
@@ -134,15 +127,16 @@ maturity from the start.
 
 (defclass futures-helper (deposit-helper)
   ((convexity :initarg :convexity :reader helper-convexity :type double-float))
-  (:documentation "An interest-rate future: the quote is the price, 100 times
-(1 - forward rate - CONVEXITY), with the convexity adjustment given."))
+  (:documentation "An interest-rate future. The quote is the price, 100 times (1 - forward rate -
+CONVEXITY). The convexity adjustment is given."))
 
 (declaim (ftype (function (t t t &key (:convexity real) (:valuation-date t))
                     (values futures-helper &optional))
           futures-helper))
 (defun futures-helper (price start index &key (convexity 0d0) valuation-date)
-  "A future on INDEX's rate from the date START (an IMM date, say) to the
-index maturity from it, quoting PRICE.
+  "Make a helper for a future on the rate of INDEX. The future runs from the date START
+(for example, an IMM date) to the maturity of the index from that date. It quotes
+PRICE.
 
   (futures-helper 97.52d0 #D\"2026-12-16\" (euribor #T\"3M\") :convexity 0.0002d0
                   :valuation-date today)"
@@ -191,8 +185,8 @@ leg's value equals the floating leg's."))
   (iter (for cf in leg) (finding (payment-date cf) maximizing (date-serial (payment-date cf)))))
 
 (defclass ois-helper (swap-rate-helper) ()
-  (:documentation "An overnight indexed swap: fixed against daily compounded
-overnight coupons, both legs on the same schedule (MakeOIS's)."))
+  (:documentation "An overnight indexed swap. It pays fixed against daily compounded overnight coupons.
+Both legs use the same schedule."))
 
 (declaim (ftype (function (t t t &key (:valuation-date t) (:settlement-days t) (:payment-lag t) (:payment-convention t) (:payment-frequency t) (:convention t) (:end-of-month t))
                     (values ois-helper &optional))
@@ -204,13 +198,13 @@ overnight coupons, both legs on the same schedule (MakeOIS's)."))
                                          (payment-frequency (swap-convention-term :ois-defaults :payment-frequency))
                                          (convention (swap-convention-term :ois-defaults :roll-convention))
                                          (end-of-month nil eom-p))
-  "An OIS of TENOR from SETTLEMENT-DAYS business days after the valuation
-date on the overnight INDEX, quoting the fixed rate QUOTE (fixed day counter
-the index's). Both legs pay every PAYMENT-FREQUENCY (a single period for
-shorter swaps), PAYMENT-LAG business days after each period. END-OF-MONTH
-defaults to whether the start is its month's last business day. The pillar
-is the last date the swap depends on: its maturity, its last payment, or the
-end of its last fixing's deposit.
+  "Make a helper for an OIS of TENOR. The swap starts SETTLEMENT-DAYS business days after
+the valuation date, on the overnight INDEX. QUOTE is the fixed rate. The fixed day
+counter is the day counter of the index. Both legs pay every PAYMENT-FREQUENCY (one
+period for shorter swaps), PAYMENT-LAG business days after each period. END-OF-MONTH
+defaults to true if the start is the last business day of its month. The pillar is
+the last date that the swap depends on: its maturity, its last payment, or the end of
+the deposit of its last fixing.
 
   (ois-helper 0.0372d0 #T\"5Y\" (sofr) :valuation-date today :payment-lag 2)"
   (check-input quote real "a real rate")
@@ -258,8 +252,8 @@ end of its last fixing's deposit.
     h))
 
 (defclass swap-helper (swap-rate-helper) ()
-  (:documentation "A vanilla swap: a fixed leg against an Ibor leg on the
-index's tenor, par coupons (MakeVanillaSwap's)."))
+  (:documentation "A vanilla swap: a fixed leg against an Ibor leg on the tenor of the index, with par
+coupons."))
 
 (declaim (ftype (function (t t t &key (:valuation-date t) (:fixed-frequency t) (:fixed-convention t) (:fixed-day-counter t) (:calendar t))
                     (values swap-helper &optional))
@@ -269,10 +263,10 @@ index's tenor, par coupons (MakeVanillaSwap's)."))
                                           (fixed-convention (swap-convention-term :ibor-swap-defaults :fixed-convention))
                                           (fixed-day-counter (swap-convention-term :ibor-swap-defaults :fixed-day-counter))
                                           calendar)
-  "A vanilla swap of TENOR from spot on the Ibor INDEX, quoting the fixed
-rate QUOTE paid every FIXED-FREQUENCY under FIXED-DAY-COUNTER, dates
-adjusted by FIXED-CONVENTION on CALENDAR (default the index's). The pillar
-is the later of the maturity and the end of the last coupon's forecast.
+  "Make a helper for a vanilla swap of TENOR from spot on the Ibor INDEX. QUOTE is the
+fixed rate. The fixed leg pays every FIXED-FREQUENCY under FIXED-DAY-COUNTER. FIXED-
+CONVENTION adjusts the dates on CALENDAR (default: the calendar of the index). The
+pillar is the later of the maturity and the end of the forecast of the last coupon.
 
   (swap-helper 0.0268d0 #T\"10Y\" (euribor #T\"6M\") :valuation-date today)"
   (check-input quote real "a real rate")
@@ -325,9 +319,9 @@ is the later of the maturity and the end of the last coupon's forecast.
    (accuracy :initarg :accuracy :reader curve-accuracy)
    (nodes :initarg :nodes :reader curve-nodes
           :documentation "The interpolated curve through the solved nodes."))
-  (:documentation "A curve bootstrapped from rate helpers: each helper
-reprices its quote. Discount factors come from the interpolated curve
-through the nodes. Built by BOOTSTRAP-CURVE."))
+  (:documentation "A curve that is bootstrapped from rate helpers. Each helper reprices its quote. The
+discount factors come from the interpolated curve through the nodes. BOOTSTRAP-CURVE
+builds it."))
 
 (defmethod curve-discount ((c piecewise-yield-curve) (x real))
   (curve-discount (curve-nodes c) x))
@@ -357,14 +351,13 @@ through the nodes. Built by BOOTSTRAP-CURVE."))
 (defun bootstrap-curve (helpers &key (interpolation :log-linear) discount-curve
                                      (day-counter +actual-365-fixed+) (accuracy 1d-12)
                                      (max-passes 100))
-  "The curve on which every helper of HELPERS reprices its quote, from their
-common valuation date under DAY-COUNTER. INTERPOLATION is :LOG-LINEAR
-(discount factors; each node needs one pass), or :MONOTONE-CONVEX or
-:BACKWARD-FLAT (instantaneous forwards; monotone-convex is not local, so
-passes repeat until no node moves by more than ACCURACY). DISCOUNT-CURVE, if
-given, discounts the helpers' cash flows while the bootstrapped curve only
-forecasts: the second stage of a multi-curve build (OIS first, then the
-Ibor curve on it).
+  "Return the curve on which every helper of HELPERS reprices its quote. The helpers
+have one valuation date. DAY-COUNTER measures time. INTERPOLATION is :LOG-LINEAR
+(discount factors, one pass for each node), or :MONOTONE-CONVEX or :BACKWARD-FLAT
+(instantaneous forwards). Monotone-convex is not local, so the passes repeat until no
+node moves by more than ACCURACY. If DISCOUNT-CURVE is given, it discounts the cash
+flows of the helpers and the bootstrapped curve only forecasts. This is the second
+stage of a multi-curve build (the OIS curve first, then the Ibor curve on it).
 
   (bootstrap-curve (list (ois-helper 0.037d0 #T\"1Y\" (sofr) :valuation-date today) ...))"
   (check-input helpers (and list (not null)) "a non-empty list of rate helpers")

@@ -2,15 +2,14 @@
 ;;;;
 ;;;;   ln S(t) = ln S(0) + log(F(t)/F(0)) - w(t)/2 + W(w(t)) + L(t) + omega t
 ;;;;
-;;;; L is a Levy process with characteristic exponent psi, E[exp(i u L(t))] =
-;;;; exp(t psi(u)), and W(w(t)) an optional Brownian part with total variance
-;;;; w(t). The drift omega = -psi(-i) = -log E[exp(L(1))] makes the discounted
-;;;; spot a martingale, so a process only states psi (LEVY-EXPONENT) and, if it
-;;;; has one, its Brownian variance (DIFFUSION-VARIANCE). The mixin derives the
-;;;; characteristic function, the increment characteristic function that COS
-;;;; early exercise needs, and the log-cumulants (from LEVY-CUMULANTS, when a
-;;;; process gives them). Time is market time, so jump intensities and the
-;;;; like are per unit of market time.
+;;;; L is a Levy process with characteristic exponent psi, E[exp(i u L(t))] = exp(t psi(u)).
+;;;; W(w(t)) is an optional Brownian part with total variance w(t). The drift omega =
+;;;; -psi(-i) = -log E[exp(L(1))] makes the discounted spot a martingale. Thus a process
+;;;; states only psi (LEVY-EXPONENT) and, if it has one, its Brownian variance
+;;;; (DIFFUSION-VARIANCE). The mixin derives the characteristic function, the increment
+;;;; characteristic function that COS early exercise needs, and the log-cumulants (from
+;;;; LEVY-CUMULANTS, when a process gives them). Time is market time, so jump intensities
+;;;; and similar quantities are per unit of market time.
 
 (in-package #:fincl)
 
@@ -21,20 +20,19 @@
              (format s "~A has E[exp(L(1))] infinite or undefined (~A), so its spot ~
 cannot be made a martingale."
                      (failure-process c) (failure-reason c))))
-  (:documentation "Parameters of an exponential Levy process whose jump part
-has no finite exponential moment."))
+  (:documentation "The parameters of an exponential Levy process give a jump part that has no finite
+exponential moment."))
 
 (defclass exponential-levy (independent-increments) ()
-  (:documentation "Mixin for exponential Levy processes, listed before
-STOCHASTIC-PROCESS so its methods override the defaults. The process gives
-LEVY-EXPONENT (and optionally DIFFUSION-VARIANCE and LEVY-CUMULANTS) and
-receives CHARACTERISTIC-FUNCTION, INCREMENT-CHARACTERISTIC-FUNCTION and
-LOG-CUMULANTS, with the martingale drift -psi(-i)."))
+  (:documentation "A mixin for exponential Levy processes. List it before STOCHASTIC-PROCESS, so that its
+methods override the defaults. The process gives LEVY-EXPONENT (and optionally
+DIFFUSION-VARIANCE and LEVY-CUMULANTS). It receives CHARACTERISTIC-FUNCTION,
+INCREMENT-CHARACTERISTIC-FUNCTION and LOG-CUMULANTS, with the martingale drift -psi(-i)."))
 
 (defgeneric levy-exponent (process u)
-  (:documentation "psi(U), with E[exp(i U L(1))] = exp(psi(U)), of the Levy
-part of PROCESS (resolved; see RESOLVE-PROCESS), for a real or complex U.
-psi(0) = 0, and psi(-i) is the log of the exponential moment."))
+  (:documentation "Return psi(U) for the Levy part of PROCESS (resolved, see RESOLVE-PROCESS), for a real or
+complex U. E[exp(i U L(1))] = exp(psi(U)). psi(0) = 0, and psi(-i) is the log of the
+exponential moment."))
 
 (defgeneric levy-exponent-function (process)
   (:documentation "A closure (lambda (u)) -> psi(U), a (complex double-float),
@@ -48,15 +46,15 @@ LEVY-EXPONENT on every call.")
       (coerce (levy-exponent p u) '(complex double-float)))))
 
 (defgeneric diffusion-variance (process market t0 t1)
-  (:documentation "Variance over [T0, T1] of the Brownian part beside the
-Levy part: 0 for pure-jump processes.")
+  (:documentation "Return the variance over [T0, T1] of the Brownian part beside the Levy part. It is 0 for
+pure-jump processes.")
   (:method ((p exponential-levy) market t0 t1)
     (declare (ignore market t0 t1))
     0d0))
 
 (defgeneric levy-cumulants (process)
-  (:documentation "(values k1 k2 k4), the cumulants of L(1), or NIL when the
-process does not give them in closed form.")
+  (:documentation "Return (values k1 k2 k4), the cumulants of L(1). Return NIL when the process does not
+give them in closed form.")
   (:method ((p exponential-levy)) nil))
 
 (defgeneric exponential-moment-problem (process)
@@ -160,9 +158,9 @@ MAKE-STEPPER and TERMINAL-SAMPLER are built on it.")
 ATM-forward Black variance w(t), as for GBM, so with no jumps every ATM
 European is repriced. RESOLVE-PROCESS keeps it NIL."))
   (:constructor nil)
-  (:documentation "Superclass of GBM plus independent compound Poisson jumps:
-the Brownian part is GBM's, with the market's rate, dividend and (by
-default) vol term structures."))
+  (:documentation "The superclass of GBM plus independent compound Poisson jumps. The Brownian part is
+that of GBM, with the rate, the dividend and (by default) the vol term structures of the
+market."))
 
 ;;; As for GBM, a NIL vol names the market's vol term structure.
 (defmethod resolve-process ((p jump-diffusion) market horizon)

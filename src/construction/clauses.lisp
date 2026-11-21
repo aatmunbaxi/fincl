@@ -1,14 +1,14 @@
 ;;;; construction/clauses.lisp --- languages and their clauses
 ;;;;
-;;;; A construction language owns a vocabulary of clauses. A clause is a small
-;;;; form, (expires #D"2027-09-24"), whose head names it and whose arguments
-;;;; are values; running it publishes facts. Clause names are matched by
-;;;; symbol name, as iterate matches its clauses, so they work from any
-;;;; package without exports.
+;;;; A construction language owns a vocabulary of clauses. A clause is a small form,
+;;;; for example (expires #D"2027-09-24"). Its head names it and its arguments are
+;;;; values. When the clause runs, it publishes facts. The library matches clause names
+;;;; by symbol name, as iterate matches its clauses. Thus they work from any package
+;;;; without exports.
 ;;;;
-;;;; As data, a clause is (head . arguments) with HEAD a symbol (the language
-;;;; macros emit keywords). A clause whose lambda list ends in &CLAUSES takes
-;;;; trailing sub-clauses, which it runs itself, usually in a child scope.
+;;;; As data, a clause is (head . arguments). HEAD is a symbol (the language macros
+;;;; emit keywords). A clause whose lambda list ends in &CLAUSES takes trailing
+;;;; sub-clauses. The clause runs them itself, usually in a child scope.
 
 (in-package #:fincl)
 
@@ -314,15 +314,19 @@ for clauses as data use ~(~A~)"
           `(list ',head ,@args)))))
 
 (defmacro define-clause (language name lambda-list &body body)
-  "Define the clause NAME of LANGUAGE. LAMBDA-LIST receives the clause's
-arguments, already evaluated; if it ends in &CLAUSES VAR (after required
-parameters only), the remaining forms are sub-clauses, bound to VAR as data,
-for the body to run with APPLY-CLAUSES, usually inside WITH-SCOPE. BODY may
-start with a docstring, a (:PUBLISHES fact...) form declaring every fact it
-may set, and a (:CLAUSES-OF language) form saying the sub-clauses are those of
-another language, which the body builds with that language's data function,
-and a (:SUBCLAUSE-NAMES function) form, FUNCTION returning the names (strings)
-of the sub-clauses allowed, called when a form is expanded or run.
+  "Define the clause NAME of LANGUAGE. LAMBDA-LIST receives the arguments of the
+clause, already evaluated. If LAMBDA-LIST ends in &CLAUSES VAR (after required
+parameters only), the remaining forms are sub-clauses. They are bound to VAR as
+data. The body runs them with APPLY-CLAUSES, usually inside WITH-SCOPE.
+
+BODY can start with a docstring and these forms:
+  (:PUBLISHES fact...)       declares every fact that the clause can set
+  (:CLAUSES-OF language)     the sub-clauses are those of another language. The
+                             body builds them with the data function of that
+                             language
+  (:SUBCLAUSE-NAMES function) FUNCTION returns the names (strings) of the
+                             sub-clauses that are allowed. It is called when a
+                             form is expanded or run
 
   (define-clause option expires (when &key from calendar)
     (:publishes :expiry)
@@ -369,7 +373,7 @@ of the sub-clauses allowed, called when a form is expanded or run.
 
 (declaim (ftype (function (list) (values  &optional)) apply-clauses))
 (defun apply-clauses (forms)
-  "Run clause FORMS (data) in order, in the current scope."
+  "Run the clause FORMS (data) in order, in the current scope."
   (mapc #'apply-clause forms)
   (values))
 
@@ -388,11 +392,11 @@ can publish FACT."
 
 (declaim (ftype (function (t) (values list &optional)) language-clauses))
 (defun language-clauses (language)
-  "The clauses of the construction language LANGUAGE (a symbol or its name), in
-definition order, as property lists with keys :NAME (a string), :LAMBDA-LIST,
-:DOCUMENTATION (a string or NIL), :PUBLISHES (the facts the clause may set) and
-:SUBCLAUSES (true when it takes trailing sub-clauses). Clauses a language's
-resolver makes on demand are not listed.
+  "Return the clauses of the construction language LANGUAGE (a symbol or its name), in
+the order of definition, as property lists. The keys are :NAME (a string),
+:LAMBDA-LIST, :DOCUMENTATION (a string or NIL), :PUBLISHES (the facts that the
+clause can set) and :SUBCLAUSES (true when the clause takes trailing sub-clauses).
+The list does not show clauses that the resolver of the language makes on demand.
 
   (language-clauses 'option) => ((:name \"CALL\" :lambda-list (strike) ...) ...)"
   (mapcar (lambda (definition)

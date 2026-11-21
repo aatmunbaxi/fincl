@@ -1,21 +1,15 @@
 ;;;; term-structures/yield-curves.lisp --- dated yield curves
 ;;;;
-;;;; A DATED-CURVE has a reference date and a day counter of its own, which
-;;;; may differ from a market's. It answers dates, or reals in its own time
-;;;; (the year fraction from its reference date). In the interpolated curves
-;;;; times are the day counter's fractions from the
-;;;; first date, which is the reference date, and beyond the last date each
-;;;; extrapolates with a flat instantaneous forward.
+;;;; A DATED-CURVE has a reference date and a day counter of its own, which can differ from
+;;;; those of a market. It answers dates, or reals in its own time (the year fraction from
+;;;; its reference date). In the interpolated curves, times are the fractions of the day
+;;;; counter from the first date, which is the reference date. Beyond the last date, each
+;;;; curve extrapolates with a flat instantaneous forward.
 ;;;;
-;;;; A market measures horizons in market time from its valuation date, so a
-;;;; view takes a dated curve through CURVE-IN-MARKET: an adapter that maps a
-;;;; market horizon to the curve's time and divides by the discount factor at
-;;;; the valuation date, unless the curve already shares the market's
-;;;; reference date and day counter.
-;;;;
-;;;; Provenance: the interpolated curves follow QuantLib's
-;;;; InterpolatedDiscountCurve, InterpolatedZeroCurve and
-;;;; InterpolatedForwardCurve.
+;;;; A market measures horizons in market time from its valuation date. Thus a view takes a
+;;;; dated curve through CURVE-IN-MARKET. This adapter maps a market horizon to the time of
+;;;; the curve. It divides by the discount factor at the valuation date, unless the curve
+;;;; already shares the reference date and the day counter of the market.
 
 (in-package #:fincl)
 
@@ -23,7 +17,7 @@
   ((reference-date :initarg :reference-date :reader curve-reference-date :type date)
    (day-counter :initarg :day-counter :reader curve-day-counter :type day-counter
                 :initform +actual-365-fixed+))
-  (:documentation "A yield curve measured from REFERENCE-DATE under DAY-COUNTER."))
+  (:documentation "A yield curve that is measured from REFERENCE-DATE under DAY-COUNTER."))
 
 (defmethod curve-time ((c dated-curve) date)
   (year-fraction (curve-day-counter c) (curve-reference-date c) date))
@@ -96,9 +90,8 @@ reference date) and one value per date, interpolated in time."))
 
 (defclass interpolated-discount-curve (interpolated-curve) ()
   (:default-initargs :interpolation :log-linear)
-  (:documentation "Discount factors at dates (the first 1, at the reference
-date), interpolated by INTERPOLATION (default :LOG-LINEAR, which gives
-piecewise-flat forwards).
+  (:documentation "Discount factors at dates (the first is 1, at the reference date). INTERPOLATION interpolates
+them (default :LOG-LINEAR, which gives piecewise-flat forwards).
 
   (make-interpolated-discount-curve :dates dates :discounts dfs
                                     :day-counter +actual-360+)"))
@@ -110,9 +103,9 @@ piecewise-flat forwards).
                                               (discounts (required make-interpolated-discount-curve :discounts))
                                               (day-counter +actual-365-fixed+)
                                               (interpolation :log-linear))
-  "An INTERPOLATED-DISCOUNT-CURVE through DISCOUNTS (the first 1) at DATES (the
-first is the reference date), measured by DAY-COUNTER and interpolated by
-INTERPOLATION (:LOG-LINEAR, :LINEAR, :NATURAL-CUBIC, :MONOTONE-CUBIC).
+  "Make an INTERPOLATED-DISCOUNT-CURVE through DISCOUNTS (the first is 1) at DATES (the first is the
+reference date). DAY-COUNTER measures time. INTERPOLATION interpolates (:LOG-LINEAR, :LINEAR,
+:NATURAL-CUBIC, :MONOTONE-CUBIC).
 
   (make-interpolated-discount-curve :dates (list #D\"2027-01-15\" #D\"2028-01-15\")
                                     :discounts '(1d0 0.96d0))"
@@ -167,10 +160,9 @@ INTERPOLATION (:LOG-LINEAR, :LINEAR, :NATURAL-CUBIC, :MONOTONE-CUBIC).
 
 (defclass interpolated-zero-curve (interpolated-curve) ()
   (:default-initargs :interpolation :linear)
-  (:documentation "Zero rates at dates, interpolated by INTERPOLATION
-(default :LINEAR). Rates quoted with another COMPOUNDING and FREQUENCY are
-converted to continuous compounding at construction, the first over one
-day.
+  (:documentation "Zero rates at dates. INTERPOLATION interpolates them (default :LINEAR). At construction, the
+curve converts rates that are quoted with another COMPOUNDING and FREQUENCY to continuous
+compounding. The first rate is converted over one day.
 
   (make-interpolated-zero-curve :dates dates :zero-rates zs
                                 :compounding :compounded :frequency :annual)"))
@@ -184,10 +176,10 @@ day.
                                           (day-counter +actual-365-fixed+)
                                           (interpolation :linear)
                                           (compounding :continuous) (frequency :annual))
-  "An INTERPOLATED-ZERO-CURVE through ZERO-RATES at DATES (the first is the
-reference date), measured by DAY-COUNTER and interpolated by INTERPOLATION
-(:LINEAR, :LOG-LINEAR, :NATURAL-CUBIC, :MONOTONE-CUBIC). Rates quoted with
-COMPOUNDING and FREQUENCY are converted to continuous compounding.
+  "Make an INTERPOLATED-ZERO-CURVE through ZERO-RATES at DATES (the first is the reference date).
+DAY-COUNTER measures time. INTERPOLATION interpolates (:LINEAR, :LOG-LINEAR, :NATURAL-CUBIC,
+:MONOTONE-CUBIC). The function converts rates that are quoted with COMPOUNDING and FREQUENCY to
+continuous compounding.
 
   (make-interpolated-zero-curve :dates (list #D\"2027-01-15\" #D\"2028-01-15\")
                                 :zero-rates '(0.04d0 0.042d0))"
@@ -242,12 +234,11 @@ COMPOUNDING and FREQUENCY are converted to continuous compounding.
    (integral :reader forward-integral-function
              :documentation "For :MONOTONE-CONVEX, the integral of the forward from 0."))
   (:default-initargs :interpolation :backward-flat)
-  (:documentation "Instantaneous forward rates at dates. INTERPOLATION is
-:BACKWARD-FLAT (default: the rate at a date holds over the period ending
-there), :LINEAR, or :MONOTONE-CONVEX (Hagan-West:
-the value at a date is the average forward over the period
-ending there, the first is ignored). The discount factor is exp(-integral
-of the forward); beyond the last date the forward is the last value.
+  (:documentation "Instantaneous forward rates at dates. INTERPOLATION is :BACKWARD-FLAT (the default: the rate at
+a date holds over the period that ends there), :LINEAR, or :MONOTONE-CONVEX (Hagan-West: the
+value at a date is the average forward over the period that ends there. The first value is
+ignored). The discount factor is exp(-integral of the forward). Beyond the last date, the
+forward is the last value.
 
   (make-interpolated-forward-curve :dates dates :forwards fs)"))
 
@@ -258,9 +249,9 @@ of the forward); beyond the last date the forward is the last value.
                                              (forwards (required make-interpolated-forward-curve :forwards))
                                              (day-counter +actual-365-fixed+)
                                              (interpolation :backward-flat))
-  "An INTERPOLATED-FORWARD-CURVE through the instantaneous FORWARDS at DATES (the
-first is the reference date), measured by DAY-COUNTER, with INTERPOLATION
-:BACKWARD-FLAT, :LINEAR or :MONOTONE-CONVEX.
+  "Make an INTERPOLATED-FORWARD-CURVE through the instantaneous FORWARDS at DATES (the first is the
+reference date). DAY-COUNTER measures time. INTERPOLATION is :BACKWARD-FLAT, :LINEAR or
+:MONOTONE-CONVEX.
 
   (make-interpolated-forward-curve :dates (list #D\"2027-01-15\" #D\"2028-01-15\")
                                    :forwards '(0.04d0 0.045d0))"

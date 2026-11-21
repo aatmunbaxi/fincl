@@ -1,12 +1,11 @@
 ;;;; math/random.lisp --- counter-based random numbers
 ;;;;
-;;;; Philox4x32-10 (Salmon, Moraes, Dror and Shaw, "Parallel random numbers:
-;;;; as easy as 1, 2, 3", SC'11): a keyed bijection of 128-bit counters. Its
-;;;; output for a counter is a pure function of (key, counter), so draw k of
-;;;; Monte Carlo path i can be computed directly, with no stream state and no
-;;;; dependence on how paths are split between threads. It passes TestU01's
-;;;; BigCrush and is the counter-based generator of cuRAND, Random123 and
-;;;; NumPy.
+;;;; Philox4x32-10 (Salmon, Moraes, Dror and Shaw, "Parallel random numbers: as easy as 1,
+;;;; 2, 3", SC'11) is a keyed bijection of 128-bit counters. Its output for a counter is a
+;;;; pure function of (key, counter). Thus the code can compute draw k of Monte Carlo path
+;;;; i directly. There is no stream state, and no dependence on how threads share the paths.
+;;;; It passes BigCrush of TestU01. It is the counter-based generator of cuRAND, Random123
+;;;; and NumPy.
 
 (in-package #:fincl)
 

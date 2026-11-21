@@ -1,14 +1,14 @@
 ;;;; syntax.lisp --- #D"2027-06-15" and #T"3M" literals
 ;;;;
-;;;; The literals live in the named readtable FINCL:SYNTAX; the global
-;;;; readtable is never modified. A file that uses them starts with
+;;;; The literals live in the named readtable FINCL:SYNTAX. The code never modifies the
+;;;; global readtable. A file that uses them starts with
 ;;;;
 ;;;;   (in-package #:fincl)
 ;;;;   (named-readtables:in-readtable fincl:syntax)
 ;;;;
-;;;; Each literal reads one string and calls PARSE-DATE or PARSE-TENOR, so an
-;;;; invalid literal is an error at read time. DATE and TENOR define
-;;;; MAKE-LOAD-FORM, so literals survive COMPILE-FILE.
+;;;; Each literal reads one string and calls PARSE-DATE or PARSE-TENOR. Thus an invalid
+;;;; literal is an error at read time. DATE and TENOR define MAKE-LOAD-FORM, so literals
+;;;; survive COMPILE-FILE.
 
 (in-package #:fincl)
 
@@ -21,8 +21,8 @@
     (:report (lambda (c s)
                (format s "Invalid #~C literal: ~A"
                        (invalid-literal-subchar c) (invalid-literal-problem c))))
-    (:documentation "A malformed #D or #T literal. Also a READER-ERROR, so the
-reader reports the stream position."))
+    (:documentation "A malformed #D or #T literal. It is also a READER-ERROR, so the reader reports the position
+in the stream."))
 
   (defun literal-error (stream subchar problem)
     (error 'invalid-literal :stream stream :subchar subchar :problem problem))
