@@ -45,7 +45,8 @@ Acquire fincl locally and register it to quicklisp.
 
 #+end_src
 
-** Pricing an option with Black-Scholes
+** Pricing Options
+*** With Black-Scholes
 The "Hello, World!" of quant finance is pricing an at-the-money call with the Black-Scholes equation.
 #+begin_src lisp :exports both
 (price  *o* :black-scholes *m*)
@@ -55,12 +56,14 @@ The "Hello, World!" of quant finance is pricing an at-the-money call with the Bl
 : 9.925053717274428d0
 
 As is hopefully apparent, this prices a =European 1Y 100C= on an asset of price =100= where we assume the asset follows a geometric Brownian motion with volatility =0.2= and the risk-free rate is =4%=.
-
-** Multi-Engine Option Pricing
-A variety of (semi)analytic engines exist for pricing options, each assuming the
-underlying asset dynamics they were derived under (e.g. GBM for binomial tree).
-The following prices an American =6D 100P= using Monte Carlo, Fourier cosine,
-finite difference, binomial tree, and the approximation of Barone-Adesi-Whaley.
+*** Multi-Engine Option Pricing
+Each engine prices under its own method and model assumptions. The binomial
+tree, for example, assumes GBM. The following code prices an American =6D 100P=
+with Monte Carlo, Fourier cosine, finite difference, binomial tree, and
+Barone-Adesi-Whaley. Each row gives the engine, the price, and the standard
+error. Only Monte Carlo has a standard error. The Monte Carlo price is within
+two standard errors of the other prices. Barone-Adesi-Whaley is an
+approximation, so it differs from the others by more.
 #+begin_src lisp :results value :exports both
 (defparameter *american* (make-option (put 100)
                                       (american)
@@ -68,14 +71,21 @@ finite difference, binomial tree, and the approximation of Barone-Adesi-Whaley.
 
 (loop :for engine :in '(:mc :cos :fd :binomial :baw)
       :collect
-      (price *american* engine *m*))
+      (multiple-value-bind (npv se) (price *american* engine *m*)
+        `(,engine ,npv ,se)))
 #+end_src
 
 #+RESULTS:
-| 0.9973446422465597d0 | 0.9938338080252532d0 | 0.9937860766551418d0 | 0.9938380098631531d0 | 0.9925677875126846d0 |
+| :MC       | 0.9973446422465597d0 | 0.002498042706923224d0 |
+| :COS      | 0.9938338080252532d0 | NIL                    |
+| :FD       | 0.9937860766551418d0 | NIL                    |
+| :BINOMIAL | 0.9938380098631531d0 | NIL                    |
+| :BAW      | 0.9925677875126846d0 | NIL                    |
 
-** Path Featured and Exotic Options
-Some exotic options are supported, such as Asian options and barriers.
+
+*** Path Featured and Exotic Options
+The library supports some exotic options, such as Asian options and barriers.
+The Asian option has a closed-form price. The barrier option uses Monte Carlo.
 #+begin_src lisp :results value :exports both
 (defparameter *asian* (make-option (call 100)
                                    (expires #D"2027-10-01")
@@ -87,79 +97,118 @@ Some exotic options are supported, such as Asian options and barriers.
                                      (barrier :up-and-in 110 :monitoring weekly)
                                      (expires #D"2027-10-01")))
 
-`(,(price *asian* :black-scholes *m*) ,(price *barrier* :mc *m*))
+`(:asian ,(price *asian* :black-scholes *m*) :barrier ,(price *barrier* :mc *m*))
 #+end_src
 
 #+RESULTS:
-| 5.305773252030792d0 | 4.60502377184317d0 |
+| :ASIAN | 5.305773252030792d0 | :BARRIER | 4.60502377184317d0 |
 
-** Worker-Invariant Monte Carlo Pricing
-Backed by =lparallel=, fincl trivially allows multi-worker Monte Carlo pricing.
-Using the Philox counters for generating random normals, pricing will be
-reproducible and worker count-invariant.
+*** Worker-Invariant Monte Carlo Pricing
+Monte Carlo pricing uses =lparallel= workers.
+The random normals come from Philox counters, so a price does not depend on the worker count.
+The following code prices one call with a single worker and then with a worker pool. The two prices are identical.
 #+begin_src lisp :results value :exports both
-(defparameter *bates* (make-bates :v0 0.23 :kappa 1.5 :rho 0.6 :intensity 1/4))
+(defparameter *bates* (make-bates :v0 0.23d0 :kappa 1.5d0 :rho 0.6d0 :intensity 1/4))
 (defparameter *bates-mc* (make-engine :mc :process *bates*))
 
-(eql
- ;; Default: price with single worker
- (price *o* *bates-mc* *m*)
- ;; Price with multiple workers
- (with-pricing-kernel ()
-   (price *o* *bates-mc* *m*)))
+`(,(price *o* *bates-mc* *m*)                 ; single worker
+  ,(with-pricing-kernel ()                    ; worker pool
+     (price *o* *bates-mc* *m*)))
 #+end_src
 
 #+RESULTS:
-: T
+| 21.086668272547335d0 | 21.086668272547335d0 |
 
-** Calibrating a Heston local vol model
+
+** Options as Data
+An option is built from clauses, and it prints as the clauses that built it.
+The printed form reads back to an equal option. The macro =make-option= lists its own clauses.
 #+begin_src lisp :results value :exports both
-;; Three strips of options at 3M, 6M, and 1Y expiries
-(defparameter *option-strip* (loop :for i :from -3 :to 3
-                                   :append
-                                   (loop
-                                     :for e :in '(#T"3M" #T"6M" #T"1Y")
-                                     :collect
-                                     (make-option (call (+ 100 (* i 5)))
-                                                  (expires e :from +today+)))))
+(defparameter *barrier-put* (make-option (put 95)
+                                         (barrier :down-and-out 85)
+                                         (expires #T"1Y" :from +today+)))
 
-;; Actual process the options are priced based off
-(defparameter *true-process* (make-heston :v0 0.25d0 :kappa 1.5d0 :rho 0.7d0))
-
-;; Price options and initialize as quotes
-;; Priced by Fourier cosine method of Fang-Oosterlee
-(defparameter *strip-prices* (mapcar (lambda (o)
-                                       (price o (make-engine :cos :process *true-process*) *m*))
-                                     *option-strip*))
-
-(defparameter *quotes* (loop :for o :in *option-strip*
-                             :for p :in *strip-prices*
-                             :collect
-                             (make-option-quote o :price p)))
-;; Guess for true process
-(defparameter *guess* (make-heston))
-
-
-;; Calibrate guess process to 3M, 6M, and 1Y volatility smirks
-(calibrate *guess* *m* *quotes*)
+`(,*barrier-put* ,(round-trip-p 'option *barrier-put*))
 #+end_src
 
 #+RESULTS:
-#+begin_example
-#<HESTON v0=0.2499999999974078 kappa=1.5000000004244283 theta=0.24999999997019723 xi=0.29999999917912645 rho=0.700000001895347 scheme=QUADRATIC-EXPONENTIAL>
-(:RMSE 1.0865751787231957d-12 :MAX-ERROR 2.2857826742495035d-12 :ITERATIONS 327
- :RESIDUALS
- (-2.2857826742495035d-12 -5.2297055574968d-13 -1.281696970778512d-12
-  -2.240430063693566d-13 1.0535461392180423d-12 -2.4030777368011513d-13
-  7.189804307472514d-13 1.7686407893791056d-12 2.666755705149626d-13
-  8.262279749260415d-13 1.8317569683290458d-12 3.552713678800501d-13
-  3.086420008457935d-13 1.3963274980710594d-12 1.1191048088221578d-13
-  -6.760147996942578d-13 5.782041512247815d-13 -3.913536161803677d-13
-  -2.013278432855259d-12 -5.306866057708248d-13 -1.1033396418724806d-12)
- :PARAMETERS
- (:V0 0.2499999999974078d0 :KAPPA 1.5000000004244283d0 :THETA
-  0.24999999997019723d0 :XI 0.29999999917912645d0 :RHO 0.700000001895347d0))
-#+end_example
+| #<OPTION (put 95.0d0) (expires #D"2027-10-01") (barrier :down-and-out 85.0d0 :rebate 0.0d0 :monitoring :continuous)> | T |
+
+#+begin_src lisp :results value :exports both
+(mapcar (lambda (c) (getf c :name)) (language-clauses 'option))
+#+end_src
+
+#+RESULTS:
+| CONVENTION | CALL | PUT | PAYOFF | UNDERLYING | CURRENCY | EUROPEAN | AMERICAN | BERMUDAN | EXPIRES | AVERAGE | BARRIER | LOOKBACK |
+
+** Automatic Engine Selection
+Pass =:auto= in place of an engine, and fincl chooses the first engine that can price the option.
+The third value of =price= names the engine. The following code prices a European call, the American put, and the barrier put.
+The =with-engines= form then replaces the engine for American options.
+#+begin_src lisp :results value :exports both
+`(,@(loop :for o :in (list *o* *american* *barrier-put*)
+          :collect (nth-value 2 (price o :auto *m*)))
+  ,(with-engines ((:american :baw))
+     (nth-value 2 (price *american* :auto *m*))))
+#+end_src
+
+#+RESULTS:
+| #<ENGINE (make-engine :black-scholes)> | #<ENGINE (make-engine :binomial)> | #<ENGINE (make-engine :black-scholes)> | #<ENGINE (make-engine :baw)> |
+
+** Portfolios and Scenarios
+A portfolio holds signed positions in options and in the underlying asset.
+The following code prices a book, then revalues it on a grid of spot moves (-10%, 0, +10%) and vol moves (-5%, 0, +5%).
+Each result is the book profit or loss for one scenario.
+#+begin_src lisp :results value :exports both
+(defparameter *book*
+  (make-portfolio "book"
+                  (make-position *o* :quantity 10)
+                  (make-position *american* :quantity -5)
+                  (make-position (make-holding) :quantity -3)))
+
+(let ((grid (spot-vol-grid :some-equity '(-1/10 0 1/10) '(-5/100 0 5/100))))
+  `(,(price *book* :auto *m*)
+    ,@(coerce (scenario-pnl (revalue *book* *m* grid)) 'list)))
+#+end_src
+
+#+RESULTS:
+| -205.71865287657147d0 | -83.86562423587512d0 | -66.65695620126577d0 | -48.996268054379016d0 | -17.687978706579983d0 | 0.0d0 | 17.842856454492598d0 | 30.331108118223582d0 | 45.40514116281598d0 | 62.370735558658566d0 |
+
+** Simulating a Strategy Along Paths
+=simulate= steps paths of a process and runs Lisp forms on chosen dates.
+The following code sells a 1Y call and hedges it with the Black-Scholes delta once a month, on 20,000 GBM paths.
+Cash earns the 4% rate of the market. The output is the hedged profit or loss at expiry.
+The results are the mean, its standard error, and the 5% and 95% quantiles.
+#+begin_src lisp :results value :exports both
+(defparameter *monthly* (loop :for k :from 1 :to 12
+                              :collect (add-tenor +today+ (make-tenor k :months))))
+
+(defparameter *hedge*
+  (simulate ((make-gbm) *m* *monthly* :n-paths 20000 :keep :quantiles)
+    (:accumulate (shares 0d0) (cash 0d0))
+    (:state s :spot)
+    (:start (market)
+      (incf cash (price *o* :black-scholes market)))     ; premium received
+    (:every (date market &key dt)
+      (setf cash (* cash (exp (* 0.04d0 dt))))           ; interest
+      (when (date< date #D"2027-10-01")
+        (let ((delta (getf (greeks *o* :black-scholes market :which '(:delta)) :delta)))
+          (decf cash (* (- delta shares) s))             ; trade to the new delta
+          (setf shares delta))))
+    (:final (:hedged (+ cash (* shares s) (- (max 0d0 (- s 100d0))))))))
+
+`(,(simulation-mean *hedge* :hedged)
+  ,(simulation-standard-error *hedge* :hedged)
+  ,(simulation-quantile *hedge* :hedged 0.05d0)
+  ,(simulation-quantile *hedge* :hedged 0.95d0))
+#+end_src
+
+#+RESULTS:
+| -0.019438996263710442d0 | 0.02973141133913993d0 | -7.498949460374341d0 | 6.2130117071651005d0 |
+
+The mean is near zero, as predicted by risk-neutral asset pricing. Monthly
+hedging leaves a wide spread. The spread falls with the square root of the
+number of hedge dates: it is 4.2 with 12 dates and 2.0 with 53 dates.
 
 * Capabilities
 - Options pricing :: Vanilla and handful of exotics, see [[file:./tour/options.org][options docs]].
