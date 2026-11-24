@@ -87,7 +87,8 @@
 <li><a href="#FINCL%2FDOCGEN:@CGMY%20MGL-PAX:SECTION" title="CGMY">6.2.5 CGMY</a></li>
 <li><a href="#FINCL%2FDOCGEN:@BATES%20MGL-PAX:SECTION" title="Bates">6.2.6 Bates</a></li>
 </ul></li>
-<li><a href="#FINCL%2FDOCGEN:@CHANGE-OF-MEASURE%20MGL-PAX:SECTION" title="Change of measure">6.3 Change of measure</a></li>
+<li><a href="#FINCL%2FDOCGEN:@REGIME-SWITCHING%20MGL-PAX:SECTION" title="Regime switching">6.3 Regime switching</a></li>
+<li><a href="#FINCL%2FDOCGEN:@CHANGE-OF-MEASURE%20MGL-PAX:SECTION" title="Change of measure">6.4 Change of measure</a></li>
 </ul></li>
 <li><a href="#FINCL%2FDOCGEN:@PORTFOLIOS%20MGL-PAX:SECTION" title="Portfolios and risk">7 Portfolios and risk</a>
 
@@ -1843,8 +1844,9 @@ prices of Europeans reproduce the surface.</p></li>
 </code></pre>
 
 <p>that advances STATE in place from <a href="http://www.lispworks.com/documentation/HyperSpec/Body/m_time.htm" title="TIME (MGL-PAX:CLHS MGL-PAX:MACRO)"><code>TIME</code></a>s[j] to <code>TIME</code>s[j+1]. It consumes PROCESS-FACTORS
-normals. <code>TIME</code>s is a (<a href="http://www.lispworks.com/documentation/HyperSpec/Body/t_smp_ar.htm" title="SIMPLE-ARRAY (MGL-PAX:CLHS TYPE)"><code>SIMPLE-ARRAY</code></a> <a href="http://www.lispworks.com/documentation/HyperSpec/Body/t_short_.htm" title="DOUBLE-FLOAT (MGL-PAX:CLHS TYPE)"><code>DOUBLE-FLOAT</code></a> (*)) of grid times in market time. It
-starts at 0 and can have uneven spacing. The closure runs once for each path and each
+normals. When MAKE-STOCHASTIC-DRIVER gives a stochastic driver, it consumes the inputs of
+that driver instead. <code>TIME</code>s is a (<a href="http://www.lispworks.com/documentation/HyperSpec/Body/t_smp_ar.htm" title="SIMPLE-ARRAY (MGL-PAX:CLHS TYPE)"><code>SIMPLE-ARRAY</code></a> <a href="http://www.lispworks.com/documentation/HyperSpec/Body/t_short_.htm" title="DOUBLE-FLOAT (MGL-PAX:CLHS TYPE)"><code>DOUBLE-FLOAT</code></a> (*)) of grid times in market
+time. It starts at 0 and can have uneven spacing. The closure runs once for each path and each
 step. Thus the method body must compute everything that it can compute early: it computes
 drifts, variances and step lengths for each interval into typed vectors that J indexes.
 Rates enter through LOG-GROWTH over each interval, so the discounted observable is a
@@ -2059,7 +2061,7 @@ jumps.</p></li>
 </ul>
 <p><a id="x-28FINCL-2FDOCGEN-3A-40BATES-20MGL-PAX-3ASECTION-29"></a>
 <a id="FINCL%2FDOCGEN:@BATES%20MGL-PAX:SECTION"></a></p>
-<p><span class="outer-navigation"><span class="navigation"> <a href="#FINCL%2FDOCGEN:@CGMY%20MGL-PAX:SECTION" title="CGMY">&#8592;</a> <a href="#FINCL%2FDOCGEN:@LEVY-PROCS%20MGL-PAX:SECTION" title="Lévy processes">&#8593;</a> <a href="#FINCL%2FDOCGEN:@CHANGE-OF-MEASURE%20MGL-PAX:SECTION" title="Change of measure">&#8594;</a> <a href="#FINCL%2FDOCGEN:@BATES%20MGL-PAX:SECTION" title="Bates">&#8634;</a></span></span></p>
+<p><span class="outer-navigation"><span class="navigation"> <a href="#FINCL%2FDOCGEN:@CGMY%20MGL-PAX:SECTION" title="CGMY">&#8592;</a> <a href="#FINCL%2FDOCGEN:@LEVY-PROCS%20MGL-PAX:SECTION" title="Lévy processes">&#8593;</a> <a href="#FINCL%2FDOCGEN:@REGIME-SWITCHING%20MGL-PAX:SECTION" title="Regime switching">&#8594;</a> <a href="#FINCL%2FDOCGEN:@BATES%20MGL-PAX:SECTION" title="Bates">&#8634;</a></span></span></p>
 <h4><a href="#FINCL%2FDOCGEN:@BATES%20MGL-PAX:SECTION">6.2.6 Bates</a></h4>
 <p>$$\frac{dS_t}{S_t} = (r-q-\lambda k)\,dt + \sqrt{v_t}\,dW^1_t + (e^{Y}-1)\,dN_t,
 \qquad dv_t = \kappa(\theta - v_t)\,dt + \xi\sqrt{v_t}\,dW^2_t,$$</p>
@@ -2088,10 +2090,80 @@ Deutsche mark options, <em>Review of Financial Studies 9</em> (1996).</p>
 
 <p>A new bates process: (make-instance 'bates initarg...).</p></li>
 </ul>
+<p><a id="x-28FINCL-2FDOCGEN-3A-40REGIME-SWITCHING-20MGL-PAX-3ASECTION-29"></a>
+<a id="FINCL%2FDOCGEN:@REGIME-SWITCHING%20MGL-PAX:SECTION"></a></p>
+<p><span class="outer-navigation"><span class="navigation"> <a href="#FINCL%2FDOCGEN:@BATES%20MGL-PAX:SECTION" title="Bates">&#8592;</a> <a href="#FINCL%2FDOCGEN:@PROCESSES%20MGL-PAX:SECTION" title="Stochastic processes">&#8593;</a> <a href="#FINCL%2FDOCGEN:@CHANGE-OF-MEASURE%20MGL-PAX:SECTION" title="Change of measure">&#8594;</a> <a href="#FINCL%2FDOCGEN:@REGIME-SWITCHING%20MGL-PAX:SECTION" title="Regime switching">&#8634;</a></span></span></p>
+<h3><a href="#FINCL%2FDOCGEN:@REGIME-SWITCHING%20MGL-PAX:SECTION">6.3 Regime switching</a></h3>
+<p>A continuous-time Markov chain $J_t$ on the regimes $1, \dots, n$ selects the dynamics. In
+regime $k$, the state follows component process $k$. The generator $Q$ has rates
+$Q_{ij} \ge 0$ for $i \ne j$, per year of market time. Each row of $Q$ sums to 0. Over a
+step $\Delta t$, the regime moves with the transition matrix $e^{Q\Delta t}$.</p>
+<p>All components have the same state names. The state of the process is the state of the
+components, followed by the regime index. Monte Carlo steps the active component. Then it
+draws the next regime from row $J_t$ of $e^{Q\Delta t}$ with one more normal. The regime at
+$t_j$ governs the step from $t_j$ to $t_{j+1}$. LSM fits one regression for each regime.
+The basis of a regression is the basis of LSM times the indicator of the regime (Gobet,
+Lemor and Warin, <em>Annals of Applied Probability 15</em> (2005)).</p>
+<p><a href="http://www.lispworks.com/documentation/HyperSpec/Body/f_sin_c.htm" title="COS (MGL-PAX:CLHS FUNCTION)"><code>COS</code></a> prices Europeans if the log-return of each regime $k$ has this form:
+$E[e^{iu\ln(S_t/S_0)}] = e^{iu\ln(F_t/F_0) + t\psi_k(u)}$. GBM with a constant vol and the
+exponential Lévy processes have it. The characteristic function is</p>
+<p>$$E\left[e^{iu\ln(S_T/S_0)}\right] = e^{iu\ln(F_T/F_0)}\;
+e_{J_0}^{\top}\exp\left(\left(Q + \operatorname{diag}\psi_k(u)\right)T\right)\mathbf{1}.$$</p>
+<p>The matrix exponential uses scaling and squaring with a Padé approximant (Higham, <em>SIAM
+Journal on Matrix Analysis and Applications 26</em> (2005)).</p>
+<p>Reference: J. D. Hamilton, A new approach to the economic analysis of nonstationary time
+series and the business cycle, <em>Econometrica 57</em> (1989).</p>
+<p><a id="x-28FINCL-3AREGIME-SWITCHING-20CLASS-29"></a>
+<a id="FINCL:REGIME-SWITCHING%20CLASS"></a></p>
+<ul>
+<li><p><span class=reference-bullet><span class=reference><span class="locative-type">[class]</span> <span class="reference-object"><a href="#FINCL:REGIME-SWITCHING%20CLASS" >FINCL:REGIME-SWITCHING</a></span></span> <span class="locative-args"><a href="#FINCL:STOCHASTIC-PROCESS%20CLASS" title="FINCL:STOCHASTIC-PROCESS CLASS">FINCL:STOCHASTIC-PROCESS</a></span></span></p>
+
+<p>A set of component processes, one for each regime. A continuous-time Markov chain
+with generator Q switches between them. MAKE-REGIME-SWITCHING builds it. The state is the
+state of the components, followed by <code>:REGIME</code>, the regime index as a double.</p>
+
+<p>(make-regime-switching :base (make-gbm) :regimes '(:calm :stressed)
+                         :vol '(:calm 0.15d0 :stressed 0.4d0)
+                         :generator #2A((0 0.5d0) (2 0)))</p></li>
+</ul>
+<p><a id="x-28FINCL-3AMAKE-REGIME-SWITCHING-20FUNCTION-29"></a>
+<a id="FINCL:MAKE-REGIME-SWITCHING%20FUNCTION"></a></p>
+<ul>
+<li><p><span class=reference-bullet><span class=reference><span class="locative-type">[function]</span> <span class="reference-object"><a href="#FINCL:MAKE-REGIME-SWITCHING%20FUNCTION" >FINCL:MAKE-REGIME-SWITCHING</a></span></span> <span class="locative-args">&amp;REST ARGUMENTS &amp;KEY BASE PROCESSES REGIMES GENERATOR INITIAL-REGIME &amp;ALLOW-OTHER-KEYS</span></span></p>
+
+<p>Return a regime-switching process. Give the regimes in one of two forms:</p>
+
+<ul>
+<li><p><code>:BASE</code>, a process, and <code>:REGIMES</code>, a list of distinct keywords. Every other keyword names a
+  parameter of BASE. Its value is a plist with one value for each regime. The function
+  builds each component with the class of BASE and checks its bounds.</p></li>
+<li><p><code>:PROCESSES</code>, a plist of regime keyword and process. <code>:REGIMES</code> is optional. If you give
+  it, it must list the same names in the same order.</p></li>
+</ul>
+
+<p><code>:GENERATOR</code> is a square 2-D array of reals in the order of the regimes. An entry (i, j) off
+the diagonal is the rate per year of market time of a switch from regime i to regime j.
+The rate must be finite and not negative. A diagonal entry is 0, or minus the sum of the
+other entries of its row. <code>:INITIAL-REGIME</code> is the regime at t = 0. The default is the first
+regime. Every component must be risk-neutral and must have the same PROCESS-STATE-NAMES.
+With one regime, the function returns its component, and you can omit <code>:GENERATOR</code>.</p>
+
+<p>(make-regime-switching :base (make-gbm) :regimes '(:calm :stressed)
+                         :vol '(:calm 0.15d0 :stressed 0.4d0)
+                         :generator #2A((0 0.5d0) (2 0)))
+  (make-regime-switching :processes (list :calm (make-heston :xi 0.2d0)
+                                          :stressed (make-heston :xi 0.6d0))
+                         :generator #2A((-0.5d0 0.5d0) (2 -2)))</p></li>
+</ul>
+<p><a id="x-28FINCL-3AREGIME-NAMES-20GENERIC-FUNCTION-29"></a>
+<a id="FINCL:REGIME-NAMES%20GENERIC-FUNCTION"></a></p>
+<ul>
+<li><span class=reference-bullet><span class=reference><span class="locative-type">[generic-function]</span> <span class="reference-object"><a href="#FINCL:REGIME-NAMES%20GENERIC-FUNCTION" >FINCL:REGIME-NAMES</a></span></span> <span class="locative-args">OBJECT</span></span></li>
+</ul>
 <p><a id="x-28FINCL-2FDOCGEN-3A-40CHANGE-OF-MEASURE-20MGL-PAX-3ASECTION-29"></a>
 <a id="FINCL%2FDOCGEN:@CHANGE-OF-MEASURE%20MGL-PAX:SECTION"></a></p>
-<p><span class="outer-navigation"><span class="navigation"> <a href="#FINCL%2FDOCGEN:@BATES%20MGL-PAX:SECTION" title="Bates">&#8592;</a> <a href="#FINCL%2FDOCGEN:@PROCESSES%20MGL-PAX:SECTION" title="Stochastic processes">&#8593;</a> <a href="#FINCL%2FDOCGEN:@PORTFOLIOS%20MGL-PAX:SECTION" title="Portfolios and risk">&#8594;</a> <a href="#FINCL%2FDOCGEN:@CHANGE-OF-MEASURE%20MGL-PAX:SECTION" title="Change of measure">&#8634;</a></span></span></p>
-<h3><a href="#FINCL%2FDOCGEN:@CHANGE-OF-MEASURE%20MGL-PAX:SECTION">6.3 Change of measure</a></h3>
+<p><span class="outer-navigation"><span class="navigation"> <a href="#FINCL%2FDOCGEN:@REGIME-SWITCHING%20MGL-PAX:SECTION" title="Regime switching">&#8592;</a> <a href="#FINCL%2FDOCGEN:@PROCESSES%20MGL-PAX:SECTION" title="Stochastic processes">&#8593;</a> <a href="#FINCL%2FDOCGEN:@PORTFOLIOS%20MGL-PAX:SECTION" title="Portfolios and risk">&#8594;</a> <a href="#FINCL%2FDOCGEN:@CHANGE-OF-MEASURE%20MGL-PAX:SECTION" title="Change of measure">&#8634;</a></span></span></p>
+<h3><a href="#FINCL%2FDOCGEN:@CHANGE-OF-MEASURE%20MGL-PAX:SECTION">6.4 Change of measure</a></h3>
 <p>Every process is stated under the risk-neutral measure $Q$. A process under
 the physical measure $P$, for scenarios rather than prices, comes from one by
 Girsanov's theorem: a state $X^i$ driven by $W^i$ with diffusion coefficient
