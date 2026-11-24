@@ -18,7 +18,6 @@ An additional package =fincl-viz= is provided that provides helper utilities to 
 - =fincl/benchmarks= is built with fincl, lparallel, iterate, and uiop, as well as QuantLib's C++ library to build the corresponding =.cpp= files
 - =fincl-viz= (not part of =fincl=) is built with jzon, and python with plotly (and kaleido for images) to render the Plotly JSON it writes through =viz/render.py=
 
-
 * Capabilities
 - Options pricing :: Vanilla and handful of exotics, see [[file:./tour/options.org][options docs]].
 - Greeks :: From Monte Carlo or likelihood estimator, implied volatility.
@@ -57,9 +56,8 @@ Acquire fincl locally and register it to quicklisp.
 #+end_src
 
 ** Pricing Options
-*** With Black-Scholes
 #+HTML: <details open>
-#+HTML: <summary>Show code and output</summary>
+#+HTML: <summary>With Black-Scholes</summary>
 
 The "Hello, World!" of quant finance is pricing an at-the-money call with the Black-Scholes equation.
 #+begin_src lisp :exports both
@@ -73,9 +71,8 @@ As is hopefully apparent, this prices a =European 1Y 100C= on an asset of price 
 
 #+HTML: </details>
 
-*** Multi-Engine Option Pricing
 #+HTML: <details>
-#+HTML: <summary>Show code and output</summary>
+#+HTML: <summary>Multi-engine option pricing</summary>
 
 Each engine prices under its own method and model assumptions. The binomial
 tree, for example, assumes GBM. The following code prices an American =6D 100P=
@@ -104,9 +101,8 @@ approximation, so it differs from the others by more.
 
 #+HTML: </details>
 
-*** Path Featured and Exotic Options
 #+HTML: <details>
-#+HTML: <summary>Show code and output</summary>
+#+HTML: <summary>Path features and exotic options</summary>
 
 The library supports some exotic options, such as Asian options and barriers.
 The Asian option has a closed-form price. The barrier option uses Monte Carlo.
@@ -129,9 +125,8 @@ The Asian option has a closed-form price. The barrier option uses Monte Carlo.
 
 #+HTML: </details>
 
-*** Worker-Invariant Monte Carlo Pricing
 #+HTML: <details>
-#+HTML: <summary>Show code and output</summary>
+#+HTML: <summary>Worker-invariant Monte Carlo pricing</summary>
 
 Monte Carlo pricing uses =lparallel= workers.
 The random normals come from Philox counters, so a price does not depend on the worker count.
@@ -150,9 +145,8 @@ The following code prices one call with a single worker and then with a worker p
 
 #+HTML: </details>
 
-** Options as Data
 #+HTML: <details>
-#+HTML: <summary>Show code and output</summary>
+#+HTML: <summary>Options as data</summary>
 
 An option is built from clauses, and it prints as the clauses that built it.
 The printed form reads back to an equal option. The macro =make-option= lists its own clauses.
