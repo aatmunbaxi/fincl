@@ -293,8 +293,8 @@ Any function that takes a calendar accepts the new one, for example =(expires #T
 expiry. The class becomes a clause of =make-option=. The following payoff pays the
 asset price raised to a power. Monte Carlo prices any such payoff. Automatic
 selection also falls back to Monte Carlo for a new payoff. For a squared payoff
-under GBM, the exact price is \(S_0^2 e^{(r+\sigma^2)T}\). Each row gives the Monte
-Carlo price, its standard error, and the exact price.
+under GBM, the exact price is =S₀²*exp((r+σ²)T)=. Each row gives the Monte Carlo
+price, its standard error, and the exact price.
 #+begin_src lisp :results value :exports both
 (define-payoff power (payoff)
     ((exponent double-float :initform 2d0 :doc "The power of the asset price."))
