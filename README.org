@@ -61,7 +61,7 @@ A variety of (semi)analytic engines exist for pricing options, each assuming the
 underlying asset dynamics they were derived under (e.g. GBM for binomial tree).
 The following prices an American =6D 100P= using Monte Carlo, Fourier cosine,
 finite difference, binomial tree, and the approximation of Barone-Adesi-Whaley.
-#+begin_src lisp :results table
+#+begin_src lisp :results value :exports both
 (defparameter *american* (make-option (put 100)
                                       (american)
                                       (expires #T"6D" :from +today+)))
