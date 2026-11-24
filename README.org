@@ -349,7 +349,7 @@ element 1 the running total."))
 #+end_src
 
 The Monte Carlo engine now prices a =power= payoff option on a die paying its face
-value. The expected square of a roll is \(91/6\). The exact price discounts it
+value. The expected square of a roll is =91/6=. The exact price discounts it
 for 61 days at 4%. Each row gives the Monte Carlo price, its standard error, and
 the exact price.
 #+begin_src lisp :results value :exports both
