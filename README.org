@@ -260,6 +260,111 @@ number of hedge dates: it is 4.2 with 12 dates and 2.0 with 53 dates.
 
 #+HTML: </details>
 
+** Extending fincl
+The =define-= macros add calendars, payoffs, and processes from user code.
+The new objects work with the existing instruments, engines, and markets.
+*** A Custom Calendar
+#+HTML: <details>
+#+HTML: <summary>Show code and output</summary>
+
+=define-calendar= builds a holiday calendar from rules.
+The following calendar has one holiday, on September 21.
+#+begin_src lisp :results value :exports both
+(define-calendar earth-wind-fire (null-calendar)
+  "Every day is a business day except September 21."
+  (:fixed 9 21))
+
+`(,(business-day-p +earth-wind-fire+ #D"2027-09-21")
+  ,(business-day-p +earth-wind-fire+ #D"2027-09-22"))
+#+end_src
+
+#+RESULTS:
+| NIL | T |
+
+Any function that takes a calendar accepts the new one, for example =(expires #T"2M" :from +today+ :calendar +earth-wind-fire+)=.
+
+#+HTML: </details>
+
+*** A Custom Payoff
+#+HTML: <details>
+#+HTML: <summary>Show code and output</summary>
+
+=define-payoff= writes a payoff class from a formula of the observable =s= at
+expiry. The class becomes a clause of =make-option=. The following payoff pays the
+asset price raised to a power. Monte Carlo prices any such payoff. Automatic
+selection also falls back to Monte Carlo for a new payoff. For a squared payoff
+under GBM, the exact price is \(S_0^2 e^{(r+\sigma^2)T}\). Each row gives the Monte
+Carlo price, its standard error, and the exact price.
+#+begin_src lisp :results value :exports both
+(define-payoff power (payoff)
+    ((exponent double-float :initform 2d0 :doc "The power of the asset price."))
+  (s)
+  (expt s exponent))
+
+(multiple-value-bind (npv se)
+    (price (make-option (power :exponent 2d0) (expires #T"1Y" :from +today+))
+           (make-engine :mc :n-paths 200000)
+           *m*)
+  `(,npv ,se ,(* 10000 (exp 0.08d0))))
+#+end_src
+
+#+RESULTS:
+| 10824.457496227382d0 | 3.832376456580363d0 | 10832.870676749586d0 |
+
+The Monte Carlo price agrees with the exact price to about 0.1%.
+
+#+HTML: </details>
+
+*** A Custom Process
+#+HTML: <details>
+#+HTML: <summary>Show code and output</summary>
+
+=define-process= writes a process class and its constructor from a list of parameters.
+The dynamics are ordinary methods. =make-stepper= returns a function that advances the state by one step.
+The following toy process is a fair die. Each step rolls the die. The state holds the latest roll and the running total.
+#+begin_src lisp :results silent :exports code
+(define-process fair-die (stochastic-process) (:state-size 2)
+  ((faces 6d0 :bounds (2 nil) :doc "Number of faces."))
+  (:documentation "A die rolled once per step. Element 0 is the latest roll,
+element 1 the running total."))
+
+(defmethod initial-state ((p fair-die) market)
+  (declare (ignore market))
+  (make-array 2 :element-type 'double-float :initial-element 0d0))
+
+(defmethod process-state-names ((p fair-die)) '(:spot :total))
+
+(defmethod make-stepper ((p fair-die) market times)
+  (declare (ignore market times))
+  (let ((faces (process-parameter p :faces)))
+    (declare (type double-float faces))
+    (lambda (state normals j)
+      (declare (type (simple-array double-float (*)) state normals) (ignore j))
+      ;; Phi(Z) is uniform on (0, 1), so floor(faces U) + 1 is uniform on 1..faces.
+      (let ((roll (+ 1d0 (min (- faces 1d0)
+                              (ffloor (* faces (norm-cdf (aref normals 0))))))))
+        (setf (aref state 0) roll
+              (aref state 1) (+ (aref state 1) roll)))
+      nil)))
+#+end_src
+
+The Monte Carlo engine now prices a =power= payoff option on a die paying its face
+value. The expected square of a roll is \(91/6\). The exact price discounts it
+for 61 days at 4%. Each row gives the Monte Carlo price, its standard error, and
+the exact price.
+#+begin_src lisp :results value :exports both
+(multiple-value-bind (npv se)
+    (price (make-option (power :exponent 2d0) (expires #T"3D" :from +today+))
+           (make-engine :mc :process (make-fair-die) :n-paths 200000 :n-steps 3)
+           *m*)
+  `(,npv ,se ,(* 91/6 (exp (- (* 0.04d0 61/365))))))
+#+end_src
+
+#+RESULTS:
+| 15.067239122300528d0 | 0.007847061825800429d0 | 15.065616671274274d0 |
+
+#+HTML: </details>
+
 * Visualizations
 The following are taken from =fincl/viz= demonstrations.
 
