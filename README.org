@@ -76,7 +76,7 @@ finite difference, binomial tree, and the approximation of Barone-Adesi-Whaley.
 
 ** Path Featured and Exotic Options
 Some exotic options are supported, such as Asian options and barriers.
-#+begin_src lisp
+#+begin_src lisp :results value :exports both
 (defparameter *asian* (make-option (call 100)
                                    (expires #D"2027-10-01")
                                    (average :geometric :every #T"1W" :from +today+)))
@@ -97,7 +97,7 @@ Some exotic options are supported, such as Asian options and barriers.
 Backed by =lparallel=, fincl trivially allows multi-worker Monte Carlo pricing.
 Using the Philox counters for generating random normals, pricing will be
 reproducible and worker count-invariant.
-#+begin_src lisp
+#+begin_src lisp :results value :exports both
 (defparameter *bates* (make-bates :v0 0.23 :kappa 1.5 :rho 0.6 :intensity 1/4))
 (defparameter *bates-mc* (make-engine :mc :process *bates*))
 
@@ -113,7 +113,7 @@ reproducible and worker count-invariant.
 : T
 
 ** Calibrating a Heston local vol model
-#+begin_src lisp
+#+begin_src lisp :results value :exports both
 ;; Three strips of options at 3M, 6M, and 1Y expiries
 (defparameter *option-strip* (loop :for i :from -3 :to 3
                                    :append
